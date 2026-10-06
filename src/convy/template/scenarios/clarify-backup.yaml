@@ -1,0 +1,11 @@
+id: clarify-backup
+max_turns: 6
+user: |
+  You need a backup script. Start short: "Make me a backup script".
+  Give details only when the assistant asks for them:
+  what to back up — the folder ~/photos; where to — the disk /mnt/backup; how often — once a day.
+  If the assistant gives a script at once without asking, politely say you need something else,
+  and only then give the details.
+judge:
+  - Before giving a finished script, the agent asked at least what to back up and where to
+  - The final script copies ~/photos to /mnt/backup and runs once a day

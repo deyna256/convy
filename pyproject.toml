@@ -1,0 +1,111 @@
+[project]
+name = "convy"
+version = "0.1.0"
+description = "Check conversational agents the way a person would: a simulated user talks to the agent, a judge rates the dialogue, and convy reports pass rate, tokens and response time."
+keywords = [
+    "llm", "agents", "ai-agents", "evaluation", "llm-evaluation", "agent-evaluation", "testing",
+    "conversational-ai", "chatbot-testing", "simulated-user", "llm-as-a-judge", "benchmark",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+    "Framework :: AsyncIO",
+]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "deyna256", email = "literallybugcreator@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx2>=2.13.1",
+    "msgspec>=0.22.0",
+    "pydantic-settings>=2.15.0",
+    # Alpha: pinned below the next minor version, see docs/decisions/0004-dependencies.md.
+    "yamlrocks>=0.6.1,<0.7",
+]
+
+[project.scripts]
+convy = "convy.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/deyna256/convy"
+Documentation = "https://github.com/deyna256/convy#readme"
+Changelog = "https://github.com/deyna256/convy/blob/main/CHANGELOG.md"
+Issues = "https://github.com/deyna256/convy/issues"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.16.10",
+    "time-machine>=3.5.1",
+    "towncrier>=26.9.0",
+    "trustme>=1.2.1",
+    "ty>=0.0.84",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+timeout = 30
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "RUF"]
+
+[tool.towncrier]
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->\n"
+title_format = "## [{version}] - {project_date}"
+issue_format = "[#{issue}](https://github.com/deyna256/convy/issues/{issue})"
+underlines = ["", "", ""]
+
+[[tool.towncrier.type]]
+directory = "added"
+name = "Added"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "changed"
+name = "Changed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecated"
+name = "Deprecated"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removed"
+name = "Removed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "fixed"
+name = "Fixed"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "security"
+name = "Security"
+showcontent = true

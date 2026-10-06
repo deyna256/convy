@@ -1,0 +1,18 @@
+# Python build output and caches
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environment
+.venv
+/.env
+
+# Local working documents: research, drafts, development plans
+/.local/

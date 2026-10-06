@@ -1,0 +1,9 @@
+id: changed-requirements
+max_turns: 5
+user: |
+  Ask for a Python function that sorts a list of integers.
+  When the assistant gives it, change your mind: "Oh, I need it in Go, and in descending order".
+  When you get the Go code, say thank you.
+judge:
+  - The last code the agent gave is written in Go
+  - The last code sorts in descending order

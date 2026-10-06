@@ -1,0 +1,33 @@
+name: Publish
+
+# Uploads the packages of an existing GitHub release to PyPI, unchanged. Run it by hand with the
+# release's tag. PyPI trusted publishing is used, so no token is stored.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag to publish, for example v0.1.1
+        required: true
+        type: string
+
+jobs:
+  pypi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      # Must match the environment in the PyPI trusted publisher settings.
+      name: pypi
+      url: https://pypi.org/p/convy
+    permissions:
+      contents: read         # download the release assets
+      id-token: write        # exchange for a PyPI credential
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Take the distributions from the release
+        # Only the packages: the upload step takes everything in dist/.
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.whl' --pattern '*.tar.gz'
+
+      - name: Upload them to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

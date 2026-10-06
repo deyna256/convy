@@ -1,0 +1,95 @@
+name: Release
+
+# Creates a GitHub release from main, with the version from pyproject.toml. Run it by hand, then run
+# Publish to send the release to PyPI.
+on: workflow_dispatch
+
+jobs:
+  checks:
+    name: Check what is about to be released
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Runs the project's code, so it gets read-only permissions.
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UV_LOCKED: '1'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: '1.58.0'
+
+      - name: Decide what is being released
+        id: version
+        run: |
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::a release is cut from main, not from $GITHUB_REF_NAME"
+            exit 1
+          fi
+          version="$(uv version --short)"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::v$version is already released; raise the version in pyproject.toml first"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check formatting and style
+        run: just lint
+
+      - name: Check types
+        run: just type
+
+      - name: Run tests
+        run: just test
+
+  release:
+    name: Build and publish the release
+    needs: [checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write          # create the tag and the release
+      id-token: write          # sign the build provenance
+      attestations: write
+      artifact-metadata: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      UV_LOCKED: '1'
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Build the distributions
+        run: uv build
+
+      - name: Attest what was built
+        uses: actions/attest-build-provenance@v4
+        with:
+          # `uv build` also writes dist/.gitignore; sign only the packages.
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+      - name: Publish the release
+        run: gh release create "v${{ needs.checks.outputs.version }}" dist/*.whl dist/*.tar.gz --generate-notes

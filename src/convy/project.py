@@ -1,0 +1,106 @@
+"""A user's project: the files convy loads from it, and the template `convy init` copies."""
+
+import hashlib
+import importlib.util
+import sys
+from importlib.resources import files
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from types import ModuleType
+
+from msgspec import Struct
+
+from convy.agent import Agent
+from convy.model import Models
+from convy.report import Report, Runs
+from convy.scenario import Scenarios
+
+# Files in the template whose names would otherwise be hidden from the package.
+RENAMED = {"env.example": ".env.example", "gitignore": ".gitignore"}
+COMPILED = "__pycache__"  # pip compiles the installed template; a project does not need it
+
+
+class ProjectAgent(Struct, frozen=True):
+    """An agent loaded from `agents/<name>.py`, with the build label from its `version`."""
+
+    name: str
+    agent: Agent
+    version: str
+
+
+class Project(Struct, frozen=True):
+    """A directory with `models.py`, `agents/`, `scenarios/` and `results/`."""
+
+    directory: Path
+
+    def models(self) -> Models:
+        found = getattr(self.module(self.directory / "models.py"), "models", None)
+        if not isinstance(found, Models):
+            raise ValueError("models.py: expected `models = Models(user=…, judge=…)`")
+        return found
+
+    def agent(self, name: str) -> ProjectAgent:
+        path = self.directory / "agents" / f"{name}.py"
+        if not path.is_file():
+            raise FileNotFoundError(f"no agent {name!r}: there is no {path}")
+        module = self.module(path)
+        expected = f"{path}: expected an object `agent` with a `conversation` method"
+        try:
+            agent = module.agent
+        except AttributeError:
+            raise ValueError(expected) from None
+        if not callable(getattr(agent, "conversation", None)):
+            raise ValueError(expected)
+        version = getattr(module, "version", "")
+        if not isinstance(version, str):
+            raise ValueError(f"{path}: `version` must be a string")
+        return ProjectAgent(name, agent, version)
+
+    def scenarios(self) -> Scenarios:
+        return Scenarios(self.directory / "scenarios")
+
+    def runs(self) -> Path:
+        return self.directory / "results" / "runs"
+
+    def page(self) -> Path:
+        return self.directory / "results" / "index.html"
+
+    def report(self) -> tuple[Path, ...]:
+        """Write the page from every journal; return the journals that could not be read whole,
+        relative to `runs()`."""
+        runs = Runs(self.runs())
+        self.page().parent.mkdir(parents=True, exist_ok=True)
+        self.page().write_text(Report(runs).html(), encoding="utf-8")
+        return runs.broken()
+
+    def init(self) -> tuple[Path, ...]:
+        """Copy the template here, never over an existing file; return the files created."""
+        return tuple(self.copied(files("convy").joinpath("template"), self.directory))
+
+    def copied(self, source: Traversable, target: Path) -> list[Path]:
+        created = []
+        for item in source.iterdir():
+            if item.name == COMPILED:
+                continue
+            path = target / RENAMED.get(item.name, item.name)
+            if item.is_dir():
+                created += self.copied(item, path)
+            elif not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(item.read_bytes())
+                created.append(path)
+        return created
+
+    def module(self, path: Path) -> ModuleType:
+        """Run a project file as a module, under a name unique to its path."""
+        name = "convy_project_" + hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:16]
+        spec = importlib.util.spec_from_file_location(name, path)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"cannot load {path}")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module  # pydantic resolves the module's classes through sys.modules
+        folder = str(self.directory.resolve())
+        if folder not in sys.path:  # project files import each other, as in a script
+            sys.path.insert(0, folder)
+        spec.loader.exec_module(module)
+        return module

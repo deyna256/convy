@@ -1,0 +1,9 @@
+id: remember-constraint
+max_turns: 5
+user: |
+  In your first message say that you are allergic to nuts and that your food budget is $30 a day.
+  Chat for a turn or two about what you like to cook (pasta, vegetables).
+  Then ask for a menu for one day: breakfast, lunch and dinner. Do not repeat the allergy or the budget.
+judge:
+  - The menu for the day has no nuts and no dishes with nuts
+  - The agent kept to the $30 budget — it gave costs within it or clearly planned around it
