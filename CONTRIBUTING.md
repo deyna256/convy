@@ -103,6 +103,9 @@ The [CI workflow](.github/workflows/ci.yml) runs `just lint` and `just type` onc
 Python 3.12, 3.13 and 3.14, for pull requests to `main` and pushes to `main`. It fails when `uv.lock`
 is out of date.
 
+[Dependabot](.github/dependabot.yml) opens a pull request once a month with updated dependencies in
+`uv.lock`, and another with new versions of the GitHub Actions; CI checks them like any other.
+
 ## Tests
 
 - Tests live in `tests/` and must not call a real model or a real agent: use the fakes in
