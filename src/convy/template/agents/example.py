@@ -3,9 +3,9 @@
 Copy this file for your agent and change the address, the body and the paths.
 """
 
-from gateway import gateway
-
 from convy import JsonAgent
+
+from gateway import gateway
 
 agent = JsonAgent(
     gateway,

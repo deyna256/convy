@@ -212,6 +212,11 @@ Some agents report only the tokens spent so far, not those of one answer. Read t
 and after the turn; the difference is the turn's tokens:
 
 ```python
+import httpx2
+
+from convy import Answer, Message, Usage
+
+
 class SupportChat:
     def __init__(self, http: httpx2.AsyncClient):
         self.http = http

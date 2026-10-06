@@ -143,7 +143,7 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 const kind = passed => passed == null ? "none" : passed ? "pass" : "fail";
-const mark = passed => el("span", {className: `mark ${kind(passed)}`}, kind(passed) === "fail" ? "✕" : "");
+const mark = (passed, title) => el("span", {className: `mark ${kind(passed)}`, title: title ?? VERDICTS[kind(passed)]}, kind(passed) === "fail" ? "✕" : "");
 const version = g => g.version && g.version !== g.agent ? g.version : null;
 const tokens = n => n == null ? "—" : n < 1000 ? String(Math.round(n))
   : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(n < 1e7 ? 2 : 1)}M`;
@@ -153,7 +153,9 @@ const percent = r => `${Math.round(r * 100)}%`;
 const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const key = (scenario, group) => `${scenario}|${group}`;
-const attemptsOf = group => DATA.scenarios.flatMap(s => DATA.cells[key(s, group.id)]?.attempts ?? []);
+// The attempts the summary counts: those of complete runs, as in its pass rate.
+const counted = group => DATA.scenarios.flatMap(scenario => (DATA.cells[key(scenario, group.id)]?.attempts ?? [])
+  .filter(a => a.complete).map(a => ({...a, scenario})));
 
 function renderContext() {
   const attempts = Object.values(DATA.cells).reduce((sum, cell) => sum + cell.attempts.length, 0);
@@ -192,7 +194,8 @@ function renderAgents() {
     el("th", {className: "n"}, "Time per scenario"), el("th", {className: "n"}, "Answer time"),
     el("th", {}, "Problems")));
   const rows = DATA.groups.map(g => {
-    const attempts = attemptsOf(g);
+    const attempts = counted(g);
+    const judged = attempts.filter(a => a.passed != null);
     const range = g.passed && g.runs > 1 && g.passed.min !== g.passed.max
       ? `${percent(g.passed.min)}–${percent(g.passed.max)} across runs` : null;
     const problems = [
@@ -205,8 +208,10 @@ function renderAgents() {
       el("td", {className: cls(g.passed?.mean, top.passed, "")},
         el("span", {className: "rate"}, g.passed ? percent(g.passed.mean) : "—"),
         el("span", {className: "sub"}, range ?? (g.passed ? null : g.stopped === g.runs ? "no complete run" : "no verdicts"))),
-      el("td", {}, el("span", {className: "marks", title: attempts.map(a => `${VERDICTS[kind(a.passed)]}`).join(", ")}, ...attempts.map(a => mark(a.passed))),
-        el("span", {className: "sub"}, `${attempts.filter(a => a.passed).length} of ${attempts.filter(a => a.passed != null).length} judged`)),
+      attempts.length ? el("td", {},
+        el("span", {className: "marks"}, ...attempts.map(a => mark(a.passed, `${a.scenario} #${a.attempt}: ${VERDICTS[kind(a.passed)]}`))),
+        el("span", {className: "sub"}, `${judged.filter(a => a.passed).length} passed of ${judged.length} judged`))
+        : el("td", {className: "muted"}, "—"),
       el("td", {className: cls(g.input, top.input), title: `input ${exact(g.input)}, output ${exact(g.output)}`},
         g.input == null ? el("span", {className: "muted"}, "not reported") : tokens(g.input),
         g.input == null ? null : el("span", {className: "sub"}, `in · ${tokens(g.output)} out`)),
@@ -242,7 +247,7 @@ function renderMatrix() {
     const button = el("button", {
       className: "cell", type: "button", "aria-pressed": String(pick === selected),
       "aria-label": `${g.agent} ${version(g) ?? ""} on ${scenario}: ${cell.passed} of ${cell.judged} judged attempts passed`,
-    }, el("span", {className: "marks"}, ...cell.attempts.map(a => mark(a.passed))),
+    }, el("span", {className: "marks"}, ...cell.attempts.map(a => mark(a.passed, `attempt ${a.attempt}: ${VERDICTS[kind(a.passed)]}`))),
       el("span", {className: "sub"}, cell.input == null ? seconds(cell.seconds) : `${seconds(cell.seconds)} · ${tokens(cell.input)} tokens`));
     button.addEventListener("click", () => select(pick));
     return el("td", {}, button);
@@ -250,8 +255,9 @@ function renderMatrix() {
   const section = (title, scenarios) => scenarios.length ? [
     el("tr", {className: "group-row"}, el("th", {colSpan: DATA.groups.length + 1}, `${title} · ${scenarios.length}`)),
     ...scenarios.map(row)] : [];
+  const differing = shown.filter(differs);
   const body = DATA.groups.length > 1
-    ? [...section("Results differ", shown.filter(differs)), ...section("Same result for every agent", shown.filter(s => !differs(s)))]
+    ? [...section("Results differ", differing), ...section("Same result for every agent", shown.filter(s => !differing.includes(s)))]
     : shown.map(row);
   table.replaceChildren(head, el("tbody", {}, ...(body.length ? body
     : [el("tr", {}, el("td", {className: "muted", colSpan: DATA.groups.length + 1}, `No scenario matches ${mask}`))])));

@@ -40,7 +40,8 @@ All code is in `src/convy/`.
 of `models.py` runs that many times.
 
 A user's project holds the files convy loads: `models.py`, `agents/*.py`, `scenarios/*.yaml`, `.env`,
-and `results/`, which convy writes.
+and `results/`, which convy writes. Other modules in it, such as the template's `gateway.py`, are what
+those files import.
 
 The public API is `convy.__all__` and the module `convy.fakes`; with them a run can be made from
 Python as well as from the command. Everything else may change without notice.
