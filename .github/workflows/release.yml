@@ -70,9 +70,12 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       UV_LOCKED: '1'
+      VERSION: ${{ needs.checks.outputs.version }}
     steps:
       - name: Check out code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false  # gh takes GH_TOKEN; git needs no token here
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -92,4 +95,4 @@ jobs:
             dist/*.tar.gz
 
       - name: Publish the release
-        run: gh release create "v${{ needs.checks.outputs.version }}" dist/*.whl dist/*.tar.gz --generate-notes
+        run: gh release create "v$VERSION" dist/*.whl dist/*.tar.gz --generate-notes
