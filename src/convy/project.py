@@ -11,6 +11,7 @@ from types import ModuleType
 from msgspec import Struct
 
 from convy.agent import Agent
+from convy.bench import Files
 from convy.model import Models
 from convy.report import Report, Runs
 from convy.scenario import Scenarios
@@ -59,19 +60,34 @@ class Project(Struct, frozen=True):
     def scenarios(self) -> Scenarios:
         return Scenarios(self.directory / "scenarios")
 
-    def runs(self) -> Path:
-        return self.directory / "results" / "runs"
+    def results(self) -> Path:
+        return self.directory / "results"
 
     def page(self) -> Path:
-        return self.directory / "results" / "index.html"
+        return self.results() / "index.html"
 
     def report(self) -> tuple[Path, ...]:
-        """Write the page from every journal; return the journals that could not be read whole,
-        relative to `runs()`."""
-        runs = Runs(self.runs())
+        """Write the page from every run; return the runs that could not be read whole, relative
+        to `results()`."""
+        runs = Runs(self.results())
         self.page().parent.mkdir(parents=True, exist_ok=True)
         self.page().write_text(Report(runs).html(), encoding="utf-8")
         return runs.broken()
+
+    def old_journals(self) -> bool:
+        """Whether `results/runs/` holds journals of convy 0.1, which this version does not read.
+        An agent named `runs` has a folder of that name too, so the check looks for the files."""
+        return any(self.results().glob("runs/*/*.jsonl"))
+
+    def files(self, agent: str) -> Files:
+        """The sha256 of the agent's file and `models.py`, to tell whether they changed."""
+        return Files(
+            agent=self.fingerprint(self.directory / "agents" / f"{agent}.py"),
+            models=self.fingerprint(self.directory / "models.py"),
+        )
+
+    def fingerprint(self, path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def init(self) -> tuple[Path, ...]:
         """Copy the template here, never over an existing file; return the files created."""

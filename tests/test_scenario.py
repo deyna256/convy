@@ -8,7 +8,7 @@ import pytest
 from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, Usage
-from convy.bench import JsonlJournal, RunHeader
+from convy.bench import RunJournal, RunSpec
 from convy.dialog import Claim, Failed, NoVerdict, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
@@ -33,7 +33,7 @@ async def test_turns_run_out():
     assert outcome.verdict == Verdict((Claim(True, "fine"),))
     assert [t.answer.usage for t in outcome.transcript.turns] == [Usage(3, 4)] * 2
     assert all(t.seconds >= 0 for t in outcome.transcript.turns)
-    assert (outcome.scenario, outcome.attempt, outcome.claims) == ("greet", 1, ("greets",))
+    assert (outcome.scenario, outcome.attempt) == ("greet", 1)
 
 
 async def test_the_user_finishes():
@@ -127,8 +127,10 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
     used = Models(user=FakeModel("hi", "###STOP###"), judge=judge)
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
-    header = RunHeader("bot", "", "fake", "gpt", 1, 1, datetime(2026, 10, 6, tzinfo=UTC))
-    journal = JsonlJournal(tmp_path, header)
+    started = datetime(2026, 10, 6, tzinfo=UTC)
+    spec = RunSpec("run", "bot", "", "fake", "gpt", 1, 1, 600, (SCENARIO,), started)
+    journal = RunJournal(tmp_path, spec)
+    journal.create()
     journal.record(outcome)
     (run,) = Runs(tmp_path)
     assert run.outcomes == (outcome,)
@@ -210,3 +212,15 @@ def test_matching_keeps_scenarios_by_mask():
     assert [s.id for s in Matching(scenarios, "refund-*")] == ["refund-late"]
     with pytest.raises(ValueError, match="no scenario matches 'nope'"):
         list(Matching(scenarios, "nope"))
+
+
+def test_a_fingerprint_changes_with_what_the_scenario_asks_not_with_its_id():
+    same = Scenario("other-id", 2, "Say hi.", ("greets",))
+    assert SCENARIO.fingerprint() == same.fingerprint()
+    assert len(SCENARIO.fingerprint()) == 8
+    for changed in (
+        Scenario("greet", 3, "Say hi.", ("greets",)),
+        Scenario("greet", 2, "Say hello.", ("greets",)),
+        Scenario("greet", 2, "Say hi.", ("greets", "is brief")),
+    ):
+        assert changed.fingerprint() != SCENARIO.fingerprint()

@@ -1,12 +1,15 @@
 import json
+import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from convy.agent import Answer, Message, NoUsage, Usage
-from convy.bench import JsonlJournal, RunHeader
+from convy.bench import Finished, RunJournal, RunSpec
 from convy.dialog import Claim, NoVerdict, Transcript, Turn, Verdict
 from convy.report import Report, Runs
-from convy.scenario import Outcome
+from convy.scenario import Outcome, Scenario
 
 PASSED = Verdict((Claim(True, ""),))
 FAILED = Verdict((Claim(False, ""),))
@@ -17,40 +20,108 @@ def outcome(
 ) -> Outcome:
     turn = Turn(Message("hi"), Answer(text, Usage(tokens, tokens)), 2.0)
     stop = "model_failure" if isinstance(verdict, NoVerdict) else "max_turns"
-    return Outcome(scenario, 1, ("greets",), Transcript((turn,)), verdict, stop)
+    return Outcome(scenario, 1, Transcript((turn,)), verdict, stop)
 
 
-def journal(directory, agent: str, version: str, planned: int, *outcomes: Outcome):
-    started = datetime.now(UTC)  # each run its own file
-    header = RunHeader(agent, version, "fake", "fake", 1, planned, started)
+def journal(
+    directory: Path,
+    agent: str,
+    version: str,
+    planned: int,
+    *outcomes: Outcome,
+    started: datetime | None = None,
+    models: tuple[str, str] = ("fake", "fake"),
+    id: str = "",
+) -> RunJournal:
+    """A run of `planned` scenarios, `a`, `b`, …, one attempt each, holding `outcomes`."""
+    started = started or datetime.now(UTC)
+    scenarios = tuple(Scenario(chr(97 + i), 1, "Say hi.", ("greets",)) for i in range(planned))
+    spec = RunSpec(
+        id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
+        agent,
+        version,
+        *models,
+        1,
+        4,
+        600,
+        scenarios,
+        started,
+    )
+    written = RunJournal(directory, spec)
+    written.create()
     for item in outcomes:
-        JsonlJournal(directory, header).record(item)
+        written.record(item)
+    return written
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
     written = outcome("a", NoVerdict("judge down"))
-    journal(tmp_path, "bot", "1", 1, written)
+    run_journal = journal(tmp_path, "bot", "1", 1, written)
+    run_journal.write(Finished(datetime.now(UTC)))
     (run,) = Runs(tmp_path)
     assert run.outcomes == (written,)
+    assert run.spec == run_journal.spec
+    assert isinstance(run.status, Finished)
     assert run.complete()
+    assert run.done() == {("a", 1)}
     assert Runs(tmp_path).broken() == ()
 
 
-def test_runs_skip_and_list_a_broken_journal(tmp_path):
+def test_runs_skip_and_list_a_broken_run(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    (tmp_path / "bot" / "broken.jsonl").write_text("not json\n")
+    (tmp_path / "bot" / "broken").mkdir()
+    (tmp_path / "bot" / "broken" / "run.json").write_text("not json\n")
     assert len(list(Runs(tmp_path))) == 1
-    assert Runs(tmp_path).broken() == (Path("bot/broken.jsonl"),)
+    assert Runs(tmp_path).broken() == (Path("bot/broken"),)
 
 
 def test_runs_keep_the_lines_they_can_read(tmp_path):
     good = outcome("a", PASSED)
-    journal(tmp_path, "bot", "1", 2, good, outcome("b", PASSED))
-    (path,) = (tmp_path / "bot").iterdir()
-    path.write_bytes(path.read_bytes()[:-20])  # the last line cut short, as by a crash
+    written = journal(tmp_path, "bot", "1", 2, good, outcome("b", PASSED))
+    attempts = written.folder() / "attempts.jsonl"
+    attempts.write_bytes(attempts.read_bytes()[:-20])  # the last line cut short, as by a crash
     (run,) = Runs(tmp_path)
     assert run.outcomes == (good,)
-    assert Runs(tmp_path).broken() == (run.path,) == (path.relative_to(tmp_path),)
+    assert (run.unreadable, run.complete()) == (1, False)
+    assert Runs(tmp_path).broken() == (run.path,) == (written.folder().relative_to(tmp_path),)
+
+
+def test_runs_read_an_attempt_written_twice_once(tmp_path):
+    first = outcome("a", PASSED)
+    journal(tmp_path, "bot", "1", 1, first, outcome("a", FAILED))
+    (run,) = Runs(tmp_path)
+    assert run.outcomes == (first,)
+
+
+def test_a_run_without_attempts_is_read(tmp_path):
+    journal(tmp_path, "bot", "1", 2)
+    (run,) = Runs(tmp_path)
+    assert (run.outcomes, run.complete()) == ((), False)
+
+
+def test_old_journals_are_not_runs(tmp_path):
+    (tmp_path / "runs" / "bot").mkdir(parents=True)
+    (tmp_path / "runs" / "bot" / "2026-10-06T14-05-00.000000.jsonl").write_text("{}\n")
+    assert list(Runs(tmp_path)) == []
+    assert Runs(tmp_path).broken() == ()
+
+
+def test_a_run_is_found_by_its_id_or_its_random_part(tmp_path):
+    written = journal(tmp_path, "bot", "1", 1)
+    other = journal(tmp_path, "other", "1", 1)
+    spec = written.spec
+    assert Runs(tmp_path).run(spec.id).spec == spec
+    assert Runs(tmp_path).run(spec.id.rpartition("_")[2]).spec == spec
+    assert Runs(tmp_path).run(other.spec.id).spec == other.spec
+
+
+def test_a_run_that_is_not_there_or_not_one_is_an_error(tmp_path):
+    journal(tmp_path, "bot", "1", 1, id="2026-10-06T14-05-00_a3f9")
+    journal(tmp_path, "bot", "1", 1, id="2026-10-07T09-30-00_a3f9")
+    with pytest.raises(ValueError, match="no run 'nope'"):
+        Runs(tmp_path).run("nope")
+    with pytest.raises(ValueError, match="'a3f9' names several runs"):
+        Runs(tmp_path).run("a3f9")
 
 
 def test_page_sums_up_groups_and_cells(tmp_path):
@@ -94,16 +165,15 @@ def test_html_shows_dialogues_as_data_only(tmp_path):
     assert "innerHTML" not in html
 
 
-def test_page_shows_journals_relative_to_the_runs_directory(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    (path,) = (tmp_path / "bot").iterdir()
+def test_page_shows_runs_relative_to_the_results_directory(tmp_path):
+    written = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
     (attempt,) = Report(Runs(tmp_path)).page().cells["a|bot 1"].attempts
-    assert attempt.run == f"bot/{path.name}"
+    assert attempt.run == f"bot/{written.spec.id}"
 
 
 def test_page_shows_unreported_tokens_as_null(tmp_path):
     turn = Turn(Message("hi"), Answer("hello", NoUsage()), 1.0)
-    written = Outcome("a", 1, ("greets",), Transcript((turn,)), PASSED, "max_turns")
+    written = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 1, written)
     page = Report(Runs(tmp_path)).page()
     (attempt,) = page.cells["a|bot 1"].attempts
@@ -126,10 +196,9 @@ def test_an_empty_runs_directory_renders_an_empty_page(tmp_path):
 
 
 def test_a_group_names_its_agent_version_models_and_latest_run(tmp_path):
-    early = RunHeader("bot", "1", "user-a", "judge-a", 1, 1, datetime(2026, 10, 5, tzinfo=UTC))
-    late = RunHeader("bot", "1", "user-b", "judge-b", 1, 1, datetime(2026, 10, 6, tzinfo=UTC))
-    for header in (early, late):
-        JsonlJournal(tmp_path, header).record(outcome("a", PASSED))
+    for day, models in ((5, ("user-a", "judge-a")), (6, ("user-b", "judge-b"))):
+        started = datetime(2026, 10, day, tzinfo=UTC)
+        journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=started, models=models)
     (group,) = Report(Runs(tmp_path)).page().groups
     assert (group.agent, group.version) == ("bot", "1")
     assert (group.user, group.judge) == ("user-b", "judge-b")  # the latest run's models

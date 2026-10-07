@@ -1,10 +1,11 @@
+import asyncio
 from datetime import UTC, datetime
 
 import msgspec
 import pytest
 
 from convy.agent import AgentFailure
-from convy.bench import Bench, JsonlJournal, RunHeader
+from convy.bench import Bench, Finished, Interrupted, RunFile, RunJournal, Running, RunSpec
 from convy.dialog import Claim, NoVerdict, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
@@ -12,7 +13,10 @@ from convy.scenario import Outcome, Scenario
 
 MODELS = Models(user=FakeModel("hi"), judge=FakeModel('{"claims": [{"pass": true}]}'))
 SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
-HEADER = RunHeader("bot", "1", "fake", "fake", 1, 2, datetime(2026, 10, 6, 14, 5, tzinfo=UTC))
+STARTED = datetime(2026, 10, 6, 14, 5, tzinfo=UTC)
+SPEC = RunSpec(
+    "2026-10-06T14-05-00_a3f9", "bot", "1", "fake", "fake", 2, 4, 600, SCENARIOS, STARTED
+)
 
 
 async def test_every_scenario_is_played_attempts_times():
@@ -52,19 +56,94 @@ def test_a_bench_rejects_values_it_cannot_run(values: dict[str, int], error: str
         Bench(SCENARIOS, MODELS, **values)
 
 
-def outcome(verdict: Verdict | NoVerdict) -> Outcome:
-    return Outcome("a", 1, ("greets",), Transcript(), verdict, "max_turns")
+def outcome(verdict: Verdict | NoVerdict, scenario: str = "a") -> Outcome:
+    return Outcome(scenario, 1, Transcript(), verdict, "max_turns")
 
 
-def test_jsonl_journal_writes_the_header_once_then_a_line_per_outcome(tmp_path):
-    journal = JsonlJournal(tmp_path, HEADER)
-    assert not journal.path().exists()
+def status(journal: RunJournal) -> object:
+    return msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile).status
+
+
+def lines(journal: RunJournal) -> list[bytes]:
+    return (journal.folder() / "attempts.jsonl").read_bytes().splitlines()
+
+
+async def test_only_the_attempts_not_done_are_played():
+    outcomes = await Bench(SCENARIOS, MODELS, attempts=2).run(
+        FakeAgent("hello"), MemoryJournal(), done=frozenset({("a", 1), ("b", 2)})
+    )
+    assert [(o.scenario, o.attempt) for o in outcomes] == [("a", 2), ("b", 1)]
+
+
+def test_a_spec_lists_every_attempt_of_the_run():
+    assert SPEC.pairs() == (("a", 1), ("a", 2), ("b", 1), ("b", 2))
+
+
+def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
+    file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
+    assert file == RunFile(2, SPEC, Running())
+    assert not (journal.folder() / "run.json.tmp").exists()
+    with pytest.raises(FileExistsError):
+        journal.create()
+
+
+def test_attempts_are_appended_a_line_each(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
     journal.record(outcome(Verdict((Claim(True, "fine"),))))
     journal.record(outcome(NoVerdict("judge down")))
-    assert journal.path() == tmp_path / "bot" / "2026-10-06T14-05-00.000000.jsonl"
-    header, *lines = journal.path().read_bytes().splitlines()
-    assert msgspec.json.decode(header, type=RunHeader) == HEADER
-    assert [msgspec.json.decode(line, type=Outcome).verdict for line in lines] == [
+    assert [msgspec.json.decode(line, type=Outcome).verdict for line in lines(journal)] == [
         Verdict((Claim(True, "fine"),)),
         NoVerdict("judge down"),
     ]
+
+
+def test_an_attempt_after_a_line_cut_short_starts_on_a_new_line(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    (journal.folder() / "attempts.jsonl").write_bytes(b'{"scenario": "a", "att')
+    journal.record(outcome(NoVerdict("down")))
+    cut, written = lines(journal)
+    assert cut == b'{"scenario": "a", "att'
+    assert msgspec.json.decode(written, type=Outcome) == outcome(NoVerdict("down"))
+
+
+async def test_a_played_run_is_finished(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    outcomes = await journal.play(Bench(SCENARIOS, MODELS, 2), FakeAgent("hello"), journal)
+    assert len(outcomes) == len(lines(journal)) == 4
+    assert isinstance(status(journal), Finished)
+
+
+class Broken:
+    """A journal that fails, as a bug in convy would."""
+
+    def record(self, outcome: Outcome) -> None:
+        raise RuntimeError("disk full")
+
+
+async def test_a_run_stopped_by_an_error_is_interrupted_and_keeps_its_attempts(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    journal.record(outcome(NoVerdict("down")))
+    with pytest.raises(ExceptionGroup):
+        await journal.play(Bench(SCENARIOS, MODELS), FakeAgent("hello"), Broken())
+    assert isinstance(status(journal), Interrupted)
+    assert len(lines(journal)) == 1
+
+
+async def test_a_cancelled_run_is_interrupted(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    playing = asyncio.create_task(
+        journal.play(Bench(SCENARIOS, MODELS), FakeAgent("hello", delay=10), journal)
+    )
+    await asyncio.sleep(0.01)
+    playing.cancel()  # what asyncio.run does on Ctrl+C
+    with pytest.raises(asyncio.CancelledError):
+        await playing
+    assert isinstance(status(journal), Interrupted)

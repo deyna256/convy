@@ -9,7 +9,7 @@ import msgspec
 from msgspec import Struct
 
 from convy.agent import NoUsage, Usage
-from convy.bench import RunHeader
+from convy.bench import Pair, RunFile, RunSpec, Status
 from convy.dialog import Failed, NoVerdict, Turn, Verdict
 from convy.scenario import Outcome, Stop
 
@@ -17,62 +17,80 @@ UNREADABLE = (msgspec.DecodeError, msgspec.ValidationError, ValueError, OSError)
 
 
 class Run(Struct, frozen=True):
-    """A journal read back: where it is under the runs directory, its header, the outcomes it
-    could read, and how many lines it could not."""
+    """A run's folder read back: where it is under the results directory, its specification and
+    status, the outcomes it could read, and how many lines it could not."""
 
     path: Path
-    header: RunHeader
+    spec: RunSpec
+    status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
 
-    def group(self) -> str:
-        """Runs of the same agent and version form a group in the report."""
-        return f"{self.header.agent} {self.header.version}".strip()
+    def done(self) -> frozenset[Pair]:
+        """The attempts the run has recorded."""
+        return frozenset((outcome.scenario, outcome.attempt) for outcome in self.outcomes)
 
     def complete(self) -> bool:
-        return len(self.outcomes) >= self.header.planned
+        return self.done() >= set(self.spec.pairs())
 
 
 class Runs(Struct, frozen=True):
-    """Every journal under a directory. Iterating skips a journal whose header cannot be read and
-    the outcome lines that cannot; `broken` lists the journals with either. Paths in both are
-    relative to the directory."""
+    """Every run under a results directory, `<agent>/<id>/`. Iterating skips a run whose
+    `run.json` cannot be read and the attempt lines that cannot; `broken` lists the runs with
+    either. Paths in both are relative to the directory."""
 
     directory: Path
 
     def __iter__(self) -> Iterator[Run]:
-        for path in self.paths():
+        for folder in self.folders():
             try:
-                yield self.read(path)
+                yield self.read(folder)
             except UNREADABLE:
                 continue
 
     def broken(self) -> tuple[Path, ...]:
         found = []
-        for path in self.paths():
+        for folder in self.folders():
             try:
-                if self.read(path).unreadable:
-                    found.append(path.relative_to(self.directory))
+                if self.read(folder).unreadable:
+                    found.append(folder.relative_to(self.directory))
             except UNREADABLE:
-                found.append(path.relative_to(self.directory))
+                found.append(folder.relative_to(self.directory))
         return tuple(found)
 
-    def paths(self) -> list[Path]:
-        return sorted(self.directory.rglob("*.jsonl"))
+    def run(self, wanted: str) -> Run:
+        """The run whose id is `wanted`, or ends with `_<wanted>`: its random part."""
+        found = [run for run in self if wanted in (run.spec.id, run.spec.id.rpartition("_")[2])]
+        if not found:
+            raise ValueError(f"no run {wanted!r} in {self.directory}")
+        if len(found) > 1:
+            names = ", ".join(run.path.as_posix() for run in found)
+            raise ValueError(f"{wanted!r} names several runs: {names}; give the whole id")
+        return found[0]
 
-    def read(self, path: Path) -> Run:
-        header, *lines = path.read_bytes().splitlines() or [b""]
-        outcomes = []
+    def folders(self) -> list[Path]:
+        return sorted(path.parent for path in self.directory.glob("*/*/run.json"))
+
+    def read(self, folder: Path) -> Run:
+        file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+        attempts = folder / "attempts.jsonl"
+        lines = attempts.read_bytes().splitlines() if attempts.exists() else []
+        outcomes: dict[Pair, Outcome] = {}
+        unreadable = 0
         for line in lines:
             try:
-                outcomes.append(msgspec.json.decode(line, type=Outcome))
+                outcome = msgspec.json.decode(line, type=Outcome)
             except UNREADABLE:  # a line cut short by a crash, say
+                unreadable += 1
                 continue
+            # two processes resumed one run: the first line of an attempt counts
+            outcomes.setdefault((outcome.scenario, outcome.attempt), outcome)
         return Run(
-            path.relative_to(self.directory),
-            msgspec.json.decode(header, type=RunHeader),
-            tuple(outcomes),
-            len(lines) - len(outcomes),
+            folder.relative_to(self.directory),
+            file.spec,
+            file.status,
+            tuple(outcomes.values()),
+            unreadable,
         )
 
 
@@ -152,17 +170,17 @@ class Report(Struct, frozen=True):
 
     def page(self) -> Page:
         runs = list(self.runs)
-        names = sorted({run.group() for run in runs})
+        names = sorted({self.named(run) for run in runs})
         cells: dict[str, list[AttemptView]] = {}
         for run in runs:
             for outcome in run.outcomes:
-                key = f"{outcome.scenario}|{run.group()}"
+                key = f"{outcome.scenario}|{self.named(run)}"
                 cells.setdefault(key, []).append(self.attempt(run, outcome))
         views = {key: self.cell(attempts) for key, attempts in cells.items()}
         scenarios = {outcome.scenario for run in runs for outcome in run.outcomes}
         return Page(
             groups=tuple(
-                self.group(name, [run for run in runs if run.group() == name]) for name in names
+                self.group(name, [run for run in runs if self.named(run) == name]) for name in names
             ),
             scenarios=tuple(
                 sorted(scenarios, key=lambda s: (not self.differs(s, names, views), s))
@@ -185,7 +203,7 @@ class Report(Struct, frozen=True):
             run=run.path.as_posix(),
             complete=run.complete(),
             attempt=outcome.attempt,
-            claims=outcome.claims,
+            claims=next(s.claims for s in run.spec.scenarios if s.id == outcome.scenario),
             stop=outcome.stop,
             passed=passed,
             reason=reason,
@@ -218,7 +236,7 @@ class Report(Struct, frozen=True):
         attempts = [attempt for run in complete for attempt in run]
         rates = [rate for run in complete if (rate := self.rate(run)) is not None]
         turn_seconds = [turn.seconds for attempt in attempts for turn in attempt.turns]
-        latest = max((run.header for run in runs), key=lambda header: header.started)
+        latest = max((run.spec for run in runs), key=lambda spec: spec.started)
         return GroupView(
             id=name,
             agent=latest.agent,
@@ -237,6 +255,10 @@ class Report(Struct, frozen=True):
             agent_failures=sum(a.stop == "agent_failure" for a in attempts),
             model_failures=sum(a.stop == "model_failure" for a in attempts),
         )
+
+    def named(self, run: Run) -> str:
+        """Runs of the same agent and version form a group in the report."""
+        return f"{run.spec.agent} {run.spec.version}".strip()
 
     def rate(self, attempts: list[AttemptView]) -> float | None:
         """The share passed among a run's attempts that have a verdict."""

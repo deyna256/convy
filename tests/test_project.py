@@ -33,11 +33,29 @@ def test_init_skips_compiled_files(tmp_path: Path):
     assert created == [tmp_path / "new" / "agents" / "echo.py"]
 
 
-def test_report_writes_the_page_and_returns_broken_journals(tmp_path: Path):
-    write(tmp_path / "results" / "runs" / "bot" / "broken.jsonl", "oops\n")
+def test_report_writes_the_page_and_returns_broken_runs(tmp_path: Path):
+    write(tmp_path / "results" / "bot" / "broken" / "run.json", "oops\n")
     project = Project(tmp_path)
-    assert project.report() == (Path("bot/broken.jsonl"),)
+    assert project.report() == (Path("bot/broken"),)
     assert project.page().is_file()
+
+
+def test_old_journals_are_found_but_an_agent_named_runs_is_not_one(tmp_path: Path):
+    project = Project(tmp_path)
+    write(tmp_path / "results" / "runs" / "2026-10-06T14-05-00_a3f9" / "run.json", "{}")
+    assert not project.old_journals()
+    write(tmp_path / "results" / "runs" / "bot" / "2026-10-06T14-05-00.000000.jsonl", "{}")
+    assert project.old_journals()
+
+
+def test_files_are_fingerprinted_to_tell_a_change(tmp_path: Path):
+    write(tmp_path / "agents" / "bot.py", "agent = 1\n")
+    write(tmp_path / "models.py", "models = 1\n")
+    before = Project(tmp_path).files("bot")
+    assert len(before.agent) == len(before.models) == 64
+    write(tmp_path / "agents" / "bot.py", "agent = 2\n")
+    after = Project(tmp_path).files("bot")
+    assert (after.agent != before.agent, after.models == before.models) == (True, True)
 
 
 def test_agent_is_loaded_with_its_version(tmp_path: Path):

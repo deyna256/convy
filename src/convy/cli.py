@@ -1,8 +1,10 @@
 """The `convy` command: `init`, `run` and `report`. It prints, and it picks the exit code."""
 
 import asyncio
+import secrets
 import sys
 from datetime import datetime
+from importlib.metadata import version
 from pathlib import Path
 
 from msgspec import Struct
@@ -16,7 +18,7 @@ from pydantic_settings import (
 )
 
 from convy.agent import NoUsage, TimeLimited, Usage
-from convy.bench import Bench, Journal, JsonlJournal, RunHeader
+from convy.bench import Bench, Journal, RunJournal, RunSpec
 from convy.dialog import Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
@@ -62,14 +64,20 @@ class Invalid(Struct, frozen=True):
 
 
 class Rebuilt(Struct, frozen=True):
-    """A project's report, written again from its journals, as the command shows it."""
+    """A project's report, written again from its runs, as the command shows it."""
 
     project: Project
 
     def show(self) -> None:
+        if self.project.old_journals():
+            print(
+                f"{self.project.results() / 'runs'} holds journals of convy 0.1, which this "
+                "version does not read; run the agents again",
+                file=sys.stderr,
+            )
         for path in self.project.report():
             print(
-                f"skipped unreadable lines or a whole journal: {self.project.runs() / path}",
+                f"skipped unreadable lines or a whole run: {self.project.results() / path}",
                 file=sys.stderr,
             )
         print(f"report: {self.project.page()}")
@@ -139,17 +147,28 @@ class RunCommand(BaseModel):
             (outcome,) = await bench.run(agent, MemoryJournal())
             self.smoked(outcome)
             return (outcome,)
-        header = RunHeader(
+        started = datetime.now().astimezone()
+        spec = RunSpec(
+            id=f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
             agent=loaded.name,
             version=loaded.version,
             user=bench.models.user.name,
             judge=bench.models.judge.name,
-            attempts=bench.attempts,
-            planned=bench.planned(),
-            started=datetime.now().astimezone(),
+            k=bench.attempts,
+            parallel=bench.parallel,
+            turn_timeout=self.turn_timeout,
+            scenarios=bench.scenarios,
+            started=started,
+            convy=version("convy"),
+            files=project.files(loaded.name),
         )
-        print(f"{loaded.name}: {len(bench.scenarios)} scenarios, {bench.attempts} attempts each")
-        return await bench.run(agent, Printed(JsonlJournal(project.runs(), header)))
+        journal = RunJournal(project.results(), spec)
+        journal.create()
+        print(
+            f"{loaded.name}: run {spec.id}, {len(bench.scenarios)} scenarios, "
+            f"{bench.attempts} attempts each"
+        )
+        return await journal.play(bench, agent, Printed(journal))
 
     def smoked(self, outcome: Outcome) -> None:
         for turn in outcome.transcript.turns:

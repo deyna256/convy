@@ -6,8 +6,9 @@ import msgspec
 import pytest
 import time_machine
 
-from convy.bench import RunHeader
+from convy.bench import Finished, RunFile
 from convy.cli import main
+from convy.project import Project
 from convy.scenario import Outcome
 
 # Every scenario of the template has two claims, so the fake judge decides two.
@@ -71,12 +72,18 @@ def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
     with time_machine.travel("2026-10-06 14:05:00+00:00", tick=False):
         assert convy("run", "echo", "--scenarios", "c*", "-k", "2") == 0
-    (journal,) = (project / "results" / "runs" / "echo").iterdir()
-    assert journal.name.startswith("2026-10-06T")
-    header = msgspec.json.decode(journal.read_bytes().splitlines()[0], type=RunHeader)
-    assert (header.agent, header.attempts, header.planned) == ("echo", 2, 6)
+    (folder,) = (project / "results" / "echo").iterdir()
+    assert folder.name.startswith("2026-10-06T")
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.id == folder.name
+    assert (file.spec.agent, file.spec.k, len(file.spec.pairs())) == ("echo", 2, 6)
+    assert file.spec.files == Project(project).files("echo")
+    assert file.spec.convy
+    assert isinstance(file.status, Finished)
+    assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
     assert "echo" in (project / "results" / "index.html").read_text()
     out = capsys.readouterr().out
+    assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
 
 
@@ -108,10 +115,10 @@ def test_smoke_on_several_agents_greets_each(project: Path, capsys):
 def test_each_agent_gets_models_of_its_own(project: Path):
     (project / "models.py").write_text(FAKE_MODELS)
     assert convy("run", "echo", "echo", "--scenarios", "clarify-*") == 0
-    journals = sorted((project / "results" / "runs" / "echo").iterdir())
-    assert len(journals) == 2
-    for journal in journals:
-        line = journal.read_bytes().splitlines()[1]
+    folders = sorted((project / "results" / "echo").iterdir())
+    assert len(folders) == 2
+    for folder in folders:
+        line = (folder / "attempts.jsonl").read_bytes().splitlines()[0]
         assert len(msgspec.json.decode(line, type=Outcome).transcript.turns) == 1
 
 
@@ -127,21 +134,23 @@ def test_a_missing_setting_does_not_show_the_keys(
     assert "error: GatewayEnv: base_url: Field required" in err
 
 
-def test_a_run_names_broken_journals(project: Path, capsys):
+def test_a_run_names_broken_runs(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
-    (project / "results" / "runs" / "x").mkdir(parents=True)
-    (project / "results" / "runs" / "x" / "broken.jsonl").write_text("oops\n")
+    (project / "results" / "x" / "broken").mkdir(parents=True)
+    (project / "results" / "x" / "broken" / "run.json").write_text("oops\n")
     assert convy("run", "echo", "--scenarios", "clarify-*") == 0
     err = capsys.readouterr().err
-    assert f"skipped unreadable lines or a whole journal: {project / 'results' / 'runs'}" in err
-    assert "broken.jsonl" in err
+    assert f"skipped unreadable lines or a whole run: {project / 'results' / 'x' / 'broken'}" in err
 
 
-def test_report_rebuilds_the_page_and_names_broken_journals(project: Path, capsys):
+def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
     (project / "results" / "runs" / "x").mkdir(parents=True)
-    (project / "results" / "runs" / "x" / "broken.jsonl").write_text("oops\n")
+    (project / "results" / "runs" / "x" / "2026-10-06T14-05-00.000000.jsonl").write_text("{}\n")
     main(["report"])
     assert (project / "results" / "index.html").is_file()
     out, err = capsys.readouterr()
     assert out == f"report: {project / 'results' / 'index.html'}\n"
-    assert "broken.jsonl" in err
+    assert err == (
+        f"{project / 'results' / 'runs'} holds journals of convy 0.1, which this version does "
+        "not read; run the agents again\n"
+    )

@@ -18,11 +18,12 @@ def test_run_from_python_example_runs(tmp_path: Path, monkeypatch: pytest.Monkey
     exec(found[1], {})
     page = (tmp_path / "results" / "index.html").read_text(encoding="utf-8")
     assert '"id":"echo"' in page
-    assert (tmp_path / "results" / "runs" / "echo").is_dir()
+    assert (tmp_path / "results" / "echo" / "first" / "run.json").is_file()
 
 
 def test_running_from_python_is_public_api():
     names = {"Bench", "Scenario", "Scenarios", "Matching", "Outcome", "Verdict", "NoVerdict"}
-    names |= {"Transcript", "Turn", "Journal", "JsonlJournal", "RunHeader", "Runs", "Report"}
+    names |= {"Claim", "Failed", "Transcript", "Turn", "Journal", "RunJournal", "RunSpec"}
+    names |= {"Files", "Running", "Finished", "Interrupted", "Run", "Runs", "Report"}
     assert names <= set(convy.__all__)
     assert all(hasattr(convy, name) for name in convy.__all__)

@@ -10,12 +10,21 @@ from convy.agent import (
     TimeLimited,
     Usage,
 )
-from convy.bench import Bench, Journal, JsonlJournal, RunHeader
+from convy.bench import (
+    Bench,
+    Files,
+    Finished,
+    Interrupted,
+    Journal,
+    RunJournal,
+    Running,
+    RunSpec,
+)
 from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
 from convy.env import Env
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
 from convy.model import Model, ModelFailure, Models, OpenAiModel
-from convy.report import Report, Runs
+from convy.report import Report, Run, Runs
 from convy.scenario import Matching, Outcome, Scenario, Scenarios
 
 __all__ = [
@@ -27,11 +36,13 @@ __all__ = [
     "Conversation",
     "Env",
     "Failed",
+    "Files",
+    "Finished",
     "HttpFailure",
+    "Interrupted",
     "Journal",
     "JsonAgent",
     "JsonEndpoint",
-    "JsonlJournal",
     "Matching",
     "Message",
     "Model",
@@ -42,7 +53,10 @@ __all__ = [
     "OpenAiModel",
     "Outcome",
     "Report",
-    "RunHeader",
+    "Run",
+    "RunJournal",
+    "RunSpec",
+    "Running",
     "Runs",
     "Scenario",
     "Scenarios",

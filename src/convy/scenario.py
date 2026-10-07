@@ -1,5 +1,6 @@
 """Scenarios, and the attempt in which one is played against an agent."""
 
+import hashlib
 import time
 from collections.abc import Iterable, Iterator
 from fnmatch import fnmatch
@@ -27,11 +28,11 @@ type Stop = Literal["user_stop", "max_turns", "agent_failure", "model_failure"]
 
 
 class Outcome(Struct, frozen=True):
-    """The result of one attempt: the dialogue, the verdict, and why the dialogue stopped."""
+    """The result of one attempt: the dialogue, the verdict, and why the dialogue stopped. The
+    claims' texts are the scenario's; a verdict holds the judge's decisions in their order."""
 
     scenario: str
     attempt: int
-    claims: tuple[str, ...]
     transcript: Transcript
     verdict: Verdict | Failed | NoVerdict
     stop: Stop
@@ -51,6 +52,12 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
             raise ValueError(f"max_turns must be at least 1, got {self.max_turns}")
         if not self.claims:
             raise ValueError("judge must list at least one claim")
+
+    def fingerprint(self) -> str:
+        """What the scenario asks, in eight hex digits: runs that played a scenario with the same
+        fingerprint played the same scenario. The id is not part of it."""
+        played = msgspec.json.encode((self.instructions, self.claims, self.max_turns))
+        return hashlib.sha256(played).hexdigest()[:8]
 
     async def outcome(self, agent: Agent, models: Models, attempt: int) -> Outcome:
         """Play the scenario once against the agent."""
@@ -115,7 +122,7 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         verdict: Verdict | Failed | NoVerdict,
         stop: Stop,
     ) -> Outcome:
-        return Outcome(self.id, attempt, self.claims, transcript, verdict, stop)
+        return Outcome(self.id, attempt, transcript, verdict, stop)
 
 
 class TurnFailed(Exception):

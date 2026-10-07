@@ -316,15 +316,15 @@ Tokens and time are the agent's own: the simulated user and the judge are not co
 
 ## Run from Python
 
-Everything the command does is in the library. A run is a `Bench` played against an agent into a
-journal; the report is built from the journals:
+Everything the command does is in the library. A run is a `Bench` played against an agent into the
+run's folder, which a `RunJournal` writes; the report is built from the runs:
 
 ```python
 import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from convy import Bench, JsonlJournal, Models, Report, RunHeader, Runs, Scenario
+from convy import Bench, Models, Report, RunJournal, Runs, RunSpec, Scenario
 from convy.fakes import Echo, FakeModel
 
 scenario = Scenario(
@@ -338,18 +338,23 @@ models = Models(  # fakes: nothing is called; use OpenAiModel for real ones
     judge=FakeModel('{"claims": [{"pass": true, "reason": "it answered"}]}'),
 )
 bench = Bench((scenario,), models)
-header = RunHeader(
+spec = RunSpec(
+    id="first",  # the run's folder: results/echo/first/
     agent="echo",
     version="",
     user=models.user.name,
     judge=models.judge.name,
-    attempts=bench.attempts,
-    planned=bench.planned(),
+    k=bench.attempts,
+    parallel=bench.parallel,
+    turn_timeout=600,
+    scenarios=bench.scenarios,
     started=datetime.now().astimezone(),
 )
-runs = Path("results/runs")
-outcomes = asyncio.run(bench.run(Echo(), JsonlJournal(runs, header)))
-Path("results/index.html").write_text(Report(Runs(runs)).html(), encoding="utf-8")
+results = Path("results")
+journal = RunJournal(results, spec)
+journal.create()
+outcomes = asyncio.run(journal.play(bench, Echo(), journal))
+Path("results/index.html").write_text(Report(Runs(results)).html(), encoding="utf-8")
 ```
 
 Put your own agent in place of `Echo()`. The fakes in `convy.fakes` are public too, for testing your
