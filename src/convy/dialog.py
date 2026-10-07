@@ -2,7 +2,7 @@
 
 import json
 
-from msgspec import Struct
+from msgspec import Struct, field
 
 from convy.agent import Answer, Message
 from convy.model import Model, ModelFailure
@@ -25,10 +25,11 @@ Rules:
 Instructions:
 {instructions}"""
 
-JUDGE_PROMPT = """Below are a dialogue between a user and an agent, and a list of claims about it.
-Check every claim strictly against the text of the dialogue.
-Answer with JSON only: {{"pass": true or false, "reason": "a short explanation"}}
-"pass" is true only if every claim holds. Write the reason in the language of the claims.
+JUDGE_PROMPT = """Below are a dialogue between a user and an agent, and a numbered list of claims
+about it. Check every claim strictly against the text of the dialogue.
+Answer with JSON only: {{"claims": [{{"pass": true or false, "reason": "a short explanation"}}, …]}}
+Give one entry per claim, in the order of the list. "pass" is true only if the claim holds.
+Write the reasons in the language of the claims.
 
 Dialogue:
 {dialogue}
@@ -91,10 +92,27 @@ class SimulatedUser(Struct, frozen=True):
         return Message(text)
 
 
-class Verdict(Struct, frozen=True, tag="verdict"):
-    """The judge's decision on an attempt."""
+class Claim(Struct, frozen=True):
+    """The judge's decision on one claim of a scenario."""
 
-    passed: bool
+    passed: bool = field(name="pass")
+    reason: str
+
+
+class Verdict(Struct, frozen=True, tag="verdict"):
+    """The judge's decision on each claim, in the order of the scenario's claims."""
+
+    claims: tuple[Claim, ...]
+
+    @property
+    def passed(self) -> bool:
+        """An attempt passes when every claim holds."""
+        return all(claim.passed for claim in self.claims)
+
+
+class Failed(Struct, frozen=True, tag="failed"):
+    """The agent failed: the judge was not asked, and the attempt did not pass."""
+
     reason: str
 
 
@@ -105,21 +123,23 @@ class NoVerdict(Struct, frozen=True, tag="no_verdict"):
 
 
 class Judge(Struct, frozen=True):
-    """A model that decides whether a dialogue meets a scenario's claims."""
+    """A model that decides whether a dialogue meets each of a scenario's claims."""
 
     model: Model
 
     async def verdict(self, transcript: Transcript, claims: tuple[str, ...]) -> Verdict:
         prompt = JUDGE_PROMPT.format(
-            dialogue=transcript.as_text(), claims="\n".join(f"- {claim}" for claim in claims)
+            dialogue=transcript.as_text(),
+            claims="\n".join(f"{number}. {claim}" for number, claim in enumerate(claims, 1)),
         )
-        return self.parsed(await self.model.reply([{"role": "user", "content": prompt}]))
+        answer = await self.model.reply([{"role": "user", "content": prompt}])
+        return self.parsed(answer, len(claims))
 
-    def parsed(self, text: str) -> Verdict:
-        """The first JSON object with "pass" in the judge's answer, even with text around it.
+    def parsed(self, text: str, count: int) -> Verdict:
+        """The first JSON object with "claims" in the judge's answer, even with text around it.
 
-        An answer without one, or with a "pass" that is not true or false, is a failure of the
-        judge's model, like no answer at all."""
+        An answer without one, or with claims convy cannot use, is a failure of the judge's model,
+        like no answer at all."""
         decoder = json.JSONDecoder()
         start = text.find("{")
         while start != -1:
@@ -128,9 +148,18 @@ class Judge(Struct, frozen=True):
             except json.JSONDecodeError:
                 start = text.find("{", start + 1)
                 continue
-            if isinstance(found, dict) and "pass" in found:
-                if type(found["pass"]) is not bool:  # "true" or 1 is not a verdict
-                    raise ModelFailure(f'the judge\'s "pass" is not true or false: {text[:200]}')
-                return Verdict(found["pass"], str(found.get("reason", "")))
+            if isinstance(found, dict) and "claims" in found:
+                return Verdict(self.claims(found["claims"], count, text))
             start = text.find("{", end)  # skip the whole object, nested braces included
         raise ModelFailure(f"the judge did not answer with JSON: {text[:200]}")
+
+    def claims(self, found: object, count: int, text: str) -> tuple[Claim, ...]:
+        """The judge's "claims", checked: one object per claim, each with a "pass" of true or
+        false; "true" or 1 is not a decision."""
+        if not isinstance(found, list) or not all(isinstance(item, dict) for item in found):
+            raise ModelFailure(f'the judge\'s "claims" is not a list of objects: {text[:200]}')
+        if len(found) != count:
+            raise ModelFailure(f"the judge decided {len(found)} claims of {count}: {text[:200]}")
+        if any(type(item.get("pass")) is not bool for item in found):
+            raise ModelFailure(f'the judge\'s "pass" is not true or false: {text[:200]}')
+        return tuple(Claim(item["pass"], str(item.get("reason", ""))) for item in found)

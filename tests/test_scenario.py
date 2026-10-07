@@ -9,7 +9,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, Usage
 from convy.bench import JsonlJournal, RunHeader
-from convy.dialog import NoVerdict, Verdict
+from convy.dialog import Claim, Failed, NoVerdict, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
 from convy.http import JsonEndpoint, Tls
@@ -18,7 +18,7 @@ from convy.report import Runs
 from convy.scenario import Matching, Outcome, Scenario, Scenarios
 
 SCENARIO = Scenario(id="greet", max_turns=2, instructions="Say hi.", claims=("greets",))
-PASS = '{"pass": true, "reason": "fine"}'
+PASS = '{"claims": [{"pass": true, "reason": "fine"}]}'
 
 
 def models(*user: str | ModelFailure, judge: str | ModelFailure = PASS) -> Models:
@@ -30,7 +30,7 @@ async def test_turns_run_out():
         FakeAgent(Answer("hello", Usage(3, 4))), models("hi"), attempt=1
     )
     assert outcome.stop == "max_turns"
-    assert outcome.verdict == Verdict(True, "fine")
+    assert outcome.verdict == Verdict((Claim(True, "fine"),))
     assert [t.answer.usage for t in outcome.transcript.turns] == [Usage(3, 4)] * 2
     assert all(t.seconds >= 0 for t in outcome.transcript.turns)
     assert (outcome.scenario, outcome.attempt, outcome.claims) == ("greet", 1, ("greets",))
@@ -48,8 +48,7 @@ async def test_a_failed_turn_fails_the_attempt_without_the_judge(error: Exceptio
     used = Models(user=FakeModel("hi"), judge=judge)
     outcome = await SCENARIO.outcome(FakeAgent("hello", error), used, attempt=1)
     assert outcome.stop == "agent_failure"
-    assert isinstance(outcome.verdict, Verdict)
-    assert not outcome.verdict.passed
+    assert isinstance(outcome.verdict, Failed)
     assert outcome.transcript.turns[-1].answer.text.startswith(
         f"[agent error: {type(error).__name__}"
     )
@@ -82,8 +81,7 @@ async def test_an_agent_that_cannot_open_a_conversation_fails():
 
     outcome = await SCENARIO.outcome(Closed(), models("hi"), attempt=1)
     assert outcome.stop == "agent_failure"
-    assert isinstance(outcome.verdict, Verdict)
-    assert "ConnectionError: no session" in outcome.verdict.reason
+    assert outcome.verdict == Failed("[agent error: ConnectionError: no session]")
 
 
 @pytest.mark.parametrize(
@@ -122,7 +120,7 @@ async def test_a_judge_answer_without_a_verdict_leaves_no_verdict():
 
 
 async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
-    verdict = '{"pass": true, "reason": "\ud83d"}'  # half an emoji
+    verdict = '{"claims": [{"pass": true, "reason": "\ud83d"}]}'  # half an emoji
     content = json.dumps({"choices": [{"message": {"content": verdict}}]}).encode()
     service = httpx2.MockTransport(lambda request: httpx2.Response(200, content=content))
     judge = OpenAiModel(JsonEndpoint("https://llm.test", transport=service), "gpt")

@@ -5,12 +5,12 @@ import pytest
 
 from convy.agent import AgentFailure
 from convy.bench import Bench, JsonlJournal, RunHeader
-from convy.dialog import NoVerdict, Transcript, Verdict
+from convy.dialog import Claim, NoVerdict, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
 
-MODELS = Models(user=FakeModel("hi"), judge=FakeModel('{"pass": true}'))
+MODELS = Models(user=FakeModel("hi"), judge=FakeModel('{"claims": [{"pass": true}]}'))
 SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
 HEADER = RunHeader("bot", "1", "fake", "fake", 1, 2, datetime(2026, 10, 6, 14, 5, tzinfo=UTC))
 
@@ -59,12 +59,12 @@ def outcome(verdict: Verdict | NoVerdict) -> Outcome:
 def test_jsonl_journal_writes_the_header_once_then_a_line_per_outcome(tmp_path):
     journal = JsonlJournal(tmp_path, HEADER)
     assert not journal.path().exists()
-    journal.record(outcome(Verdict(True, "fine")))
+    journal.record(outcome(Verdict((Claim(True, "fine"),))))
     journal.record(outcome(NoVerdict("judge down")))
     assert journal.path() == tmp_path / "bot" / "2026-10-06T14-05-00.000000.jsonl"
     header, *lines = journal.path().read_bytes().splitlines()
     assert msgspec.json.decode(header, type=RunHeader) == HEADER
     assert [msgspec.json.decode(line, type=Outcome).verdict for line in lines] == [
-        Verdict(True, "fine"),
+        Verdict((Claim(True, "fine"),)),
         NoVerdict("judge down"),
     ]

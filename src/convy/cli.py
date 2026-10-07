@@ -17,7 +17,7 @@ from pydantic_settings import (
 
 from convy.agent import NoUsage, TimeLimited, Usage
 from convy.bench import Bench, Journal, JsonlJournal, RunHeader
-from convy.dialog import NoVerdict, Verdict
+from convy.dialog import Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
@@ -41,7 +41,7 @@ class Printed(Struct, frozen=True):
         match outcome.verdict:
             case Verdict(passed=True):
                 mark = "✓"
-            case Verdict():
+            case Verdict() | Failed():
                 mark = "✗"
             case NoVerdict():
                 mark = "?"
@@ -125,7 +125,8 @@ class RunCommand(BaseModel):
         calls, and a project's models are built fresh by running `models.py`."""
         if self.smoke:
             user = FakeModel("Hello! What can you help me with?", "Thank you!")
-            return Bench((SMOKE,), Models(user, FakeModel('{"pass": true, "reason": "smoke"}')))
+            judge = FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}')
+            return Bench((SMOKE,), Models(user, judge))
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
         return Bench(scenarios, project.models(), self.k, self.parallel)
 
@@ -159,7 +160,7 @@ class RunCommand(BaseModel):
                     tokens = ""
             print(f"  agent ({turn.seconds:.1f} s{tokens}): {turn.answer.text[:200]}")
         match outcome:
-            case Outcome(stop="agent_failure", verdict=Verdict(reason=reason)):
+            case Outcome(verdict=Failed(reason=reason)):
                 print(f"connection failed: {reason}")
             case _:
                 print("connection works")

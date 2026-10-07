@@ -10,7 +10,7 @@ from msgspec import Struct
 
 from convy.agent import NoUsage, Usage
 from convy.bench import RunHeader
-from convy.dialog import NoVerdict, Turn, Verdict
+from convy.dialog import Failed, NoVerdict, Turn, Verdict
 from convy.scenario import Outcome, Stop
 
 UNREADABLE = (msgspec.DecodeError, msgspec.ValidationError, ValueError, OSError)
@@ -173,8 +173,11 @@ class Report(Struct, frozen=True):
     def attempt(self, run: Run, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
         match outcome.verdict:
-            case Verdict(passed=passed, reason=reason):
-                judged: tuple[bool | None, str] = (passed, reason)
+            case Verdict(claims=claims) as verdict:
+                reason = "\n".join(claim.reason for claim in claims)
+                judged: tuple[bool | None, str] = (verdict.passed, reason)
+            case Failed(reason=reason):
+                judged = (False, reason)
             case NoVerdict(error=error):
                 judged = (None, error)
         passed, reason = judged

@@ -11,7 +11,16 @@ import yamlrocks
 from msgspec import Struct, field
 
 from convy.agent import Agent, AgentFailure, Answer, Conversation, Message
-from convy.dialog import Finished, Judge, NoVerdict, SimulatedUser, Transcript, Turn, Verdict
+from convy.dialog import (
+    Failed,
+    Finished,
+    Judge,
+    NoVerdict,
+    SimulatedUser,
+    Transcript,
+    Turn,
+    Verdict,
+)
 from convy.model import Contained, ModelFailure, Models
 
 type Stop = Literal["user_stop", "max_turns", "agent_failure", "model_failure"]
@@ -24,7 +33,7 @@ class Outcome(Struct, frozen=True):
     attempt: int
     claims: tuple[str, ...]
     transcript: Transcript
-    verdict: Verdict | NoVerdict
+    verdict: Verdict | Failed | NoVerdict
     stop: Stop
 
 
@@ -97,11 +106,14 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
 
     def failed(self, attempt: int, transcript: Transcript, error: str) -> Outcome:
         """An agent that failed does not pass, whatever was said before: the judge is not asked."""
-        verdict = Verdict(False, f"the agent failed: {error}")
-        return self.ended(attempt, transcript, verdict, "agent_failure")
+        return self.ended(attempt, transcript, Failed(error), "agent_failure")
 
     def ended(
-        self, attempt: int, transcript: Transcript, verdict: Verdict | NoVerdict, stop: Stop
+        self,
+        attempt: int,
+        transcript: Transcript,
+        verdict: Verdict | Failed | NoVerdict,
+        stop: Stop,
     ) -> Outcome:
         return Outcome(self.id, attempt, self.claims, transcript, verdict, stop)
 

@@ -39,7 +39,7 @@ async def test_time_limited_fails_a_slow_opening_or_closing(agent: Slow):
 @pytest.mark.parametrize("agent", SLOW)
 async def test_a_slow_opening_or_closing_fails_the_attempt(agent: Slow):
     scenario = Scenario("greet", 1, "Say hi.", ("greets",))
-    models = Models(user=FakeModel("hi"), judge=FakeModel('{"pass": true}'))
+    models = Models(user=FakeModel("hi"), judge=FakeModel('{"claims": [{"pass": true}]}'))
     outcome = await scenario.outcome(TimeLimited(agent, 0.05), models, attempt=1)
     assert outcome.stop == "agent_failure"
 

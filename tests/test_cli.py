@@ -10,13 +10,14 @@ from convy.bench import RunHeader
 from convy.cli import main
 from convy.scenario import Outcome
 
+# Every scenario of the template has two claims, so the fake judge decides two.
 FAKE_MODELS = """
 from convy import Models
 from convy.fakes import FakeModel
 
 models = Models(
     user=FakeModel("Hello!", "###STOP###"),
-    judge=FakeModel('{"pass": true, "reason": "ok"}'),
+    judge=FakeModel('{"claims": [{"pass": true, "reason": "ok"}, {"pass": true, "reason": "ok"}]}'),
 )
 """
 
@@ -63,10 +64,7 @@ def test_smoke_on_echo_works(project: Path, capsys):
 def test_smoke_on_an_agent_that_rejects_us_fails(project: Path, capsys):
     (project / "agents" / "locked.py").write_text(UNAUTHORIZED)
     assert convy("run", "locked", "--smoke") == 1
-    assert (
-        "connection failed: the agent failed: [agent error: AgentFailure: POST"
-        in capsys.readouterr().out
-    )
+    assert "connection failed: [agent error: AgentFailure: POST" in capsys.readouterr().out
 
 
 def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):

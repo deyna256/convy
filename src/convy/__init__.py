@@ -11,7 +11,7 @@ from convy.agent import (
     Usage,
 )
 from convy.bench import Bench, Journal, JsonlJournal, RunHeader
-from convy.dialog import NoVerdict, Transcript, Turn, Verdict
+from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
 from convy.env import Env
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
 from convy.model import Model, ModelFailure, Models, OpenAiModel
@@ -23,8 +23,10 @@ __all__ = [
     "AgentFailure",
     "Answer",
     "Bench",
+    "Claim",
     "Conversation",
     "Env",
+    "Failed",
     "HttpFailure",
     "Journal",
     "JsonAgent",

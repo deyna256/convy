@@ -282,10 +282,11 @@ judge:
 ```
 
 `user` tells the simulated user who to be and what to want; `judge` lists claims that must all hold for
-the scenario to pass. An attempt in which the agent fails a turn does not pass, whatever it said before.
-When one of convy's own models fails instead — it does not answer, or the judge answers without a
-verdict in JSON (`"pass"` of `true` or `false`) — the attempt gets no verdict and is left out of the
-pass rate.
+the scenario to pass. The judge decides each claim on its own, with a reason, so the report shows which
+claim failed. An attempt in which the agent fails a turn does not pass, whatever it said before, and the
+judge is not asked. When one of convy's own models fails instead — it does not answer, or the judge
+does not give one decision per claim in JSON (`"pass"` of `true` or `false`) — the attempt gets no
+verdict and is left out of the pass rate.
 Write scenarios in any language — the simulated user speaks the language of its instructions.
 
 ```sh
@@ -334,7 +335,7 @@ scenario = Scenario(
 )
 models = Models(  # fakes: nothing is called; use OpenAiModel for real ones
     user=FakeModel("Hello!", "Thank you!", "###STOP###"),
-    judge=FakeModel('{"pass": true, "reason": "it answered"}'),
+    judge=FakeModel('{"claims": [{"pass": true, "reason": "it answered"}]}'),
 )
 bench = Bench((scenario,), models)
 header = RunHeader(
