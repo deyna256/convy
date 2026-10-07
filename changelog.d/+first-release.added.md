@@ -1,1 +1,0 @@
-The first release: connect an agent with `JsonAgent` or two small classes, play YAML scenarios with a simulated user and a judge, and compare pass rate, tokens and response time in a static HTML report — from the `convy` command or from Python.

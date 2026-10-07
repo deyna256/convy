@@ -10,7 +10,8 @@ decide: <strong>which scenarios the agent passes</strong>, <strong>how many toke
 neither its code nor its model.</p>
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange)](#status)
+[![PyPI](https://img.shields.io/pypi/v/convy)](https://pypi.org/project/convy/)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#status)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab)](pyproject.toml)
 <br>
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -25,8 +26,8 @@ neither its code nor its model.</p>
 
 ## Status
 
-convy is not released yet. This README describes the first release, which is being built now.
-Nothing below can be installed from PyPI until `0.1.0` is out.
+convy 0.1 is the first release. It is in alpha: the Python API and the journal format may change
+before 1.0, and every change is listed in the [changelog](CHANGELOG.md).
 
 ## Why convy
 
