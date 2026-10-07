@@ -39,6 +39,23 @@ class RunSpec(Struct, frozen=True):
     convy: str = ""
     files: Files = Files()
 
+    def changes(self, version: str, user: str, judge: str, files: Files) -> tuple[str, ...]:
+        """What differs now from what the run started with: each a reason it cannot continue
+        unchanged. A change in a module the agent imports, or in the service behind it, does not
+        show here."""
+        found = []
+        if files.agent != self.files.agent:
+            found.append(f"agents/{self.agent}.py changed since the run started")
+        if files.models != self.files.models:
+            found.append("models.py changed since the run started")
+        if version != self.version:
+            found.append(f"the agent's version is {version!r}, the run has {self.version!r}")
+        if user != self.user:
+            found.append(f"the user model is {user!r}, the run has {self.user!r}")
+        if judge != self.judge:
+            found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
+        return tuple(found)
+
     def pairs(self) -> tuple[Pair, ...]:
         """Every attempt the run plays: each scenario, `k` times."""
         return tuple((s.id, attempt) for s in self.scenarios for attempt in range(1, self.k + 1))

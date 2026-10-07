@@ -17,12 +17,13 @@ from pydantic_settings import (
     SettingsConfigDict,
 )
 
-from convy.agent import NoUsage, TimeLimited, Usage
-from convy.bench import Bench, Journal, RunJournal, RunSpec
+from convy.agent import Agent, NoUsage, TimeLimited, Usage
+from convy.bench import Bench, Finished, Journal, Pair, RunJournal, RunSpec
 from convy.dialog import Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
+from convy.report import Runs
 from convy.scenario import Matching, Outcome, Scenario
 
 SMOKE = Scenario(
@@ -83,6 +84,27 @@ class Rebuilt(Struct, frozen=True):
         print(f"report: {self.project.page()}")
 
 
+class Recorded(Struct, frozen=True):
+    """A run played into its folder, as the command shows it: on Ctrl+C it says what was
+    recorded and how to continue, rebuilds the report and exits with 130."""
+
+    project: Project
+    journal: RunJournal
+
+    def outcomes(
+        self, bench: Bench, agent: Agent, done: frozenset[Pair] = frozenset()
+    ) -> tuple[Outcome, ...]:
+        try:
+            return asyncio.run(self.journal.play(bench, agent, Printed(self.journal), done))
+        except KeyboardInterrupt:
+            spec = self.journal.spec
+            run = Runs(self.project.results()).run(spec.id)
+            print(f"interrupted: {len(run.done())} of {len(spec.pairs())} attempts recorded")
+            print(f"resume with: convy resume {spec.id.rpartition('_')[2]}")
+            Rebuilt(self.project).show()
+            raise SystemExit(130) from None
+
+
 class InitCommand(BaseModel):
     path: CliPositionalArg[Path] = Path(".")
 
@@ -122,7 +144,12 @@ class RunCommand(BaseModel):
             raise SystemExit(2) from None
         failed = False
         for loaded, bench in zip(agents, benches, strict=True):
-            outcomes = asyncio.run(self.played(project, bench, loaded))
+            agent = TimeLimited(loaded.agent, self.turn_timeout)
+            if self.smoke:
+                outcomes = asyncio.run(self.smoked(bench, agent, loaded.name))
+            else:
+                journal = self.journal(project, bench, loaded)
+                outcomes = Recorded(project, journal).outcomes(bench, agent)
             failed |= any(o.stop in ("agent_failure", "model_failure") for o in outcomes)
         if not self.smoke:
             Rebuilt(project).show()
@@ -138,15 +165,8 @@ class RunCommand(BaseModel):
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
         return Bench(scenarios, project.models(), self.k, self.parallel)
 
-    async def played(
-        self, project: Project, bench: Bench, loaded: ProjectAgent
-    ) -> tuple[Outcome, ...]:
-        agent = TimeLimited(loaded.agent, self.turn_timeout)
-        if self.smoke:
-            print(f"{loaded.name}: checking the connection")
-            (outcome,) = await bench.run(agent, MemoryJournal())
-            self.smoked(outcome)
-            return (outcome,)
+    def journal(self, project: Project, bench: Bench, loaded: ProjectAgent) -> RunJournal:
+        """The folder of a new run of the agent, created with its specification."""
         started = datetime.now().astimezone()
         spec = RunSpec(
             id=f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
@@ -163,14 +183,16 @@ class RunCommand(BaseModel):
             files=project.files(loaded.name),
         )
         journal = RunJournal(project.results(), spec)
-        journal.create()
+        journal.create()  # ponytail: an id clash is an error; draw a new id if it ever happens
         print(
             f"{loaded.name}: run {spec.id}, {len(bench.scenarios)} scenarios, "
             f"{bench.attempts} attempts each"
         )
-        return await journal.play(bench, agent, Printed(journal))
+        return journal
 
-    def smoked(self, outcome: Outcome) -> None:
+    async def smoked(self, bench: Bench, agent: Agent, name: str) -> tuple[Outcome, ...]:
+        print(f"{name}: checking the connection")
+        (outcome,) = await bench.run(agent, MemoryJournal())
         for turn in outcome.transcript.turns:
             match turn.answer.usage:
                 case Usage(input=spent, output=produced):
@@ -183,6 +205,41 @@ class RunCommand(BaseModel):
                 print(f"connection failed: {reason}")
             case _:
                 print("connection works")
+        return (outcome,)
+
+
+class ResumeCommand(BaseModel):
+    run: CliPositionalArg[str] = Field(description="the run's id, or its random part")
+
+    def cli_cmd(self) -> None:
+        project = Project(Path.cwd())
+        try:
+            run = Runs(project.results()).run(self.run)
+            spec = run.spec
+            if isinstance(run.status, Finished):
+                raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
+            loaded = project.agent(spec.agent)
+            models = project.models()
+            files = project.files(spec.agent)
+            changes = spec.changes(loaded.version, models.user.name, models.judge.name, files)
+            if changes:
+                raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
+        except ValidationError as error:  # settings in the project's files
+            Invalid(error).show()
+            raise SystemExit(2) from None
+        except Exception as error:  # anything else wrong in the run or the project's files
+            print(f"error: {error}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(
+            f"{spec.agent}: resuming run {spec.id}, "
+            f"{len(run.done())} of {len(spec.pairs())} attempts recorded"
+        )
+        bench = Bench(spec.scenarios, models, spec.k, spec.parallel)
+        agent = TimeLimited(loaded.agent, spec.turn_timeout)
+        journal = RunJournal(project.results(), spec)
+        outcomes = Recorded(project, journal).outcomes(bench, agent, run.done())
+        Rebuilt(project).show()
+        raise SystemExit(int(any(o.stop in ("agent_failure", "model_failure") for o in outcomes)))
 
 
 class ReportCommand(BaseModel):
@@ -201,6 +258,9 @@ class Convy(BaseSettings):
     )
     init: CliSubCommand[InitCommand] = Field(description="create a project with examples")
     run: CliSubCommand[RunCommand] = Field(description="play scenarios against agents")
+    resume: CliSubCommand[ResumeCommand] = Field(
+        description="play the rest of a run that was stopped, exactly as it started"
+    )
     report: CliSubCommand[ReportCommand] = Field(description="rebuild results/index.html")
 
     def cli_cmd(self) -> None:

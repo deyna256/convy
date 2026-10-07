@@ -1,12 +1,17 @@
 """The `convy` command, run in a fresh project from the template. No network: agents are fakes."""
 
+import os
+import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import msgspec
 import pytest
 import time_machine
 
-from convy.bench import Finished, RunFile
+from convy.bench import Finished, Interrupted, RunFile
 from convy.cli import main
 from convy.project import Project
 from convy.scenario import Outcome
@@ -154,3 +159,90 @@ def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
         f"{project / 'results' / 'runs'} holds journals of convy 0.1, which this version does "
         "not read; run the agents again\n"
     )
+
+
+SLOW = """
+import os
+from convy.fakes import FakeAgent
+
+agent = FakeAgent("hello", delay=float(os.environ.get("SLOW", "0")))
+version = "1"
+"""
+
+# The user talks until the turns run out: every attempt takes the agent's delay six times.
+TALKATIVE = FAKE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
+
+
+def started_run(project: Path) -> Path:
+    """Run the slow agent on one scenario with three attempts, and stop the run on Ctrl+C after
+    its first attempt. Return the run's folder."""
+    (project / "models.py").write_text(TALKATIVE)
+    (project / "agents" / "slow.py").write_text(SLOW)
+    command = [sys.executable, "-c", "from convy.cli import main; main()"]
+    process = subprocess.Popen(
+        [*command, "run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1"],
+        cwd=project,
+        env={**os.environ, "SLOW": "0.1"},
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    attempts = project / "results" / "slow"
+    while not any(attempts.glob("*/attempts.jsonl")):
+        time.sleep(0.05)
+    process.send_signal(signal.SIGINT)
+    out, _ = process.communicate(timeout=10)
+    assert process.returncode == 130
+    (folder,) = attempts.iterdir()
+    assert "interrupted: 1 of 3 attempts recorded\n" in out
+    assert f"resume with: convy resume {folder.name.rpartition('_')[2]}\n" in out
+    return folder
+
+
+def status(folder: Path) -> object:
+    return msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile).status
+
+
+def test_ctrl_c_interrupts_a_run_and_resume_plays_the_rest(project: Path, capsys):
+    folder = started_run(project)
+    assert isinstance(status(folder), Interrupted)
+    assert convy("resume", folder.name.rpartition("_")[2]) == 0
+    assert isinstance(status(folder), Finished)
+    lines = (folder / "attempts.jsonl").read_bytes().splitlines()
+    assert sorted(msgspec.json.decode(line, type=Outcome).attempt for line in lines) == [1, 2, 3]
+    out = capsys.readouterr().out
+    assert f"slow: resuming run {folder.name}, 1 of 3 attempts recorded" in out
+    assert out.count("✓") == 2
+    assert "report: " in out
+
+
+def test_a_finished_run_is_not_resumed(project: Path, capsys):
+    (project / "models.py").write_text(FAKE_MODELS)
+    assert convy("run", "echo", "--scenarios", "clarify-*") == 0
+    (folder,) = (project / "results" / "echo").iterdir()
+    assert convy("resume", folder.name) == 2
+    assert (
+        capsys.readouterr().err
+        == f"error: run {folder.name} is finished; there is nothing to resume\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (("agents/slow.py", SLOW + "# edited\n"), "agents/slow.py changed since the run started"),
+        (("models.py", TALKATIVE + "# edited\n"), "models.py changed since the run started"),
+    ],
+)
+def test_a_run_resumes_only_unchanged(project: Path, change: tuple[str, str], error: str, capsys):
+    folder = started_run(project)
+    path, text = change
+    (project / path).write_text(text)
+    short = folder.name.rpartition("_")[2]
+    assert convy("resume", short) == 2
+    assert capsys.readouterr().err == f"error: run {short} cannot resume: {error}\n"
+    assert isinstance(status(folder), Interrupted)
+
+
+def test_an_unknown_run_is_not_resumed(project: Path, capsys):
+    assert convy("resume", "nope") == 2
+    assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
