@@ -1,4 +1,4 @@
-"""The `convy` command: `init`, `run` and `report`. It prints, and it picks the exit code."""
+"""The `convy` command: `init`, `run`, `resume` and `report`. It prints and picks the exit code."""
 
 import asyncio
 import secrets
@@ -18,7 +18,7 @@ from pydantic_settings import (
 )
 
 from convy.agent import Agent, NoUsage, TimeLimited, Usage
-from convy.bench import Bench, Finished, Journal, Pair, RunJournal, RunSpec
+from convy.bench import Bench, Files, Finished, Journal, Pair, RunJournal, RunSpec
 from convy.dialog import Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
@@ -136,6 +136,7 @@ class RunCommand(BaseModel):
         try:
             agents = [project.agent(name) for name in self.agents]
             benches = [self.bench(project) for _ in agents]
+            fingerprints = [project.files(loaded.name) for loaded in agents]
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()
             raise SystemExit(2) from None
@@ -143,12 +144,12 @@ class RunCommand(BaseModel):
             print(f"error: {error}", file=sys.stderr)
             raise SystemExit(2) from None
         failed = False
-        for loaded, bench in zip(agents, benches, strict=True):
+        for loaded, bench, files in zip(agents, benches, fingerprints, strict=True):
             agent = TimeLimited(loaded.agent, self.turn_timeout)
             if self.smoke:
                 outcomes = asyncio.run(self.smoked(bench, agent, loaded.name))
             else:
-                journal = self.journal(project, bench, loaded)
+                journal = self.journal(project, bench, loaded, files)
                 outcomes = Recorded(project, journal).outcomes(bench, agent)
             failed |= any(o.stop in ("agent_failure", "model_failure") for o in outcomes)
         if not self.smoke:
@@ -165,7 +166,9 @@ class RunCommand(BaseModel):
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
         return Bench(scenarios, project.models(), self.k, self.parallel)
 
-    def journal(self, project: Project, bench: Bench, loaded: ProjectAgent) -> RunJournal:
+    def journal(
+        self, project: Project, bench: Bench, loaded: ProjectAgent, files: Files
+    ) -> RunJournal:
         """The folder of a new run of the agent, created with its specification."""
         started = datetime.now().astimezone()
         spec = RunSpec(
@@ -180,7 +183,7 @@ class RunCommand(BaseModel):
             scenarios=bench.scenarios,
             started=started,
             convy=version("convy"),
-            files=project.files(loaded.name),
+            files=files,
         )
         journal = RunJournal(project.results(), spec)
         journal.create()  # ponytail: an id clash is an error; draw a new id if it ever happens
@@ -261,7 +264,7 @@ class Convy(BaseSettings):
     resume: CliSubCommand[ResumeCommand] = Field(
         description="play the rest of a run that was stopped, exactly as it started"
     )
-    report: CliSubCommand[ReportCommand] = Field(description="rebuild results/index.html")
+    report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
 
     def cli_cmd(self) -> None:
         CliApp.run_subcommand(self)
