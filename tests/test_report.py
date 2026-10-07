@@ -331,7 +331,7 @@ def test_a_scenario_only_in_the_after_run_is_not_compared(tmp_path):
     ]
 
 
-def test_runs_without_a_scenario_in_common_compare_no_rows_and_no_significance(tmp_path):
+def test_runs_without_a_scenario_in_common_compare_none_and_see_only_noise(tmp_path):
     journal(tmp_path, "bot", "1", 4, *[outcome(s, FAILED) for s in "abcd"], started=at(5))
     journal(tmp_path, "bot", "1", 4, *[outcome(s, PASSED) for s in "abcd"], started=at(6),
             asks="Say hello.")  # fmt: skip
