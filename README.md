@@ -315,8 +315,8 @@ results/
         └── attempts.jsonl              # a line per attempt
 ```
 
-`run.json` keeps a copy of every scenario as it was played, the agent's `version`, the names of the
-models, the settings, and fingerprints of `agents/<agent>.py` and `models.py`. A run therefore
+`run.json` keeps a copy of every scenario as it was played, the agent's `version`, the convy version,
+the names of the models, the settings, and fingerprints of `agents/<agent>.py` and `models.py`. A run therefore
 describes itself: editing a scenario later does not change what an old run means.
 
 A run stopped by Ctrl+C is `interrupted`; convy says how to continue it:
@@ -421,7 +421,8 @@ answer, or read them from the model gateway the agent uses.
 
 **What do the exit codes mean?**
 - `0` — every attempt finished;
-- `1` — an attempt ended with an agent error or a failure of convy's models;
+- `1` — an attempt ended with an agent error or a failure of convy's models (for `convy resume`,
+  an attempt it played);
 - `2` — the project could not be loaded, or the run cannot be resumed, and nothing ran;
 - `130` — the run was interrupted with Ctrl+C; `convy resume` continues it.
 

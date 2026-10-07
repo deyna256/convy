@@ -77,7 +77,8 @@ in all of `src/convy/`.
    then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded with `msgspec.json`
    as the run's folder will do it, so a wrong one fails its turn instead of the run. Runs:
    `msgspec.json.decode` of `run.json`, whose `format` must be 2, and of `attempts.jsonl` line by line.
-   The judge's answer: its `"claims"`, one object per claim with a `"pass"` of `true` or `false`. The environment and the command line: pydantic-settings.
+   The judge's answer: `"claims"`, one object per claim, each with a `"pass"` of `true` or
+   `false`. The environment and the command line: pydantic-settings.
    Pydantic is used only there; every other class is msgspec.
 8. **Every interface has a fake** in `fakes.py`, part of the public API. A fake is a simple working
    object, not a mock. Fakes get no methods that exist only for tests; a fake may keep what it collected
@@ -93,7 +94,7 @@ in all of `src/convy/`.
 
 **Where convy departs from *Elegant Objects*:**
 
-- **Data has public fields.** `Message`, `Usage`, `Answer`, `Turn`, `Verdict`, `Outcome` and `RunHeader`
+- **Data has public fields.** `Message`, `Usage`, `Answer`, `Turn`, `Verdict`, `Outcome` and `RunSpec`
   are immutable records with public fields; accessor methods would be noise in Python.
 - **A conversation is opened with `async with`**, Python's usual "open, use, close".
 - **Three kinds of objects change inside:** a conversation (its session and history), fakes (they count)
@@ -119,8 +120,8 @@ run's folder; see [decision 5](docs/decisions/0005-runs.md).
 limits, `asyncio.TaskGroup` for concurrent work, `asyncio.Semaphore` for `--parallel`. Nothing blocks
 the event loop except the run's append of one short line per attempt and the rewrite of its small
 `run.json`. Durations are measured with `time.monotonic`. Ctrl+C makes `asyncio.run` cancel the
-bench; `RunJournal.play` marks the run `interrupted` on that, or on any other error, and lets it go
-on.
+bench; `RunJournal.play` marks the run `interrupted` on that, or on any other error, and re-raises
+it.
 
 **Failure.** Three kinds, one rule each:
 
