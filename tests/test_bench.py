@@ -5,7 +5,7 @@ import msgspec
 import pytest
 
 from convy.agent import AgentFailure
-from convy.bench import Bench, Finished, Interrupted, RunFile, RunJournal, Running, RunSpec
+from convy.bench import Bench, Files, Finished, Interrupted, RunFile, RunJournal, Running, RunSpec
 from convy.dialog import Claim, NoVerdict, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
@@ -147,3 +147,19 @@ async def test_a_cancelled_run_is_interrupted(tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await playing
     assert isinstance(status(journal), Interrupted)
+
+
+def test_a_run_unchanged_has_no_reasons_to_stop():
+    assert SPEC.changes("1", "fake", "fake", Files()) == ()
+
+
+@pytest.mark.parametrize(
+    ("now", "reason"),
+    [
+        (("2", "fake", "fake"), "the agent's version is '2', the run has '1'"),
+        (("1", "gpt", "fake"), "the user model is 'gpt', the run has 'fake'"),
+        (("1", "fake", "gpt"), "the judge model is 'gpt', the run has 'fake'"),
+    ],
+)
+def test_a_changed_version_or_model_is_a_reason_not_to_resume(now: tuple[str, str, str], reason):
+    assert SPEC.changes(*now, Files()) == (reason,)

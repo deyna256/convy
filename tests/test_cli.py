@@ -248,6 +248,29 @@ def test_a_run_resumes_only_unchanged(project: Path, change: tuple[str, str], er
     assert isinstance(status(folder), Interrupted)
 
 
+def test_a_run_whose_agent_is_gone_is_not_resumed(project: Path, capsys):
+    folder = started_run(project)
+    (project / "agents" / "slow.py").unlink()
+    assert convy("resume", folder.name) == 2
+    assert capsys.readouterr().err.startswith("error: ")
+    assert isinstance(status(folder), Interrupted)
+
+
+def test_resume_keeps_the_turn_timeout_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch):
+    folder = started_run(project)
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    spec = msgspec.structs.replace(file.spec, turn_timeout=0.05)
+    (folder / "run.json").write_bytes(msgspec.json.encode(msgspec.structs.replace(file, spec=spec)))
+    monkeypatch.setenv("SLOW", "0.2")
+    assert convy("resume", folder.name) == 1
+    lines = (folder / "attempts.jsonl").read_bytes().splitlines()
+    played = [msgspec.json.decode(line, type=Outcome) for line in lines][1:]
+    assert len(played) == 2
+    for outcome in played:
+        assert outcome.stop == "agent_failure"
+        assert "no answer in 0.05 s" in str(outcome.verdict)
+
+
 def test_an_unknown_run_is_not_resumed(project: Path, capsys):
     assert convy("resume", "nope") == 2
     assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
