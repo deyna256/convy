@@ -63,8 +63,8 @@ convy does exactly that and nothing more:
 For every attempt convy opens a fresh conversation with the agent, lets the simulated user talk to it
 until the user is done or the turns run out, and asks the judge whether each claim holds. Every run gets
 a folder of its own, and each attempt is written there as soon as it ends, so a stopped run can be
-continued. After a run convy rebuilds the report: a static page per agent, with all its runs side by
-side.
+continued. After a run convy writes the run's report, a static page beside its folder, and
+`convy compare` puts two runs side by side.
 
 ## Quick start
 
@@ -74,7 +74,7 @@ cd my-bench
 uv run convy run echo --smoke        # check convy itself: free, no models called
 cp .env.example .env                 # add the address and key of your model gateway
 uv run convy run echo                # a real run with the simulated user and the judge
-uv run convy report                  # results/index.html, a page per agent
+uv run convy report                  # a report per run, and results/index.html
 ```
 
 `convy init` creates a project of your own:
@@ -307,10 +307,11 @@ its own:
 
 ```text
 results/
-├── index.html                          # every agent, its latest run
+├── index.html                          # every run, with a link to its report
+├── compare/                            # the pages convy compare writes
 └── support_bot/
-    ├── index.html                      # the agent's runs side by side
     └── 2026-10-07T14-02-11_a3f9/       # a run: started at, and a random part
+        ├── report.html                 # the run's report
         ├── run.json                    # what it played and with what, and whether it finished
         └── attempts.jsonl              # a line per attempt
 ```
@@ -338,29 +339,37 @@ To forget a run, delete its folder and run `convy report`.
 
 ## The report
 
-`results/<agent>/index.html` is a static page that works offline. It answers whether the agent got
-better or worse, and where:
+Every run has its own report, `results/<agent>/<run>/report.html`: a static page that works offline,
+with a switch between the system, light and dark themes. Five tiles sum the run up:
 
-- **runs** — a column per run, oldest on the left: when it started, the agent's `version`, whether it
-  finished, and a warning when the user's or the judge's model changed from the run before;
-- **passed** — the share of attempts passed, each scenario weighing the same, with its 95% margin
-  (`±`, from three scenarios). Under it, the change from the run before, counted only on scenarios both
-  runs played unchanged: `▲`/`▼` when it is beyond its margin, "within noise" when it is not;
-- **passed all attempts** — with `-k` above 1, the share of scenarios whose every attempt passed: an
-  agent that passes 70% at random and one that passes the same 70% every time are not the same agent;
-- the agent's tokens per attempt, its answer time, and problems such as agent errors;
-- **scenarios** — a row each, every attempt a mark (`●` passed, `✕` failed, `○` no verdict). A cell
-  is green or red when it did better or worse than the run before; `Δ` marks an older version of the
-  scenario and `·` a run that did not play it. Scenarios that changed in the latest run come first;
-  a filter such as `refund-*` narrows the list.
+- **Pass rate** — the share of attempts the judge passed, with the count (`67% · 8 of 12 attempts`);
+- **Stable scenarios** — those that passed every attempt;
+- **Answer time** — the mean per answer, and the slowest;
+- **Tokens per attempt** — in and out;
+- **Errors** — of the agent and of convy's models.
 
-Select a row, or a cell, to open the scenario: what the simulated user was told, each claim with the
-judge's decision and reason, and the dialogue with the time and tokens of each answer. Switch between
-runs, or compare an attempt with the same attempt of another run side by side. The address keeps the
-open scenario, so a link opens it.
+Below them, a row per scenario: **Failing** (no attempt passed), **Flaky** (some did), **Passing**
+(all did), or **No verdict**, with its answer time and tokens; a filter such as `refund-*` narrows the
+list. Select a row to open the scenario: what the simulated user was told, each claim and how many
+attempts it held in, and for each attempt the judge's decision on every claim with the reason and the
+dialogue with the time and tokens of each answer. The address keeps the open scenario, so a link opens
+it. `results/index.html` lists every run, newest first, with a link to its report.
 
-`results/index.html` lists the agents with their latest run. Tokens and time are the agent's own: the
-simulated user and the judge are not counted.
+To see what changed between two runs, name them — by id or by their random part:
+
+```sh
+uv run convy compare e46f 4693       # before, then after
+```
+
+The page `results/compare/e46f-vs-4693.html` shows the same tiles with the value before and the
+change: green when better, red when worse, and grey with `~` when a change of the pass rate is within
+noise — with few scenarios and attempts, a difference of that size can happen by chance. Scenarios
+are grouped as **Worse**, **Better**, **Same** and **Not compared** (played by only one run, edited
+between the runs, or without a verdict in one of them), and a scenario's window shows both runs'
+dialogues side by side. The runs may be of different agents; the page warns when the user's or the
+judge's model differs.
+
+Tokens and time are the agent's own: the simulated user and the judge are not counted.
 
 ## Run from Python
 

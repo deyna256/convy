@@ -1,0 +1,1 @@
+`convy compare <before> <after>` writes a page that puts two runs side by side: each tile before and after with its change, the scenarios grouped as worse, better, same or not compared, and both dialogues of a scenario next to each other.

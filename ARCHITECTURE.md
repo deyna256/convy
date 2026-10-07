@@ -15,7 +15,8 @@ as it ends. The report is built from the runs.
 ```text
 convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome ──▶ SimulatedUser ⇄ Conversation (agent)
                    │                                         └─▶ Judge
-                   └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/index.html
+                   └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
+                                                        └─▶ Comparison ──▶ results/compare/*.html
 ```
 
 ## Code map
@@ -31,10 +32,10 @@ All code is in `src/convy/`.
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`, `Judge`, its decisions `Verdict` and `Claim`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder |
-| `report.py`, `pages/` | `Runs`, which reads runs back, and `Report`, which sums them up into view records and renders the pages |
+| `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template` |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the report, and copies the template; `ProjectAgent` |
-| `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
+| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent` |
+| `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
 
 `convy run` runs `models.py` once per agent, so each agent gets fresh models; code at the top level
@@ -104,11 +105,13 @@ in all of `src/convy/`.
 
 ## The report
 
-`report.py` makes every number and decision on the pages: pass rates and their margins, pass^k, the
-change from the run before and whether it is beyond its margin, `Δ`, the tint of a cell, the order of
-the rows, which run is the one before. The script in `pages/report.html` only draws them — how a value
-looks, the filter, the scenario window, the address — and adds data as text, never as HTML. A metric
-is therefore tested with pytest, and the script stays thin enough to need no tests of its own.
+`report.py` makes every number and decision on the pages: the tiles, a scenario's result, a claim's
+count, the change between two runs and its colour, whether a change of pass rate is significant, the
+groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
+the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
+through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the
+scripts stay thin enough to need no tests of their own. Each page is one template that carries its
+own copy of the shared styles and helpers, so a written page stands alone.
 
 The view records are internal and have no version: one convy version writes the template and the data
 into one file, and a page written earlier keeps working on its own. The only durable format is the
