@@ -321,6 +321,29 @@ def test_a_change_of_pass_rate_is_noise_unless_the_paired_test_says_otherwise(tm
     assert (real.value, real.tone) == (100, "good")  # four scenarios, all from 0 to 1
 
 
+def test_a_significant_change_that_disagrees_with_the_pass_rate_is_noise(tmp_path):
+    def attempts(scenario: str, verdict: Verdict, count: int) -> list[Outcome]:
+        return [outcome(scenario, verdict, attempt=n) for n in range(1, count + 1)]
+
+    # a to e go from failing to passing; f, played k times, loses half its passes
+    k = 20
+    journal(tmp_path, "bot", "1", 6, *[outcome(s, FAILED) for s in "abcde"],
+            *attempts("f", PASSED, k), k=k, started=at(4))  # fmt: skip
+    journal(tmp_path, "bot", "1", 6, *[outcome(s, PASSED) for s in "abcde"],
+            *attempts("f", PASSED, 10), *attempts("f", FAILED, k)[10:], k=k,
+            started=at(5))  # fmt: skip
+    # the same, but f loses all its passes over five attempts: equal pass rates
+    journal(tmp_path, "other", "1", 6, *[outcome(s, FAILED) for s in "abcde"],
+            *attempts("f", PASSED, 5), k=5, started=at(4))  # fmt: skip
+    journal(tmp_path, "other", "1", 6, *[outcome(s, PASSED) for s in "abcde"],
+            *attempts("f", FAILED, 5), k=5, started=at(5))  # fmt: skip
+    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
+    down = Comparison(runs[0], runs[1]).page().deltas.rate
+    assert (down.value, down.tone) == (-20, "noise")
+    level = Comparison(runs[2], runs[3]).page().deltas.rate
+    assert (level.value, level.tone) == (0, "same")
+
+
 def test_other_tiles_are_coloured_by_direction(tmp_path):
     journal(tmp_path, "bot", "1", 2, outcome("a", PASSED, tokens=10), outcome("b", PASSED),
             k=1, started=at(5))  # fmt: skip

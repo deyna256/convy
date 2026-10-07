@@ -94,7 +94,7 @@ class Project(Struct, frozen=True):
     def old_journals(self) -> bool:
         """Whether `results/runs/` holds journals of convy 0.1, which this version does not read.
         An agent named `runs` has a folder of that name too, so the check looks for the files."""
-        return any(self.results().glob("runs/*/*.jsonl"))
+        return any(path.name != "attempts.jsonl" for path in self.results().glob("runs/*/*.jsonl"))
 
     def files(self, agent: str) -> Files:
         """The sha256 of the agent's file and `models.py`, to tell whether they changed."""

@@ -549,7 +549,8 @@ class Comparison(Struct, frozen=True):
             rate = Delta(None, "none")
         else:
             points = round((new - old) * 100, 6)
-            rate = Delta(points, self.significant(before, after) or self.tone(points, True, True))
+            agrees = self.significant(before, after) == ("good" if points > 0 else "bad")
+            rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
         return Deltas(
             rate=rate,
             stable=self.delta(was.stable, now.stable, more_is_better=True),
@@ -561,7 +562,7 @@ class Comparison(Struct, frozen=True):
     def delta(self, was: float | None, now: float | None, more_is_better: bool) -> Delta:
         if was is None or now is None:
             return Delta(None, "none")
-        return Delta(now - was, self.tone(now - was, more_is_better, False))
+        return Delta(now - was, self.tone(now - was, more_is_better=more_is_better, noisy=False))
 
     def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
         if change == 0:

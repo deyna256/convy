@@ -43,6 +43,7 @@ def test_report_writes_the_page_and_returns_broken_runs(tmp_path: Path):
 def test_old_journals_are_found_but_an_agent_named_runs_is_not_one(tmp_path: Path):
     project = Project(tmp_path)
     write(tmp_path / "results" / "runs" / "2026-10-06T14-05-00_a3f9" / "run.json", "{}")
+    write(tmp_path / "results" / "runs" / "2026-10-06T14-05-00_a3f9" / "attempts.jsonl", "{}\n")
     assert not project.old_journals()
     write(tmp_path / "results" / "runs" / "bot" / "2026-10-06T14-05-00.000000.jsonl", "{}")
     assert project.old_journals()
