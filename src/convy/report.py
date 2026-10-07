@@ -77,6 +77,7 @@ class Runs(Struct, frozen=True):
         file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
         attempts = folder / "attempts.jsonl"
         lines = attempts.read_bytes().splitlines() if attempts.exists() else []
+        claims = {scenario.id: len(scenario.claims) for scenario in file.spec.scenarios}
         outcomes: dict[Pair, Outcome] = {}
         unreadable = 0
         for line in lines:
@@ -84,6 +85,13 @@ class Runs(Struct, frozen=True):
                 outcome = msgspec.json.decode(line, type=Outcome)
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
+                continue
+            wanted = claims.get(outcome.scenario)  # a scenario of the run's snapshot
+            match outcome.verdict:
+                case Verdict(claims=decided) if len(decided) != wanted:
+                    wanted = None
+            if wanted is None:
+                unreadable += 1  # not explained by the snapshot
                 continue
             # two processes resumed one run: the first line of an attempt counts
             outcomes.setdefault((outcome.scenario, outcome.attempt), outcome)
@@ -256,6 +264,8 @@ class Report(Struct, frozen=True):
         return pages
 
     def html(self, template: str, data: Struct) -> str:
+        # ponytail: every dialogue of the agent is in its page (~5 KB per attempt); load
+        # attempts.jsonl lazily or embed only the latest runs when pages get heavy
         encoded = msgspec.json.encode(data).decode().replace("<", "\\u003c")
         page = files("convy").joinpath("pages", template).read_text(encoding="utf-8")
         return page.replace("__DATA__", encoded)
@@ -376,6 +386,15 @@ class Report(Struct, frozen=True):
         newest = next(found[scenario] for found in reversed(played) if scenario in found)
         before = next((i for i in reversed(range(index)) if scenario in played[i]), None)
         earlier = None if before is None else played[before][scenario]
+        same = next(
+            (
+                played[i][scenario]
+                for i in reversed(range(index))
+                if scenario in played[i]
+                and played[i][scenario].scenario.fingerprint() == fingerprint
+            ),
+            None,
+        )
         return CellView(
             run=runs[index].spec.id,
             user=here.scenario.instructions,
@@ -385,14 +404,15 @@ class Report(Struct, frozen=True):
             changed=newest.scenario.fingerprint() != fingerprint,
             earlier="" if before is None else runs[before].spec.id,
             revised=earlier is not None and earlier.scenario.fingerprint() != fingerprint,
-            tint=self.tint(earlier, here),
+            tint=self.tint(same, here),
             attempts=tuple(self.attempt(here.scenario, o) for o in here.outcomes),
         )
 
-    def tint(self, earlier: Played | None, here: Played) -> Tint:
-        if earlier is None or earlier.scenario.fingerprint() != here.scenario.fingerprint():
+    def tint(self, same: Played | None, here: Played) -> Tint:
+        """`same` is the nearest earlier run that played the scenario unchanged."""
+        if same is None:
             return ""
-        before, after = earlier.rate(), here.rate()
+        before, after = same.rate(), here.rate()
         if before is None or after is None or before == after:
             return ""
         return "better" if after > before else "worse"

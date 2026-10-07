@@ -99,6 +99,19 @@ def test_runs_keep_the_lines_they_can_read(tmp_path):
     assert Runs(tmp_path).broken() == (run.path,) == (written.folder().relative_to(tmp_path),)
 
 
+def test_runs_count_a_line_the_scenarios_cannot_explain_as_unreadable(tmp_path):
+    good = outcome("a", PASSED)
+    two = Verdict((Claim(True, ""), Claim(True, "")))  # scenario a has one claim
+    written = journal(
+        tmp_path, "bot", "1", 1, good, outcome("zzz", PASSED), outcome("a", two, attempt=2), k=2
+    )
+    (run,) = Runs(tmp_path)
+    assert run.outcomes == (good,)
+    assert run.unreadable == 2
+    assert Runs(tmp_path).broken() == (written.folder().relative_to(tmp_path),)
+    assert "bot/index.html" in Report(Runs(tmp_path)).pages()
+
+
 def test_runs_read_an_attempt_written_twice_once(tmp_path):
     first = outcome("a", PASSED)
     journal(tmp_path, "bot", "1", 1, first, outcome("a", FAILED))
@@ -251,6 +264,17 @@ def test_cells_are_tinted_against_the_nearest_run_that_played_the_scenario(tmp_p
     assert (b.earlier, b.revised, b.tint) == (first.id, False, "worse")
     assert report.changed == ("a", "b")
     assert report.scenarios == ("a", "b")
+
+
+def test_a_cell_is_tinted_against_the_nearest_run_with_the_same_scenario(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(4), asks="Say hi.")
+    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5), asks="Say hello.")
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), asks="Say hi.")
+    report = page(tmp_path)
+    _, second, third = report.runs
+    cell = report.cells[f"a@{third.id}"]
+    assert (cell.earlier, cell.revised, cell.tint) == (second.id, True, "better")
+    assert report.changed == ("a",)
 
 
 def test_scenarios_changed_in_the_latest_run_come_first(tmp_path):
