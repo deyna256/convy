@@ -37,7 +37,7 @@ def test_report_writes_the_page_and_returns_broken_runs(tmp_path: Path):
     write(tmp_path / "results" / "bot" / "broken" / "run.json", "oops\n")
     project = Project(tmp_path)
     assert project.report() == (Path("bot/broken"),)
-    assert project.page().is_file()
+    assert project.index().is_file()
 
 
 def test_old_journals_are_found_but_an_agent_named_runs_is_not_one(tmp_path: Path):

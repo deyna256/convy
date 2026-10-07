@@ -56,6 +56,10 @@ class RunSpec(Struct, frozen=True):
             found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
         return tuple(found)
 
+    def short(self) -> str:
+        """The id's random part."""
+        return self.id.rpartition("_")[2]
+
     def pairs(self) -> tuple[Pair, ...]:
         """Every attempt the run plays: each scenario, `k` times."""
         return tuple((s.id, attempt) for s in self.scenarios for attempt in range(1, self.k + 1))
@@ -107,9 +111,6 @@ class Bench(Struct, frozen=True):
             raise ValueError(f"attempts must be at least 1, got {self.attempts}")
         if self.parallel < 1:
             raise ValueError(f"parallel must be at least 1, got {self.parallel}")
-
-    def planned(self) -> int:
-        return len(self.scenarios) * self.attempts
 
     async def run(
         self, agent: Agent, journal: Journal, done: frozenset[Pair] = frozenset()

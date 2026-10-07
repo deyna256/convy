@@ -31,7 +31,6 @@ async def test_every_scenario_is_played_attempts_times():
         ("b", 3),
     ]
     assert sorted(journal.outcomes, key=lambda o: (o.scenario, o.attempt)) == list(outcomes)
-    assert Bench(SCENARIOS, MODELS, attempts=3).planned() == 6
 
 
 async def test_at_most_parallel_conversations_run_at_once():

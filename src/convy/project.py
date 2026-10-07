@@ -63,11 +63,11 @@ class Project(Struct, frozen=True):
     def results(self) -> Path:
         return self.directory / "results"
 
-    def page(self) -> Path:
+    def index(self) -> Path:
         """The index: every run, with a link to its report."""
         return self.results() / "index.html"
 
-    def run_page(self, spec: RunSpec) -> Path:
+    def report_page(self, spec: RunSpec) -> Path:
         return self.results() / spec.agent / spec.id / "report.html"
 
     def report(self) -> tuple[Path, ...]:
@@ -76,14 +76,13 @@ class Project(Struct, frozen=True):
         runs = Runs(self.results())
         read = list(runs)
         for run in read:
-            self.write(self.run_page(run.spec), Report(run).html())
-        self.write(self.page(), Index(read).html())
-        return runs.broken()
+            self.write(self.report_page(run.spec), Report(run).html())
+        self.write(self.index(), Index(read).html())
+        return runs.broken(read)
 
     def compare(self, before: Run, after: Run) -> Path:
         """Write the comparison of two runs, `compare/<before>-vs-<after>.html`."""
-        short = (before.spec.id.rpartition("_")[2], after.spec.id.rpartition("_")[2])
-        path = self.results() / "compare" / f"{short[0]}-vs-{short[1]}.html"
+        path = self.results() / "compare" / f"{before.spec.short()}-vs-{after.spec.short()}.html"
         self.write(path, Comparison(before, after).html())
         return path
 

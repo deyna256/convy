@@ -1,6 +1,5 @@
 """Scenarios, and the attempt in which one is played against an agent."""
 
-import hashlib
 import time
 from collections.abc import Iterable, Iterator
 from fnmatch import fnmatch
@@ -37,6 +36,10 @@ class Outcome(Struct, frozen=True):
     verdict: Verdict | Failed | NoVerdict
     stop: Stop
 
+    def failed(self) -> bool:
+        """Whether the agent or convy's model failed."""
+        return self.stop in ("agent_failure", "model_failure")
+
 
 class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
     """A scenario, as written in `scenarios/<id>.yaml`: `user` holds the simulated user's
@@ -52,12 +55,6 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
             raise ValueError(f"max_turns must be at least 1, got {self.max_turns}")
         if not self.claims:
             raise ValueError("judge must list at least one claim")
-
-    def fingerprint(self) -> str:
-        """What the scenario asks, in eight hex digits: runs that played a scenario with the same
-        fingerprint played the same scenario. The id is not part of it."""
-        played = msgspec.json.encode((self.instructions, self.claims, self.max_turns))
-        return hashlib.sha256(played).hexdigest()[:8]
 
     async def outcome(self, agent: Agent, models: Models, attempt: int) -> Outcome:
         """Play the scenario once against the agent."""

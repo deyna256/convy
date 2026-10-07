@@ -228,15 +228,3 @@ def test_matching_keeps_scenarios_by_mask():
     assert [s.id for s in Matching(scenarios, "refund-*")] == ["refund-late"]
     with pytest.raises(ValueError, match="no scenario matches 'nope'"):
         list(Matching(scenarios, "nope"))
-
-
-def test_a_fingerprint_changes_with_what_the_scenario_asks_not_with_its_id():
-    same = Scenario("other-id", 2, "Say hi.", ("greets",))
-    assert SCENARIO.fingerprint() == same.fingerprint()
-    assert len(SCENARIO.fingerprint()) == 8
-    for changed in (
-        Scenario("greet", 3, "Say hi.", ("greets",)),
-        Scenario("greet", 2, "Say hello.", ("greets",)),
-        Scenario("greet", 2, "Say hi.", ("greets", "is brief")),
-    ):
-        assert changed.fingerprint() != SCENARIO.fingerprint()

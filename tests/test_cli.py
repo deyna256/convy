@@ -37,7 +37,7 @@ agent = JsonAgent(JsonEndpoint("https://bot.test", transport=locked), {"q": "{te
 
 
 def runs(project: Path, agent: str) -> list[Path]:
-    """The folders of the agent's runs, oldest first; its page sits next to them."""
+    """The folders of the agent's runs, oldest first; each folder holds its report.html."""
     return sorted(path for path in (project / "results" / agent).iterdir() if path.is_dir())
 
 
@@ -78,7 +78,7 @@ def test_smoke_on_an_agent_that_rejects_us_fails(project: Path, capsys):
     assert "connection failed: [agent error: AgentFailure: POST" in capsys.readouterr().out
 
 
-def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):
+def test_a_run_writes_its_folder_and_the_report(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
     with time_machine.travel("2026-10-06 14:05:00+00:00", tick=False):
         assert convy("run", "echo", "--scenarios", "c*", "-k", "2") == 0

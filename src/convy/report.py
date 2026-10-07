@@ -15,7 +15,7 @@ from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, 
 from convy.dialog import Failed, NoVerdict, Turn, Verdict
 from convy.scenario import Outcome, Scenario, Stop
 
-UNREADABLE = (msgspec.DecodeError, msgspec.ValidationError, ValueError, OSError)
+UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
 class Run(Struct, frozen=True):
@@ -32,9 +32,6 @@ class Run(Struct, frozen=True):
         """The attempts the run has recorded."""
         return frozenset((outcome.scenario, outcome.attempt) for outcome in self.outcomes)
 
-    def complete(self) -> bool:
-        return self.done() >= set(self.spec.pairs())
-
 
 class Runs(Struct, frozen=True):
     """Every run under a results directory, `<agent>/<id>/`. Iterating skips a run whose
@@ -50,19 +47,17 @@ class Runs(Struct, frozen=True):
             except UNREADABLE:
                 continue
 
-    def broken(self) -> tuple[Path, ...]:
-        found = []
-        for folder in self.folders():
-            try:
-                if self.read(folder).unreadable:
-                    found.append(folder.relative_to(self.directory))
-            except UNREADABLE:
-                found.append(folder.relative_to(self.directory))
-        return tuple(found)
+    def broken(self, read: Iterable[Run]) -> tuple[Path, ...]:
+        """The runs that could not be read whole, given the runs iterating read: the folders
+        missing from them, and those with unreadable lines."""
+        runs = list(read)
+        whole = {run.path for run in runs if not run.unreadable}
+        found = (folder.relative_to(self.directory) for folder in self.folders())
+        return tuple(path for path in found if path not in whole)
 
     def run(self, wanted: str) -> Run:
         """The run whose id is `wanted`, or ends with `_<wanted>`: its random part."""
-        found = [run for run in self if wanted in (run.spec.id, run.spec.id.rpartition("_")[2])]
+        found = [run for run in self if wanted in (run.spec.id, run.spec.short())]
         if not found:
             raise ValueError(f"no run {wanted!r} in {self.directory}")
         if len(found) > 1:
@@ -86,12 +81,13 @@ class Runs(Struct, frozen=True):
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
                 continue
-            wanted = claims.get(outcome.scenario)  # a scenario of the run's snapshot
-            match outcome.verdict:
-                case Verdict(claims=decided) if len(decided) != wanted:
-                    wanted = None
-            if wanted is None:
-                unreadable += 1  # not explained by the snapshot
+            match outcome.verdict:  # explained by the run's snapshot of its scenarios?
+                case Verdict(claims=decided):
+                    fits = len(decided) == claims.get(outcome.scenario)
+                case Failed() | NoVerdict():
+                    fits = outcome.scenario in claims
+            if not fits:
+                unreadable += 1
                 continue
             # two processes resumed one run: the first line of an attempt counts
             outcomes.setdefault((outcome.scenario, outcome.attempt), outcome)
@@ -114,6 +110,23 @@ ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
 
 
+class Tally(Struct, frozen=True):
+    """How many of the judged held: the attempts of a scenario, or the decisions on a claim."""
+
+    held: int
+    judged: int
+
+    def rate(self) -> float | None:
+        return self.held / self.judged if self.judged else None
+
+    def result(self) -> Result:
+        if not self.judged:
+            return "none"
+        if self.held == self.judged:
+            return "passing"
+        return "failing" if self.held == 0 else "flaky"
+
+
 class ClaimView(Struct, frozen=True):
     """The judge's decision on one claim in one attempt."""
 
@@ -127,6 +140,7 @@ class TurnView(Struct, frozen=True):
     seconds: float
     input: int | None
     output: int | None
+    tokens: int | None
 
 
 class AttemptView(Struct, frozen=True):
@@ -136,8 +150,10 @@ class AttemptView(Struct, frozen=True):
     error: str  # the agent's error, or the failure of convy's model
     claims: tuple[ClaimView, ...]
     seconds: float
+    slowest: float | None  # None: no answers
     input: int | None
     output: int | None
+    tokens: int | None
     turns: tuple[TurnView, ...]
 
 
@@ -147,25 +163,21 @@ class ClaimSummary(Struct, frozen=True):
     text: str
     held: int
     judged: int
-
-    def result(self) -> Result:
-        if not self.judged:
-            return "none"
-        if self.held == self.judged:
-            return "passing"
-        return "failing" if self.held == 0 else "flaky"
+    result: Result
 
 
 class ScenarioView(Struct, frozen=True):
     id: str
     user: str
     max_turns: int
+    rate: float | None
     result: Result
     claims: tuple[ClaimSummary, ...]
     seconds: float | None  # mean per answer
     slowest: float | None
     input: float | None  # mean per attempt
     output: float | None
+    tokens: float | None
     attempts: tuple[AttemptView, ...]
 
 
@@ -174,26 +186,16 @@ class Metrics(Struct, frozen=True):
 
     passed: int  # judged attempts that passed
     judged: int
+    rate: float | None
     stable: int  # scenarios whose k attempts all passed
-    scenarios: int
-    k: int
     seconds: float | None  # mean per answer
     slowest: float | None
     input: float | None  # mean per attempt
     output: float | None
+    tokens: float | None
     agent_errors: int
     model_errors: int
-
-    def rate(self) -> float | None:
-        return self.passed / self.judged if self.judged else None
-
-    def tokens(self) -> float | None:
-        if self.input is None and self.output is None:
-            return None
-        return (self.input or 0) + (self.output or 0)
-
-    def errors(self) -> int:
-        return self.agent_errors + self.model_errors
+    errors: int
 
 
 class RunHead(Struct, frozen=True):
@@ -261,6 +263,7 @@ class IndexRow(Struct, frozen=True):
     run: RunHead
     passed: int
     judged: int
+    rate: float | None
     report: str  # the run's report, relative to the index
 
 
@@ -282,43 +285,6 @@ class Sample(Struct, frozen=True):
         return 1.96 * stdev(self.values) / sqrt(len(self.values))
 
 
-class Played(Struct, frozen=True):
-    """A run's attempts of one scenario."""
-
-    scenario: Scenario
-    outcomes: tuple[Outcome, ...]
-
-    def judged(self) -> list[bool]:
-        """Whether each attempt with a verdict passed; an agent that failed did not."""
-        found = []
-        for outcome in self.outcomes:
-            match outcome.verdict:
-                case Verdict() as verdict:
-                    found.append(verdict.passed)
-                case Failed():
-                    found.append(False)
-                case NoVerdict():
-                    pass
-        return found
-
-    def rate(self) -> float | None:
-        judged = self.judged()
-        return sum(judged) / len(judged) if judged else None
-
-    def result(self) -> Result:
-        judged = self.judged()
-        if not judged:
-            return "none"
-        if all(judged):
-            return "passing"
-        return "flaky" if any(judged) else "failing"
-
-    def stable(self, k: int) -> bool:
-        """Whether all `k` attempts are recorded, judged and passed."""
-        judged = self.judged()
-        return len(judged) == len(self.outcomes) == k and all(judged)
-
-
 class Template(Struct, frozen=True):
     """A page in `convy/pages/`, filled with its data."""
 
@@ -333,24 +299,9 @@ class Template(Struct, frozen=True):
 
 
 class Summary(Struct, frozen=True):
-    """A run summed up for the pages: its head, its tiles, a view per scenario."""
+    """A run summed up for the pages: its head, a view per scenario, and its tiles."""
 
     run: Run
-
-    def played(self) -> dict[str, Played]:
-        """The run's scenarios by id, each with its recorded attempts in order."""
-        return {
-            scenario.id: Played(
-                scenario,
-                tuple(
-                    sorted(
-                        (o for o in self.run.outcomes if o.scenario == scenario.id),
-                        key=lambda outcome: outcome.attempt,
-                    )
-                ),
-            )
-            for scenario in self.run.spec.scenarios
-        }
 
     def head(self) -> RunHead:
         spec = self.run.spec
@@ -363,7 +314,7 @@ class Summary(Struct, frozen=True):
                 status = "interrupted"
         return RunHead(
             id=spec.id,
-            short=spec.id.rpartition("_")[2],
+            short=spec.short(),
             agent=spec.agent,
             version=spec.version,
             started=spec.started.isoformat(),
@@ -375,51 +326,65 @@ class Summary(Struct, frozen=True):
             unreadable=self.run.unreadable,
         )
 
-    def metrics(self) -> Metrics:
-        played = self.played().values()
-        judged = [passed for p in played for passed in p.judged()]
-        attempts = [self.attempt(p.scenario, o) for p in played for o in p.outcomes]
+    def metrics(self, scenarios: Iterable[ScenarioView]) -> Metrics:
+        """The tiles over the views `scenarios()` made."""
+        views = list(scenarios)
+        attempts = [attempt for view in views for attempt in view.attempts]
+        judged = [a.passed for a in attempts if a.passed is not None]
         turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
+        k = self.run.spec.k
+        agent_errors = sum(a.stop == "agent_failure" for a in attempts)
+        model_errors = sum(a.stop == "model_failure" for a in attempts)
         return Metrics(
             passed=sum(judged),
             judged=len(judged),
-            stable=sum(p.stable(self.run.spec.k) for p in played),
-            scenarios=len(played),
-            k=self.run.spec.k,
+            rate=Tally(sum(judged), len(judged)).rate(),
+            stable=sum(
+                len(v.attempts) == k and all(a.passed is True for a in v.attempts) for v in views
+            ),
             seconds=self.average(turns),
             slowest=max(turns, default=None),
             input=self.average(a.input for a in attempts),
             output=self.average(a.output for a in attempts),
-            agent_errors=sum(a.stop == "agent_failure" for a in attempts),
-            model_errors=sum(a.stop == "model_failure" for a in attempts),
+            tokens=self.average(a.tokens for a in attempts),
+            agent_errors=agent_errors,
+            model_errors=model_errors,
+            errors=agent_errors + model_errors,
         )
 
     def scenarios(self) -> dict[str, ScenarioView]:
-        return {id: self.scenario(played) for id, played in self.played().items()}
+        """The run's scenarios by id, each with its recorded attempts in order."""
+        return {scenario.id: self.scenario(scenario) for scenario in self.run.spec.scenarios}
 
-    def scenario(self, played: Played) -> ScenarioView:
-        attempts = tuple(self.attempt(played.scenario, o) for o in played.outcomes)
-        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
-        claims = tuple(
-            ClaimSummary(
-                text,
-                held=sum(a.claims[i].passed is True for a in attempts if a.claims),
-                judged=sum(a.claims[i].passed is not None for a in attempts if a.claims),
-            )
-            for i, text in enumerate(played.scenario.claims)
+    def scenario(self, scenario: Scenario) -> ScenarioView:
+        played = sorted(
+            (o for o in self.run.outcomes if o.scenario == scenario.id), key=lambda o: o.attempt
         )
+        attempts = tuple(self.attempt(scenario, outcome) for outcome in played)
+        judged = [a.passed for a in attempts if a.passed is not None]
+        tally = Tally(sum(judged), len(judged))
+        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
         return ScenarioView(
-            id=played.scenario.id,
-            user=played.scenario.instructions,
-            max_turns=played.scenario.max_turns,
-            result=played.result(),
-            claims=claims,
+            id=scenario.id,
+            user=scenario.instructions,
+            max_turns=scenario.max_turns,
+            rate=tally.rate(),
+            result=tally.result(),
+            claims=tuple(
+                self.claim(text, [a.claims[i].passed for a in attempts])
+                for i, text in enumerate(scenario.claims)
+            ),
             seconds=self.average(turns),
             slowest=max(turns, default=None),
             input=self.average(a.input for a in attempts),
             output=self.average(a.output for a in attempts),
+            tokens=self.average(a.tokens for a in attempts),
             attempts=attempts,
         )
+
+    def claim(self, text: str, decisions: list[bool | None]) -> ClaimSummary:
+        tally = Tally(decisions.count(True), len(decisions) - decisions.count(None))
+        return ClaimSummary(text, tally.held, tally.judged, tally.result())
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
@@ -441,17 +406,23 @@ class Summary(Struct, frozen=True):
             error=error,
             claims=claims,
             seconds=sum(turn.seconds for turn in turns),
+            slowest=max((turn.seconds for turn in turns), default=None),
             input=self.total(turn.input for turn in turns),
             output=self.total(turn.output for turn in turns),
+            tokens=self.total(turn.tokens for turn in turns),
             turns=turns,
         )
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
             case Usage(input=spent, output=produced):
-                tokens: tuple[int | None, int | None] = (spent, produced)
+                tokens: tuple[int | None, int | None, int | None] = (
+                    spent,
+                    produced,
+                    spent + produced,
+                )
             case NoUsage():
-                tokens = (None, None)
+                tokens = (None, None, None)
         return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens)
 
     def total(self, counts: Iterable[int | None]) -> int | None:
@@ -471,8 +442,9 @@ class Report(Struct, frozen=True):
 
     def page(self) -> RunPage:
         summary = Summary(self.run)
-        scenarios = sorted(summary.scenarios().values(), key=lambda s: (ORDER[s.result], s.id))
-        return RunPage(summary.head(), summary.metrics(), tuple(scenarios))
+        views = summary.scenarios().values()
+        scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
+        return RunPage(summary.head(), summary.metrics(views), tuple(scenarios))
 
     def html(self) -> str:
         return Template("run.html").html(self.page())
@@ -487,16 +459,17 @@ class Comparison(Struct, frozen=True):
 
     def page(self) -> ComparePage:
         was, now = Summary(self.before), Summary(self.after)
-        before, after = was.played(), now.played()
-        views = (was.scenarios(), now.scenarios())
-        rows = [self.row(id, before.get(id), after.get(id), views) for id in {*before, *after}]
+        before, after = was.scenarios(), now.scenarios()
+        unchanged = self.unchanged()
+        rows = [self.row(id, before.get(id), after.get(id), unchanged) for id in {*before, *after}]
         rows.sort(key=lambda row: (GROUPS[row.group], row.id))
+        old, new = was.metrics(before.values()), now.metrics(after.values())
         return ComparePage(
             before=was.head(),
             after=now.head(),
-            was=was.metrics(),
-            now=now.metrics(),
-            deltas=self.deltas(was.metrics(), now.metrics(), before, after),
+            was=old,
+            now=new,
+            deltas=self.deltas(old, new, self.significant(before, after, unchanged)),
             models=self.models(),
             rows=tuple(rows),
         )
@@ -510,53 +483,51 @@ class Comparison(Struct, frozen=True):
         pairs = (("user", before.user, after.user), ("judge", before.judge, after.judge))
         return tuple(f"{role}: {was} → {now}" for role, was, now in pairs if was != now)
 
+    def unchanged(self) -> set[str]:
+        """The scenarios both runs have, not edited between them."""
+        before = {scenario.id: scenario for scenario in self.before.spec.scenarios}
+        return {s.id for s in self.after.spec.scenarios if before.get(s.id) == s}
+
     def row(
-        self,
-        id: str,
-        before: Played | None,
-        after: Played | None,
-        views: tuple[dict[str, ScenarioView], dict[str, ScenarioView]],
+        self, id: str, was: ScenarioView | None, now: ScenarioView | None, unchanged: set[str]
     ) -> CompareRow:
-        was, now = views[0].get(id), views[1].get(id)
-        if before is None or after is None:
-            why = "only in the after run" if before is None else "only in the before run"
+        if was is None or now is None:
+            why = "only in the after run" if was is None else "only in the before run"
             return CompareRow(id, "apart", why, was, now, ())
-        if before.scenario.fingerprint() != after.scenario.fingerprint():
+        if id not in unchanged:
             return CompareRow(id, "apart", "edited between the runs", was, now, ())
-        old, new = before.rate(), after.rate()
-        if old is None or new is None:
+        if was.rate is None or now.rate is None:
             return CompareRow(id, "apart", "no verdict in one of the runs", was, now, ())
-        group: Group = "worse" if new < old else "better" if new > old else "same"
-        return CompareRow(id, group, "", was, now, self.claims(views[0][id], views[1][id]))
+        group: Group = (
+            "worse" if now.rate < was.rate else "better" if now.rate > was.rate else "same"
+        )
+        return CompareRow(id, group, "", was, now, self.claims(was, now))
 
     def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
         changes = []
         for old, new in zip(was.claims, now.claims, strict=True):
-            before = old.held / old.judged if old.judged else None
-            after = new.held / new.judged if new.judged else None
+            before = Tally(old.held, old.judged).rate()
+            after = Tally(new.held, new.judged).rate()
             if before is None or after is None or before == after:
                 change: Literal["unchanged", "worse", "better"] = "unchanged"
             else:
                 change = "better" if after > before else "worse"
-            changes.append(ClaimChange(new.text, old.result(), new.result(), change))
+            changes.append(ClaimChange(new.text, old.result, new.result, change))
         return tuple(changes)
 
-    def deltas(
-        self, was: Metrics, now: Metrics, before: dict[str, Played], after: dict[str, Played]
-    ) -> Deltas:
-        old, new = was.rate(), now.rate()
-        if old is None or new is None:
+    def deltas(self, was: Metrics, now: Metrics, significant: Tone | None) -> Deltas:
+        if was.rate is None or now.rate is None:
             rate = Delta(None, "none")
         else:
-            points = round((new - old) * 100, 6)
-            agrees = self.significant(before, after) == ("good" if points > 0 else "bad")
+            points = round((now.rate - was.rate) * 100, 6)
+            agrees = significant == ("good" if points > 0 else "bad")
             rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
         return Deltas(
             rate=rate,
             stable=self.delta(was.stable, now.stable, more_is_better=True),
             seconds=self.delta(was.seconds, now.seconds, more_is_better=False),
-            tokens=self.delta(was.tokens(), now.tokens(), more_is_better=False),
-            errors=self.delta(was.errors(), now.errors(), more_is_better=False),
+            tokens=self.delta(was.tokens, now.tokens, more_is_better=False),
+            errors=self.delta(was.errors, now.errors, more_is_better=False),
         )
 
     def delta(self, was: float | None, now: float | None, more_is_better: bool) -> Delta:
@@ -571,21 +542,21 @@ class Comparison(Struct, frozen=True):
             return "noise"
         return "good" if (change > 0) == more_is_better else "bad"
 
-    def significant(self, before: dict[str, Played], after: dict[str, Played]) -> Tone | None:
+    def significant(
+        self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
+    ) -> Tone | None:
         """The pass rate's tone when the paired change over the scenarios both runs played
         unchanged is beyond its 95% margin; None when it is not."""
         differences = []
-        for id, played in after.items():
-            earlier = before.get(id)
-            if earlier is None or earlier.scenario.fingerprint() != played.scenario.fingerprint():
-                continue
-            new, old = played.rate(), earlier.rate()
+        for id in unchanged:
+            new, old = after[id].rate, before[id].rate
             if new is not None and old is not None:
                 differences.append(new - old)
-        margin = Sample(tuple(differences)).margin()
-        if margin is None or abs(mean(differences)) <= margin:
+        sample = Sample(tuple(differences))
+        change, margin = sample.mean(), sample.margin()
+        if change is None or margin is None or abs(change) <= margin:
             return None
-        return "good" if mean(differences) > 0 else "bad"
+        return "good" if change > 0 else "bad"
 
 
 class Index(Struct, frozen=True):
@@ -597,9 +568,11 @@ class Index(Struct, frozen=True):
         rows = []
         for run in sorted(self.runs, key=lambda run: run.spec.started, reverse=True):
             summary = Summary(run)
-            metrics = summary.metrics()
+            metrics = summary.metrics(summary.scenarios().values())
             report = f"{run.path.as_posix()}/report.html"
-            rows.append(IndexRow(summary.head(), metrics.passed, metrics.judged, report))
+            rows.append(
+                IndexRow(summary.head(), metrics.passed, metrics.judged, metrics.rate, report)
+            )
         return IndexPage(tuple(rows))
 
     def html(self) -> str:

@@ -213,7 +213,6 @@ const pct = rate => rate == null ? "—" : `${Math.round(rate * 100)}%`;
 const secs = s => s == null ? "—" : s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
 const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
 const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
-const tokens = (input, output) => input == null && output == null ? null : (input ?? 0) + (output ?? 0);
 const STATUS = {running: "not finished", interrupted: "interrupted", finished: null};
 const clock = () => {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -275,18 +274,13 @@ function claimTally(claim) {
   if (claim.held === 0) return `failed in ${claim.judged} of ${claim.judged}`;
   return `held in ${claim.held} of ${claim.judged}`;
 }
-function claimResult(claim) {
-  if (!claim.judged) return "none";
-  return claim.held === claim.judged ? "passing" : claim.held === 0 ? "failing" : "flaky";
-}
 function attemptTiles(attempt) {
   const answers = attempt.turns.length;
-  const slowest = Math.max(0, ...attempt.turns.map(t => t.seconds));
   const result = kind(attempt.passed);
   return el("div", {className: "mini"},
     el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
-    el("div", {}, el("span", {className: "l"}, "Answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, `${plural(answers, "answer")} · slowest ${secs(slowest)}`)),
-    el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(tokens(attempt.input, attempt.output))),
+    el("div", {}, el("span", {className: "l"}, "Answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out`)));
 }
 function judgeLines(attempt) {
@@ -300,8 +294,8 @@ function dialogue(attempt) {
     el("div", {className: "msg agent"}, el("div", {className: "bubble"},
       el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
         el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
-        el("span", {className: "m"}, t.input == null ? el("span", {className: "muted"}, "tokens not reported")
-          : [el("strong", {}, count(t.input + t.output)), " tokens ", el("span", {className: "muted"}, `· ${count(t.input)} in · ${count(t.output)} out`)])),
+        el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
+          : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${count(t.input)} in · ${count(t.output)} out`)])),
       markdown(t.agent))),
   ]);
 }
@@ -343,24 +337,22 @@ function header() {
 
 function tiles() {
   const tile = (label, value, detail, hero = false) => el("div", {className: hero ? "tile hero" : "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, detail));
-  const total = tokens(M.input, M.output);
   return el("div", {className: "tiles"},
-    tile("Pass rate", pct(M.judged ? M.passed / M.judged : null), `${M.passed} of ${plural(M.judged, "attempt")}`, true),
-    tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${M.scenarios}`)], M.k > 1 ? "passed every attempt" : "one attempt each"),
+    tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}`, true),
+    tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
     tile("Answer time", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
-    tile("Tokens per attempt", count(total), total == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out`),
-    tile("Errors", String(M.agent_errors + M.model_errors), `agent ${M.agent_errors} · models ${M.model_errors}`));
+    tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out`),
+    tile("Errors", String(M.errors), `agent ${M.agent_errors} · models ${M.model_errors}`));
 }
 
 function table() {
   const {mask, keep} = filtered(DATA.scenarios.map(s => s.id));
   const rows = DATA.scenarios.filter(s => keep(s.id)).map(s => {
-    const total = tokens(s.input, s.output);
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {className: "n metric"}, secs(s.seconds), el("small", {}, s.slowest == null ? "" : `slowest ${secs(s.slowest)}`)),
-      el("td", {className: "n metric"}, count(total), el("small", {}, total == null ? "not reported" : `${count(s.input)} in · ${count(s.output)} out`)));
+      el("td", {className: "n metric"}, count(s.tokens), el("small", {}, s.tokens == null ? "not reported" : `${count(s.input)} in · ${count(s.output)} out`)));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
@@ -391,7 +383,7 @@ function show(id, number) {
       el("div", {className: "side"},
         el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, s.user),
         el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
-        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(claimResult(c)), el("span", {}, c.text), el("span", {className: "tally"}, claimTally(c)))))),
+        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text), el("span", {className: "tally"}, claimTally(c)))))),
       el("div", {className: "main"},
         attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
           : el("p", {className: "empty"}, "No attempts recorded yet.")))));

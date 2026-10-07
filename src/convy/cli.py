@@ -82,7 +82,7 @@ class Rebuilt(Struct, frozen=True):
                 f"skipped unreadable lines or a whole run: {self.project.results() / path}",
                 file=sys.stderr,
             )
-        print(f"index: {self.project.page()}")
+        print(f"index: {self.project.index()}")
 
 
 class Recorded(Struct, frozen=True):
@@ -99,11 +99,11 @@ class Recorded(Struct, frozen=True):
             return asyncio.run(self.journal.play(bench, agent, Printed(self.journal), done))
         except KeyboardInterrupt:
             spec = self.journal.spec
-            run = Runs(self.project.results()).run(spec.id)
+            run = Runs(self.project.results()).read(self.journal.folder())
             print(f"interrupted: {len(run.done())} of {len(spec.pairs())} attempts recorded")
-            print(f"resume with: convy resume {spec.id.rpartition('_')[2]}")
+            print(f"resume with: convy resume {spec.short()}")
             Rebuilt(self.project).show()
-            print(f"report: {self.project.run_page(spec)}")
+            print(f"report: {self.project.report_page(spec)}")
             raise SystemExit(130) from None
 
 
@@ -155,11 +155,11 @@ class RunCommand(BaseModel):
                 journal = self.journal(project, bench, loaded, files)
                 outcomes = Recorded(project, journal).outcomes(bench, agent)
                 played.append(journal.spec)
-            failed |= any(o.stop in ("agent_failure", "model_failure") for o in outcomes)
+            failed |= any(outcome.failed() for outcome in outcomes)
         if not self.smoke:
             Rebuilt(project).show()
             for spec in played:
-                print(f"report: {project.run_page(spec)}")
+                print(f"report: {project.report_page(spec)}")
         raise SystemExit(int(failed))
 
     def bench(self, project: Project) -> Bench:
@@ -225,8 +225,9 @@ class ResumeCommand(BaseModel):
         try:
             run = Runs(project.results()).run(self.run)
             spec = run.spec
-            if isinstance(run.status, Finished):
-                raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
+            match run.status:
+                case Finished():
+                    raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
             loaded = project.agent(spec.agent)
             models = project.models()
             files = project.files(spec.agent)
@@ -248,8 +249,8 @@ class ResumeCommand(BaseModel):
         journal = RunJournal(project.results(), spec)
         outcomes = Recorded(project, journal).outcomes(bench, agent, run.done())
         Rebuilt(project).show()
-        print(f"report: {project.run_page(spec)}")
-        raise SystemExit(int(any(o.stop in ("agent_failure", "model_failure") for o in outcomes)))
+        print(f"report: {project.report_page(spec)}")
+        raise SystemExit(int(any(outcome.failed() for outcome in outcomes)))
 
 
 class ReportCommand(BaseModel):
