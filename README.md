@@ -43,7 +43,7 @@ convy does exactly that and nothing more:
 - **Conversations, not prompts.** A scenario tells a simulated user who to be and what to want; the
   judge checks plain-language claims about the dialogue.
 - **Numbers for a decision.** Pass rate over repeated attempts, the agent's own tokens and its response
-  time per turn, side by side for every agent and version.
+  time per turn: a report per run, and two runs side by side with `convy compare`.
 - **Small and readable.** About a thousand lines, no evaluation framework and no containers underneath.
 
 ## How it works
@@ -63,8 +63,8 @@ convy does exactly that and nothing more:
 For every attempt convy opens a fresh conversation with the agent, lets the simulated user talk to it
 until the user is done or the turns run out, and asks the judge whether each claim holds. Every run gets
 a folder of its own, and each attempt is written there as soon as it ends, so a stopped run can be
-continued. After a run convy writes the run's report, a static page beside its folder, and
-`convy compare` puts two runs side by side.
+continued. After a run convy writes every run's report, a static page inside its folder, and the
+index of all runs; `convy compare` puts two runs side by side.
 
 ## Quick start
 
@@ -85,7 +85,7 @@ my-bench/
 ├── models.py         # the models that play the user and the judge
 ├── agents/           # one file per agent
 ├── scenarios/        # one YAML file per scenario, in folders if you like
-└── results/          # a folder per run, and the report
+└── results/          # a folder per run with its report, and the index
 ```
 
 ## Connect an agent
@@ -344,8 +344,9 @@ with a switch between the system, light and dark themes. Five tiles sum the run 
 
 - **Pass rate** — the share of attempts the judge passed, with the count (`67% · 8 of 12 attempts`);
 - **Stable scenarios** — those that passed every attempt;
-- **Answer time** — the mean per answer, and the slowest;
-- **Tokens per attempt** — in and out;
+- **Answer time** — the mean per answer, and the slowest: the agent's own time, the simulated user
+  and the judge are not counted;
+- **Tokens per attempt** — in and out, the agent's own tokens as it reports them;
 - **Errors** — of the agent and of convy's models.
 
 Below them, a row per scenario: **Failing** (no attempt passed), **Flaky** (some did), **Passing**
@@ -368,8 +369,6 @@ are grouped as **Worse**, **Better**, **Same** and **Not compared** (played by o
 between the runs, or without a verdict in one of them), and a scenario's window shows both runs'
 dialogues side by side. The runs may be of different agents; the page warns when the user's or the
 judge's model differs.
-
-Tokens and time are the agent's own: the simulated user and the judge are not counted.
 
 ## Run from Python
 

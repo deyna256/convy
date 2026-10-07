@@ -16,7 +16,8 @@ as it ends. The report is built from the runs.
 convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome ──▶ SimulatedUser ⇄ Conversation (agent)
                    │                                         └─▶ Judge
                    └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
-                                                        └─▶ Comparison ──▶ results/compare/*.html
+                                                        ├─▶ Comparison ──▶ results/compare/*.html
+                                                        └─▶ Index ──▶ results/index.html
 ```
 
 ## Code map
@@ -32,7 +33,7 @@ All code is in `src/convy/`.
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`, `Judge`, its decisions `Verdict` and `Claim`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder |
-| `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template` |
+| `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*` and the scenario window's `window.*` — into the page |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `MemoryJournal` |
 | `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent` |
 | `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
@@ -72,8 +73,8 @@ in all of `src/convy/`.
    class. `None` is allowed only for an optional constructor argument that was not given.
 6. **Domain objects become JSON in one place, the run's folder.** Objects have no `json()` or
    `to_dict()` methods. `RunJournal` writes with `msgspec.json.encode`; `Runs` reads back with
-   `msgspec.json.decode`. The report's pages embed data of their own: `Report` builds view records for
-   the browser from the runs and encodes those.
+   `msgspec.json.decode`. The report's pages embed data of their own: `Summary` builds the view records
+   for the browser from the runs; `Template` encodes them.
 7. **Outside data is checked where it enters and is typed after that.** Scenarios: `yamlrocks.loads`,
    then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded with `msgspec.json`
    as the run's folder will do it, so a wrong one fails its turn instead of the run. Runs:
@@ -110,8 +111,9 @@ count, the change between two runs and its colour, whether a change of pass rate
 groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
 the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
 through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the
-scripts stay thin enough to need no tests of their own. Each page is one template that carries its
-own copy of the shared styles and helpers, so a written page stands alone.
+scripts stay thin enough to need no tests of their own. Each page is assembled from shared parts in
+`pages/` — `base.css` and `base.js` for every page, `window.css` and `window.js` for the scenario
+window — and written as one standalone file.
 
 The view records are internal and have no version: one convy version writes the template and the data
 into one file, and a page written earlier keeps working on its own. The only durable format is the
