@@ -275,3 +275,19 @@ def test_resume_keeps_the_turn_timeout_of_the_run(project: Path, monkeypatch: py
 def test_an_unknown_run_is_not_resumed(project: Path, capsys):
     assert convy("resume", "nope") == 2
     assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
+
+
+def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
+    (project / "models.py").write_text(FAKE_MODELS)
+    assert convy("run", "echo", "echo", "--scenarios", "clarify-*") == 0
+    before, after = (folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
+    capsys.readouterr()
+    main(["compare", before, after])
+    page = project / "results" / "compare" / f"{before}-vs-{after}.html"
+    assert capsys.readouterr().out == f"comparison: {page}\n"
+    assert '"rows":[' in page.read_text()
+
+
+def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
+    assert convy("compare", "nope", "nada") == 2
+    assert capsys.readouterr().err.startswith("error: no run 'nope' in ")

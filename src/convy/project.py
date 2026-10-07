@@ -13,7 +13,7 @@ from msgspec import Struct
 from convy.agent import Agent
 from convy.bench import Files, RunSpec
 from convy.model import Models
-from convy.report import Index, Report, Runs
+from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Scenarios
 
 # Files in the template whose names would otherwise be hidden from the package.
@@ -79,6 +79,13 @@ class Project(Struct, frozen=True):
             self.write(self.run_page(run.spec), Report(run).html())
         self.write(self.page(), Index(read).html())
         return runs.broken()
+
+    def compare(self, before: Run, after: Run) -> Path:
+        """Write the comparison of two runs, `compare/<before>-vs-<after>.html`."""
+        short = (before.spec.id.rpartition("_")[2], after.spec.id.rpartition("_")[2])
+        path = self.results() / "compare" / f"{short[0]}-vs-{short[1]}.html"
+        self.write(path, Comparison(before, after).html())
+        return path
 
     def write(self, path: Path, html: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -24,7 +24,7 @@ from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
 from convy.env import Env
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
 from convy.model import Model, ModelFailure, Models, OpenAiModel
-from convy.report import Index, Report, Run, Runs
+from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Matching, Outcome, Scenario, Scenarios
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "Answer",
     "Bench",
     "Claim",
+    "Comparison",
     "Conversation",
     "Env",
     "Failed",

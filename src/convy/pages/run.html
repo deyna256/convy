@@ -154,6 +154,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
   <section id="tiles" aria-label="The run in numbers"></section>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
+  <p class="hint" id="hint"></p>
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
@@ -405,6 +406,7 @@ document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(tiles());
 document.getElementById("filter").addEventListener("input", draw);
+document.getElementById("hint").textContent = `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();
 const opened = fromAddress();
 if (opened) show(opened.id, opened.attempt);

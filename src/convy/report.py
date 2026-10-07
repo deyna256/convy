@@ -2,8 +2,9 @@
 
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
+from math import sqrt
 from pathlib import Path
-from statistics import mean
+from statistics import mean, stdev
 from typing import Literal
 
 import msgspec
@@ -106,8 +107,11 @@ class Runs(Struct, frozen=True):
 # The pages' data. It is JSON for the browser, so a number nobody reported is None (null).
 
 type Result = Literal["failing", "flaky", "passing", "none"]
+type Tone = Literal["good", "bad", "same", "noise", "none"]
+type Group = Literal["worse", "better", "same", "apart"]
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
+GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
 
 
 class ClaimView(Struct, frozen=True):
@@ -212,6 +216,47 @@ class RunPage(Struct, frozen=True):
     scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
 
 
+class Delta(Struct, frozen=True):
+    """A change from before to after, in the metric's own unit, and how to read it."""
+
+    value: float | None
+    tone: Tone
+
+
+class Deltas(Struct, frozen=True):
+    rate: Delta  # percentage points
+    stable: Delta
+    seconds: Delta
+    tokens: Delta
+    errors: Delta
+
+
+class ClaimChange(Struct, frozen=True):
+    text: str
+    before: Result
+    after: Result
+    change: Literal["unchanged", "worse", "better"]
+
+
+class CompareRow(Struct, frozen=True):
+    id: str
+    group: Group
+    why: str  # why a scenario is not compared, or ""
+    before: ScenarioView | None
+    after: ScenarioView | None
+    claims: tuple[ClaimChange, ...]
+
+
+class ComparePage(Struct, frozen=True):
+    before: RunHead
+    after: RunHead
+    was: Metrics
+    now: Metrics
+    deltas: Deltas
+    models: tuple[str, ...]  # the models that differ, as "judge: a → b"
+    rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
+
+
 class IndexRow(Struct, frozen=True):
     run: RunHead
     passed: int
@@ -221,6 +266,20 @@ class IndexRow(Struct, frozen=True):
 
 class IndexPage(Struct, frozen=True):
     runs: tuple[IndexRow, ...]  # newest first
+
+
+class Sample(Struct, frozen=True):
+    """Values, one per scenario: their mean, and its 95% margin from three values on."""
+
+    values: tuple[float, ...]
+
+    def mean(self) -> float | None:
+        return mean(self.values) if self.values else None
+
+    def margin(self) -> float | None:
+        if len(self.values) < 3:
+            return None
+        return 1.96 * stdev(self.values) / sqrt(len(self.values))
 
 
 class Played(Struct, frozen=True):
@@ -417,6 +476,115 @@ class Report(Struct, frozen=True):
 
     def html(self) -> str:
         return Template("run.html").html(self.page())
+
+
+class Comparison(Struct, frozen=True):
+    """Two runs side by side, `compare/<before>-vs-<after>.html`: what changed from `before` to
+    `after`, scenario by scenario."""
+
+    before: Run
+    after: Run
+
+    def page(self) -> ComparePage:
+        was, now = Summary(self.before), Summary(self.after)
+        before, after = was.played(), now.played()
+        views = (was.scenarios(), now.scenarios())
+        rows = [self.row(id, before.get(id), after.get(id), views) for id in {*before, *after}]
+        rows.sort(key=lambda row: (GROUPS[row.group], row.id))
+        return ComparePage(
+            before=was.head(),
+            after=now.head(),
+            was=was.metrics(),
+            now=now.metrics(),
+            deltas=self.deltas(was.metrics(), now.metrics(), before, after),
+            models=self.models(),
+            rows=tuple(rows),
+        )
+
+    def html(self) -> str:
+        return Template("compare.html").html(self.page())
+
+    def models(self) -> tuple[str, ...]:
+        """The convy models that differ between the runs, as `judge: a → b`."""
+        before, after = self.before.spec, self.after.spec
+        pairs = (("user", before.user, after.user), ("judge", before.judge, after.judge))
+        return tuple(f"{role}: {was} → {now}" for role, was, now in pairs if was != now)
+
+    def row(
+        self,
+        id: str,
+        before: Played | None,
+        after: Played | None,
+        views: tuple[dict[str, ScenarioView], dict[str, ScenarioView]],
+    ) -> CompareRow:
+        was, now = views[0].get(id), views[1].get(id)
+        if before is None or after is None:
+            why = "only in the after run" if before is None else "only in the before run"
+            return CompareRow(id, "apart", why, was, now, ())
+        if before.scenario.fingerprint() != after.scenario.fingerprint():
+            return CompareRow(id, "apart", "edited between the runs", was, now, ())
+        old, new = before.rate(), after.rate()
+        if old is None or new is None:
+            return CompareRow(id, "apart", "no verdict in one of the runs", was, now, ())
+        group: Group = "worse" if new < old else "better" if new > old else "same"
+        return CompareRow(id, group, "", was, now, self.claims(views[0][id], views[1][id]))
+
+    def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
+        changes = []
+        for old, new in zip(was.claims, now.claims, strict=True):
+            before = old.held / old.judged if old.judged else None
+            after = new.held / new.judged if new.judged else None
+            if before is None or after is None or before == after:
+                change: Literal["unchanged", "worse", "better"] = "unchanged"
+            else:
+                change = "better" if after > before else "worse"
+            changes.append(ClaimChange(new.text, old.result(), new.result(), change))
+        return tuple(changes)
+
+    def deltas(
+        self, was: Metrics, now: Metrics, before: dict[str, Played], after: dict[str, Played]
+    ) -> Deltas:
+        old, new = was.rate(), now.rate()
+        if old is None or new is None:
+            rate = Delta(None, "none")
+        else:
+            points = round((new - old) * 100, 6)
+            rate = Delta(points, self.significant(before, after) or self.tone(points, True, True))
+        return Deltas(
+            rate=rate,
+            stable=self.delta(was.stable, now.stable, more_is_better=True),
+            seconds=self.delta(was.seconds, now.seconds, more_is_better=False),
+            tokens=self.delta(was.tokens(), now.tokens(), more_is_better=False),
+            errors=self.delta(was.errors(), now.errors(), more_is_better=False),
+        )
+
+    def delta(self, was: float | None, now: float | None, more_is_better: bool) -> Delta:
+        if was is None or now is None:
+            return Delta(None, "none")
+        return Delta(now - was, self.tone(now - was, more_is_better, False))
+
+    def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
+        if change == 0:
+            return "same"
+        if noisy:
+            return "noise"
+        return "good" if (change > 0) == more_is_better else "bad"
+
+    def significant(self, before: dict[str, Played], after: dict[str, Played]) -> Tone | None:
+        """The pass rate's tone when the paired change over the scenarios both runs played
+        unchanged is beyond its 95% margin; None when it is not."""
+        differences = []
+        for id, played in after.items():
+            earlier = before.get(id)
+            if earlier is None or earlier.scenario.fingerprint() != played.scenario.fingerprint():
+                continue
+            new, old = played.rate(), earlier.rate()
+            if new is not None and old is not None:
+                differences.append(new - old)
+        margin = Sample(tuple(differences)).margin()
+        if margin is None or abs(mean(differences)) <= margin:
+            return None
+        return "good" if mean(differences) > 0 else "bad"
 
 
 class Index(Struct, frozen=True):

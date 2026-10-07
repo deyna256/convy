@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Runs · convy</title>
+<title>Comparison</title>
 <style>
 :root {
   --page: #eef1f5; --surface: #ffffff; --side: #f4f6f9; --ink: #18212f; --muted: #4a5464;
@@ -151,9 +151,11 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 <body>
 <div class="page">
   <header id="head"></header>
+  <section id="tiles" aria-label="Before and after in numbers"></section>
+  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
-  <p class="hint" id="hint"></p>
 </div>
+<dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
 // Every number and decision comes from the data; this script only draws it.
 // Everything from the data is added as text, never as HTML.
@@ -323,36 +325,119 @@ function filtered(ids) {
   return {mask, keep: id => pattern.test(id)};
 }
 
-// The index: every run, newest first, with a link to its report.
+// The comparison: two runs' tiles, their scenarios grouped by what changed, and the window.
 const DATA = __DATA__;
+const BEFORE = DATA.before, AFTER = DATA.after, WAS = DATA.was, NOW = DATA.now, D = DATA.deltas;
+const GROUPS = {worse: "Worse", better: "Better", same: "Same", apart: "Not compared"};
 
 function header() {
+  const title = BEFORE.agent === AFTER.agent ? BEFORE.agent : `${BEFORE.agent} vs ${AFTER.agent}`;
+  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)}`);
   return el("div", {className: "top"},
-    el("div", {}, el("div", {className: "eyebrow"}, "CONVY"), el("h1", {}, "Runs"),
-      el("p", {className: "meta"}, DATA.runs.length ? plural(DATA.runs.length, "run") : "No runs yet. Run convy run <agent> and they appear here.")),
+    el("div", {},
+      el("div", {className: "eyebrow"}, el("a", {href: "../index.html"}, "CONVY"), " / compare"),
+      el("h1", {}, title),
+      el("p", {className: "meta", style: "display:flex;flex-wrap:wrap;align-items:center;gap:8px"}, tag("Before", BEFORE), el("span", {className: "arrow"}, "→"), tag("After", AFTER),
+        DATA.models.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `models differ: ${DATA.models.join(", ")}`) : el("span", {}, "same user and judge models"))),
     themeButton());
 }
 
-function table() {
-  if (!DATA.runs.length) return el("p", {className: "empty"}, "Nothing to list.");
-  return el("table", {},
-    el("thead", {}, el("tr", {}, ["Agent", "Started", "Run", "Version", "Status", "Pass rate", ""].map(t => el("th", {}, t)))),
-    el("tbody", {}, DATA.runs.map(row => {
-      const run = row.run;
-      return el("tr", {},
-        el("td", {className: "mono"}, run.agent),
-        el("td", {}, when(run.started)),
-        el("td", {className: "mono"}, run.short),
-        el("td", {className: "muted"}, run.version || "—"),
-        el("td", {className: "muted"}, STATUS[run.status] ?? "finished"),
-        el("td", {className: "n"}, el("strong", {}, pct(row.judged ? row.passed / row.judged : null)), el("span", {className: "muted"}, ` · ${row.passed} of ${row.judged}`)),
-        el("td", {}, el("a", {href: row.report}, "report")));
-    })));
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data.
+function change(delta, unit) {
+  if (delta.value == null || delta.tone === "none") return el("span", {className: "delta none"}, "—");
+  if (delta.tone === "same") return el("span", {className: "delta same"}, "=");
+  const arrow = delta.value > 0 ? "▲" : "▼";
+  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
+  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
 }
 
+function tiles() {
+  const tile = (label, value, was, delta, hero = false) => el("div", {className: hero ? "tile hero" : "tile"},
+    el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta);
+  const rate = m => m.judged ? m.passed / m.judged : null;
+  return el("div", {className: "tiles"},
+    tile("Pass rate", pct(rate(NOW)), `was ${pct(rate(WAS))} · now ${NOW.passed} of ${NOW.judged}`, change(D.rate, v => String(Math.round(v))), true),
+    tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${NOW.scenarios}`)], `was ${WAS.stable} of ${WAS.scenarios}`, change(D.stable, v => String(v))),
+    tile("Answer time", secs(NOW.seconds), `was ${secs(WAS.seconds)}`, change(D.seconds, secs)),
+    tile("Tokens per attempt", count(tokens(NOW.input, NOW.output)), `was ${count(tokens(WAS.input, WAS.output))}`, change(D.tokens, count)),
+    tile("Errors", String(NOW.agent_errors + NOW.model_errors), `was ${WAS.agent_errors + WAS.model_errors}`, change(D.errors, v => String(v))));
+}
+
+function table() {
+  const {mask, keep} = filtered(DATA.rows.map(r => r.id));
+  const shown = DATA.rows.filter(r => keep(r.id));
+  const body = [];
+  for (const group of Object.keys(GROUPS)) {
+    const rows = shown.filter(r => r.group === group);
+    if (!rows.length) continue;
+    body.push(el("tr", {className: "group"}, el("td", {colSpan: 4}, `${GROUPS[group]} · ${rows.length}`)));
+    for (const r of rows) {
+      const open = el("button", {className: "open", type: "button", "aria-label": `Open ${r.id}`}, r.id);
+      const metric = (now, was) => [now, el("small", {}, was)];
+      const row = el("tr", {className: "row"}, el("td", {}, open),
+        el("td", {}, r.why ? el("span", {className: "muted"}, r.why) : el("span", {style: "white-space:nowrap"}, badge(r.before.result), el("span", {className: "arrow"}, "→"), badge(r.after.result))),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(r.after.seconds), `was ${secs(r.before.seconds)}`)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(count(tokens(r.after.input, r.after.output)), `was ${count(tokens(r.before.input, r.before.output))}`)));
+      row.addEventListener("click", () => show(r.id, 1));
+      body.push(row);
+    }
+  }
+  return el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Answer time"), el("th", {className: "n"}, "Tokens per attempt"))),
+    el("tbody", {}, body.length ? body : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
+}
+
+const dialog = document.getElementById("window");
+dialog.addEventListener("close", clearAddress);
+
+function column(word, run, view, number) {
+  if (!view) return el("div", {}, el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`)), el("p", {className: "empty"}, "This run did not play the scenario."));
+  const attempt = view.attempts.find(a => a.attempt === number) ?? view.attempts[0];
+  return el("div", {},
+    el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
+      attempt ? badge(kind(attempt.passed), ATTEMPT) : null),
+    attempt ? [attemptTiles(attempt), judgeLines(attempt), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
+}
+
+function show(id, number) {
+  const r = DATA.rows.find(item => item.id === id);
+  if (!r) return;
+  address(id, number);
+  const view = r.after ?? r.before;
+  const close = el("button", {className: "close", type: "button", "aria-label": "Close"}, "✕");
+  close.addEventListener("click", () => dialog.close());
+  const most = Math.max(r.before ? r.before.attempts.length : 0, r.after ? r.after.attempts.length : 0, 1);
+  const tabs = el("div", {className: "tabs", role: "tablist", "aria-label": "Attempts"}, Array.from({length: most}, (_, i) => {
+    const tab = el("button", {className: "tab plain", type: "button", role: "tab", "aria-selected": String(i + 1 === number)}, `Attempt ${i + 1}`);
+    tab.addEventListener("click", () => show(id, i + 1));
+    return tab;
+  }));
+  const claims = r.claims.length
+    ? el("ol", {className: "claims"}, r.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.after), el("span", {}, c.text),
+        el("span", {className: "tally"}, c.change === "unchanged" ? "unchanged" : [icon(c.before), "→", icon(c.after), c.change === "worse" ? "got worse" : "got better"]))))
+    : el("p", {className: "told muted"}, r.why || "No claims to compare.");
+  dialog.replaceChildren(el("div", {className: "frame"},
+    el("div", {className: "whead"}, el("h2", {id: "window-title"}, r.id),
+      r.before ? badge(r.before.result) : null, r.before && r.after ? el("span", {className: "arrow"}, "→") : null, r.after ? badge(r.after.result) : null,
+      el("span", {className: "muted"}, `${BEFORE.short} → ${AFTER.short}`), close),
+    el("div", {className: "wbody"},
+      el("div", {className: "side"}, el("div", {className: "sec"}, "Claims · before → after"), claims,
+        el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, view.user)),
+      el("div", {className: "main"}, tabs, el("div", {className: "cols"}, column("Before", BEFORE, r.before, number), column("After", AFTER, r.after, number))))));
+  if (!dialog.open) dialog.showModal();
+}
+
+function draw() {
+  document.getElementById("table").replaceChildren(table());
+}
+
+document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
 document.getElementById("head").replaceChildren(header());
-document.getElementById("table").replaceChildren(table());
-document.getElementById("hint").textContent = "Compare two runs: convy compare <before> <after>";
+document.getElementById("tiles").replaceChildren(tiles());
+document.getElementById("filter").addEventListener("input", draw);
+draw();
+const opened = fromAddress();
+if (opened) show(opened.id, opened.attempt);
 </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
-"""The `convy` command: `init`, `run`, `resume` and `report`. It prints and picks the exit code."""
+"""The `convy` command: `init`, `run`, `resume`, `report` and `compare`. It prints and picks the
+exit code."""
 
 import asyncio
 import secrets
@@ -256,6 +257,21 @@ class ReportCommand(BaseModel):
         Rebuilt(Project(Path.cwd())).show()
 
 
+class CompareCommand(BaseModel):
+    before: CliPositionalArg[str] = Field(description="the run to compare with: id or random part")
+    after: CliPositionalArg[str] = Field(description="the run that may have changed")
+
+    def cli_cmd(self) -> None:
+        project = Project(Path.cwd())
+        runs = Runs(project.results())
+        try:
+            before, after = runs.run(self.before), runs.run(self.after)
+        except ValueError as error:  # no such run, or several
+            print(f"error: {error}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(f"comparison: {project.compare(before, after)}")
+
+
 class Convy(BaseSettings):
     """Check conversational agents with a simulated user and a judge."""
 
@@ -271,6 +287,9 @@ class Convy(BaseSettings):
         description="play the rest of a run that was stopped, exactly as it started"
     )
     report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
+    compare: CliSubCommand[CompareCommand] = Field(
+        description="write a page that compares two runs: before, then after"
+    )
 
     def cli_cmd(self) -> None:
         CliApp.run_subcommand(self)

@@ -9,7 +9,7 @@ import pytest
 from convy.agent import Answer, Message, NoUsage, Usage
 from convy.bench import Finished, RunJournal, RunSpec
 from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
-from convy.report import Index, Report, Run, Runs
+from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
@@ -161,6 +161,12 @@ def only(directory: Path, agent: str = "bot") -> Run:
     return run
 
 
+def both(directory: Path) -> tuple[Run, Run]:
+    """The two runs under `directory`, oldest first."""
+    first, second = sorted(Runs(directory), key=lambda run: run.spec.started)
+    return first, second
+
+
 def test_a_scenario_is_failing_flaky_passing_or_without_a_verdict(tmp_path):
     journal(
         tmp_path,
@@ -254,6 +260,85 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
     )
 
 
+def test_a_comparison_groups_scenarios_by_what_changed(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        5,
+        outcome("a", PASSED),
+        outcome("b", FAILED),
+        outcome("c", PASSED),
+        outcome("d", NoVerdict("down")),
+        outcome("e", PASSED),
+        started=at(5),
+    )
+    journal(
+        tmp_path,
+        "bot",
+        "2",
+        4,
+        outcome("a", FAILED),
+        outcome("b", PASSED),
+        outcome("c", PASSED),
+        outcome("d", PASSED),
+        started=at(6),
+    )
+    page = Comparison(*both(tmp_path)).page()
+    assert [(r.id, r.group, r.why) for r in page.rows] == [
+        ("a", "worse", ""),
+        ("b", "better", ""),
+        ("c", "same", ""),
+        ("d", "apart", "no verdict in one of the runs"),
+        ("e", "apart", "only in the before run"),
+    ]
+    worse = page.rows[0]
+    assert worse.before is not None and worse.after is not None
+    assert (worse.before.result, worse.after.result) == ("passing", "failing")
+    assert [(c.before, c.after, c.change) for c in worse.claims] == [
+        ("passing", "failing", "worse")
+    ]
+
+
+def test_an_edited_scenario_is_not_compared(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), asks="Say hi.")
+    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(6), asks="Say hello.")
+    (row,) = Comparison(*both(tmp_path)).page().rows
+    assert (row.group, row.why, row.claims) == ("apart", "edited between the runs", ())
+
+
+def test_a_change_of_pass_rate_is_noise_unless_the_paired_test_says_otherwise(tmp_path):
+    journal(tmp_path, "bot", "1", 3, *[outcome(s, FAILED) for s in "abc"], started=at(4))
+    journal(tmp_path, "bot", "1", 3, outcome("a", PASSED), outcome("b", FAILED),
+            outcome("c", FAILED), started=at(5))  # fmt: skip
+    journal(tmp_path, "other", "1", 4, *[outcome(s, FAILED) for s in "abcd"], started=at(4))
+    journal(tmp_path, "other", "1", 4, *[outcome(s, PASSED) for s in "abcd"], started=at(5))
+    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
+    noise = Comparison(runs[0], runs[1]).page().deltas.rate
+    assert noise.tone == "noise"
+    assert noise.value == pytest.approx(100 / 3)
+    real = Comparison(runs[2], runs[3]).page().deltas.rate
+    assert (real.value, real.tone) == (100, "good")  # four scenarios, all from 0 to 1
+
+
+def test_other_tiles_are_coloured_by_direction(tmp_path):
+    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED, tokens=10), outcome("b", PASSED),
+            k=1, started=at(5))  # fmt: skip
+    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED, tokens=40), outcome("b", Failed("x")),
+            k=1, started=at(6))  # fmt: skip
+    deltas = Comparison(*both(tmp_path)).page().deltas
+    assert (deltas.stable.value, deltas.stable.tone) == (-1, "bad")
+    assert (deltas.tokens.value, deltas.tokens.tone) == (30, "bad")  # mean in + out per attempt
+    assert (deltas.seconds.value, deltas.seconds.tone) == (0, "same")
+    assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
+
+
+def test_a_comparison_names_the_models_that_differ(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), models=("u", "j2"))
+    assert Comparison(*both(tmp_path)).page().models == ("judge: j → j2",)
+
+
 def test_the_index_lists_runs_newest_first_with_their_reports(tmp_path):
     first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     second = journal(tmp_path, "bot", "2", 2, outcome("a", FAILED), started=at(6))
@@ -277,8 +362,10 @@ def data(html: str) -> object:
 
 def test_pages_show_dialogues_as_data_only(tmp_path):
     hostile = "</script><img src=x onerror=alert(1)>"
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile))
-    pages = (Report(only(tmp_path)).html(), Index(Runs(tmp_path)).html())
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile), started=at(6))
+    before, after = both(tmp_path)
+    pages = (Report(after).html(), Comparison(before, after).html(), Index(Runs(tmp_path)).html())
     for html in pages:
         assert "</script><img" not in html
         assert "innerHTML" not in html
@@ -288,7 +375,7 @@ def test_pages_show_dialogues_as_data_only(tmp_path):
 
 
 def test_every_use_of_storage_is_guarded():
-    for page in ("run.html", "index.html"):
+    for page in ("run.html", "compare.html", "index.html"):
         text = files("convy").joinpath("pages", page).read_text(encoding="utf-8")
         lines = [line for line in text.splitlines() if "localStorage" in line]
         assert lines, page
