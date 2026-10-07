@@ -1,14 +1,15 @@
 import json
 import secrets
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
 from convy.agent import Answer, Message, NoUsage, Usage
-from convy.bench import Finished, Interrupted, RunJournal, RunSpec
+from convy.bench import Finished, RunJournal, RunSpec
 from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
-from convy.report import Report, Runs
+from convy.report import Index, Report, Run, Runs
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
@@ -109,7 +110,7 @@ def test_runs_count_a_line_the_scenarios_cannot_explain_as_unreadable(tmp_path):
     assert run.outcomes == (good,)
     assert run.unreadable == 2
     assert Runs(tmp_path).broken() == (written.folder().relative_to(tmp_path),)
-    assert "bot/index.html" in Report(Runs(tmp_path)).pages()
+    assert "sms" not in Report(run).html()  # the page is still written
 
 
 def test_runs_read_an_attempt_written_twice_once(tmp_path):
@@ -150,213 +151,145 @@ def test_a_run_that_is_not_there_or_not_one_is_an_error(tmp_path):
         Runs(tmp_path).run("a3f9")
 
 
-def page(directory: Path):
-    return Report(Runs(directory)).page(list(Runs(directory)))
-
-
 def at(day: int) -> datetime:
     return DAY.replace(day=day)
 
 
-def test_pass_rate_weighs_scenarios_equally_with_a_margin_from_three(tmp_path):
+def only(directory: Path, agent: str = "bot") -> Run:
+    """The one run of `agent` under `directory`."""
+    (run,) = (run for run in Runs(directory) if run.spec.agent == agent)
+    return run
+
+
+def test_a_scenario_is_failing_flaky_passing_or_without_a_verdict(tmp_path):
     journal(
         tmp_path,
         "bot",
         "1",
-        3,
+        4,
         outcome("a", PASSED),
         outcome("a", PASSED, attempt=2),
-        outcome("b", PASSED),
-        outcome("b", FAILED, attempt=2),
-        outcome("c", FAILED),
-        outcome("c", Failed("down"), attempt=2),
+        outcome("b", FAILED),
+        outcome("b", Failed("down"), attempt=2),
+        outcome("c", PASSED),
+        outcome("c", FAILED, attempt=2),
+        outcome("d", NoVerdict("judge down")),
+        outcome("d", NoVerdict("judge down"), attempt=2),
         k=2,
     )
-    (run,) = page(tmp_path).runs
-    assert run.passed == 0.5
-    assert run.margin == pytest.approx(1.96 * 0.5 / 3**0.5)
-    assert (run.steady, run.counted, run.played) == (1, 3, 3)
-    assert run.agent_failures == 1
+    page = Report(only(tmp_path)).page()
+    assert [(s.id, s.result) for s in page.scenarios] == [
+        ("b", "failing"),
+        ("c", "flaky"),
+        ("d", "none"),
+        ("a", "passing"),
+    ]
 
 
-def test_no_verdict_is_left_out_and_two_scenarios_get_no_margin(tmp_path):
+def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     journal(
         tmp_path,
         "bot",
         "1",
+        3,
+        outcome("a", PASSED, tokens=10),
+        outcome("a", PASSED, attempt=2, tokens=20),
+        outcome("b", PASSED, tokens=30),
+        outcome("b", Failed("down"), attempt=2, tokens=40),
+        outcome("c", NoVerdict("judge down"), tokens=50),
+        k=2,
+    )
+    page = Report(only(tmp_path)).page()
+    metrics = page.metrics
+    assert (metrics.passed, metrics.judged, metrics.rate()) == (3, 4, 0.75)
+    assert (metrics.stable, metrics.scenarios, metrics.k) == (1, 3, 2)  # only a passed both
+    assert (metrics.seconds, metrics.slowest) == (2.0, 2.0)
+    assert (metrics.input, metrics.output, metrics.tokens()) == (30, 30, 60)
+    assert (metrics.agent_errors, metrics.model_errors, metrics.errors()) == (1, 1, 2)
+    assert (page.run.short, page.run.agent, page.run.status, page.run.k) == (
+        page.run.id.rpartition("_")[2],
+        "bot",
+        "running",
         2,
-        outcome("a", PASSED),
-        outcome("a", NoVerdict("down"), attempt=2),
-        outcome("b", FAILED),
-        k=2,
     )
-    (run,) = page(tmp_path).runs
-    assert (run.passed, run.margin) == (0.5, None)
-    assert (run.steady, run.counted) == (0, 0)  # a has no verdict on one, b lacks an attempt
-    assert run.model_failures == 1
 
 
-def test_one_attempt_each_has_no_pass_k(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    (run,) = page(tmp_path).runs
-    assert (run.k, run.steady, run.counted) == (1, 0, 0)
+def test_with_one_attempt_each_a_passing_scenario_is_stable(tmp_path):
+    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED), outcome("b", FAILED))
+    assert Report(only(tmp_path)).page().metrics.stable == 1
 
 
-def test_a_run_without_verdicts_has_no_pass_rate(tmp_path):
-    journal(tmp_path, "bot", "1", 2, outcome("a", NoVerdict("down")), outcome("b", NoVerdict("x")))
-    (run,) = page(tmp_path).runs
-    assert (run.passed, run.margin, run.change) == (None, None, None)
-    assert run.model_failures == 2
-
-
-def test_the_change_pairs_scenarios_played_unchanged_in_both_runs(tmp_path):
-    before = [outcome(s, FAILED) for s in "abcd"]
-    after = [outcome(s, PASSED) for s in "abc"] + [outcome("d", FAILED)]
-    journal(tmp_path, "bot", "1", 4, *before, started=at(5))
-    journal(tmp_path, "bot", "1", 4, *after, started=at(6))
-    first, second = page(tmp_path).runs
-    assert first.change is None
-    assert second.change is not None
-    assert (second.change.delta, second.change.scenarios) == (0.75, 4)
-    assert second.change.verdict == "better"  # 0.75 > 1.96 · 0.5 / √4 = 0.49
-
-
-def test_a_change_within_its_margin_is_noise_and_under_three_scenarios_too_few(tmp_path):
-    journal(tmp_path, "bot", "1", 3, *[outcome(s, FAILED) for s in "abc"], started=at(4))
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        3,
-        outcome("a", PASSED),
-        outcome("b", FAILED),
-        outcome("c", FAILED),
-        started=at(5),
-    )
-    journal(tmp_path, "bot", "1", 2, outcome("a", FAILED), outcome("b", FAILED), started=at(6))
-    _, noise, few = page(tmp_path).runs
-    assert noise.change is not None and noise.change.verdict == "noise"
-    assert few.change is not None and few.change.verdict == "few"
-
-
-def test_a_changed_scenario_is_not_compared_and_is_marked(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5), asks="Say hi.")
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), asks="Say hello.")
-    report = page(tmp_path)
-    first, second = report.runs
-    assert second.change is None
-    old, new = (report.cells[f"a@{run.id}"] for run in report.runs)
-    assert (old.changed, new.changed) == (True, False)
-    assert (new.earlier, new.revised, new.tint) == (first.id, True, "")
-    assert (new.user, old.user) == ("Say hello.", "Say hi.")
-
-
-def test_cells_are_tinted_against_the_nearest_run_that_played_the_scenario(tmp_path):
-    journal(tmp_path, "bot", "1", 2, outcome("a", FAILED), outcome("b", PASSED), started=at(4))
-    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5))  # does not play b
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED), outcome("b", FAILED), started=at(6))
-    report = page(tmp_path)
-    first, second, third = report.runs
-    assert f"b@{second.id}" not in report.cells
-    assert report.cells[f"a@{second.id}"].tint == ""
-    assert report.cells[f"a@{third.id}"].tint == "better"
-    b = report.cells[f"b@{third.id}"]
-    assert (b.earlier, b.revised, b.tint) == (first.id, False, "worse")
-    assert report.changed == ("a", "b")
-    assert report.scenarios == ("a", "b")
-
-
-def test_a_cell_is_tinted_against_the_nearest_run_with_the_same_scenario(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(4), asks="Say hi.")
-    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5), asks="Say hello.")
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), asks="Say hi.")
-    report = page(tmp_path)
-    _, second, third = report.runs
-    cell = report.cells[f"a@{third.id}"]
-    assert (cell.earlier, cell.revised, cell.tint) == (second.id, True, "better")
-    assert report.changed == ("a",)
-
-
-def test_scenarios_changed_in_the_latest_run_come_first(tmp_path):
-    journal(tmp_path, "bot", "1", 3, *[outcome(s, PASSED) for s in "abc"], started=at(5))
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        3,
-        outcome("a", PASSED),
-        outcome("b", PASSED),
-        outcome("c", FAILED),
-        started=at(6),
-    )
-    report = page(tmp_path)
-    assert (report.changed, report.scenarios) == (("c",), ("c", "a", "b"))
-
-
-def test_a_run_says_its_status_and_whether_the_models_changed(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
-    later = journal(tmp_path, "bot", "1", 1, started=at(6), models=("u", "j2"))
-    later.write(Interrupted(at(6)))
-    first, second = page(tmp_path).runs
-    assert (first.status, first.models_changed) == ("running", False)
-    assert (second.status, second.models_changed) == ("interrupted", True)
-    assert (second.played, second.passed) == (1, None)
-
-
-def test_an_attempt_shows_each_claim_with_its_decision(tmp_path):
-    decided = Verdict((Claim(False, "it did not greet"),))
-    journal(tmp_path, "bot", "1", 2, outcome("a", decided), outcome("b", Failed("down")))
-    report = page(tmp_path)
-    (run,) = report.runs
-    (judged,) = report.cells[f"a@{run.id}"].attempts
-    (failed,) = report.cells[f"b@{run.id}"].attempts
-    assert (judged.passed, judged.error) == (False, "")
-    assert [(c.text, c.passed, c.reason) for c in judged.claims] == [
-        ("greets", False, "it did not greet")
-    ]
-    assert (failed.passed, failed.error, failed.stop) == (False, "down", "agent_failure")
-    assert [(c.text, c.passed) for c in failed.claims] == [("greets", None)]
-
-
-def test_page_shows_unreported_tokens_as_null(tmp_path):
+def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
     turn = Turn(Message("hi"), Answer("hello", NoUsage()), 1.0)
-    written = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
+    written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     journal(tmp_path, "bot", "1", 1, written)
-    report = page(tmp_path)
-    (run,) = report.runs
-    (attempt,) = report.cells[f"a@{run.id}"].attempts
-    assert (attempt.input, attempt.output) == (None, None)
-    assert (attempt.turns[0].input, attempt.turns[0].output) == (None, None)
-    assert (run.input, run.output) == (None, None)
+    page = Report(only(tmp_path)).page()
+    assert (page.metrics.rate(), page.metrics.tokens()) == (None, None)
+    (scenario,) = page.scenarios
+    (attempt,) = scenario.attempts
+    assert (attempt.input, attempt.output, attempt.turns[0].input) == (None, None, None)
+    assert (attempt.passed, attempt.error) == (None, "judge down")
 
 
-def test_pages_are_one_per_agent_and_an_index(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(6))
-    journal(tmp_path, "other", "1", 1, outcome("a", PASSED))
-    report = Report(Runs(tmp_path))
-    assert set(report.pages()) == {"index.html", "bot/index.html", "other/index.html"}
-    index = report.index(list(Runs(tmp_path)))
-    assert [(a.agent, a.runs, a.latest.version) for a in index.agents] == [
-        ("bot", 2, "2"),
-        ("other", 1, "1"),
+def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
+    two = Scenario("a", 1, "Say hi.", ("greets", "is brief"))
+    decided = Verdict((Claim(True, "said hi"), Claim(False, "too long")))
+    held = Verdict((Claim(True, ""), Claim(True, "")))
+    spec = RunSpec("run_a3f9", "bot", "1", "fake", "fake", 3, 4, 600, (two,), DAY)
+    written = RunJournal(tmp_path, spec)
+    written.create()
+    for number, verdict in enumerate((decided, held, Failed("down")), 1):
+        written.record(outcome("a", verdict, attempt=number))
+    (scenario,) = Report(only(tmp_path)).page().scenarios
+    assert [(c.text, c.held, c.judged, c.result()) for c in scenario.claims] == [
+        ("greets", 2, 2, "passing"),
+        ("is brief", 1, 2, "flaky"),
     ]
+    first, _, failed = scenario.attempts
+    assert [(c.passed, c.reason) for c in first.claims] == [(True, "said hi"), (False, "too long")]
+    assert (failed.passed, failed.error, [c.passed for c in failed.claims]) == (
+        False,
+        "down",
+        [None, None],
+    )
+
+
+def test_the_index_lists_runs_newest_first_with_their_reports(tmp_path):
+    first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    second = journal(tmp_path, "bot", "2", 2, outcome("a", FAILED), started=at(6))
+    page = Index(Runs(tmp_path)).page()
+    assert [(row.run.version, row.passed, row.judged) for row in page.runs] == [
+        ("2", 0, 1),
+        ("1", 1, 1),
+    ]
+    assert page.runs[0].report == f"bot/{second.spec.id}/report.html"
+    assert page.runs[1].report == f"bot/{first.spec.id}/report.html"
+
+
+def test_no_runs_make_an_empty_index(tmp_path):
+    assert '"runs":[]' in Index(Runs(tmp_path / "results")).html()
+
+
+def data(html: str) -> object:
+    start = html.index("const DATA = ") + len("const DATA = ")
+    return json.loads(html[start : html.index(";\n", start)])
 
 
 def test_pages_show_dialogues_as_data_only(tmp_path):
     hostile = "</script><img src=x onerror=alert(1)>"
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile))
-    for html in Report(Runs(tmp_path)).pages().values():
+    pages = (Report(only(tmp_path)).html(), Index(Runs(tmp_path)).html())
+    for html in pages:
         assert "</script><img" not in html
         assert "innerHTML" not in html
-    html = Report(Runs(tmp_path)).pages()["bot/index.html"]
-    start = html.index("const DATA = ") + len("const DATA = ")
-    data = json.loads(html[start : html.index(";\n", start)])
-    (cell,) = data["cells"].values()
-    assert cell["attempts"][0]["turns"][0]["agent"] == hostile
+    run = data(pages[0])
+    assert isinstance(run, dict)
+    assert run["scenarios"][0]["attempts"][0]["turns"][0]["agent"] == hostile
 
 
-def test_no_runs_make_an_empty_index(tmp_path):
-    pages = Report(Runs(tmp_path / "results")).pages()
-    assert list(pages) == ["index.html"]
-    assert '"agents":[]' in pages["index.html"]
+def test_every_use_of_storage_is_guarded():
+    for page in ("run.html", "index.html"):
+        text = files("convy").joinpath("pages", page).read_text(encoding="utf-8")
+        lines = [line for line in text.splitlines() if "localStorage" in line]
+        assert lines, page
+        assert all("try {" in line for line in lines), page

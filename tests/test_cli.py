@@ -91,11 +91,12 @@ def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):
     assert file.spec.convy
     assert isinstance(file.status, Finished)
     assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
-    assert '"agent":"echo"' in (project / "results" / "index.html").read_text()
-    assert folder.name in (project / "results" / "echo" / "index.html").read_text()
+    assert folder.name in (project / "results" / "index.html").read_text()
+    assert '"agent":"echo"' in (folder / "report.html").read_text()
     out = capsys.readouterr().out
     assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
+    assert out.endswith(f"report: {folder / 'report.html'}\n")
 
 
 @pytest.mark.parametrize(
@@ -160,7 +161,7 @@ def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
     main(["report"])
     assert (project / "results" / "index.html").is_file()
     out, err = capsys.readouterr()
-    assert out == f"report: {project / 'results' / 'index.html'}\n"
+    assert out == f"index: {project / 'results' / 'index.html'}\n"
     assert err == (
         f"{project / 'results' / 'runs'} holds journals of convy 0.1, which this version does "
         "not read; run the agents again\n"

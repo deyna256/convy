@@ -11,9 +11,9 @@ from types import ModuleType
 from msgspec import Struct
 
 from convy.agent import Agent
-from convy.bench import Files
+from convy.bench import Files, RunSpec
 from convy.model import Models
-from convy.report import Report, Runs
+from convy.report import Index, Report, Runs
 from convy.scenario import Scenarios
 
 # Files in the template whose names would otherwise be hidden from the package.
@@ -64,17 +64,25 @@ class Project(Struct, frozen=True):
         return self.directory / "results"
 
     def page(self) -> Path:
+        """The index: every run, with a link to its report."""
         return self.results() / "index.html"
 
+    def run_page(self, spec: RunSpec) -> Path:
+        return self.results() / spec.agent / spec.id / "report.html"
+
     def report(self) -> tuple[Path, ...]:
-        """Write every page from every run; return the runs that could not be read whole,
-        relative to `results()`."""
+        """Write every run's report and the index; return the runs that could not be read
+        whole, relative to `results()`."""
         runs = Runs(self.results())
-        for path, html in Report(runs).pages().items():
-            page = self.results() / path
-            page.parent.mkdir(parents=True, exist_ok=True)
-            page.write_text(html, encoding="utf-8")
+        read = list(runs)
+        for run in read:
+            self.write(self.run_page(run.spec), Report(run).html())
+        self.write(self.page(), Index(read).html())
         return runs.broken()
+
+    def write(self, path: Path, html: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(html, encoding="utf-8")
 
     def old_journals(self) -> bool:
         """Whether `results/runs/` holds journals of convy 0.1, which this version does not read.
