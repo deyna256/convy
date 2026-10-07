@@ -207,6 +207,22 @@ def test_scenario_ids_are_unique(tmp_path):
         list(Scenarios(tmp_path))
 
 
+def test_scenarios_are_found_in_folders_at_any_depth(tmp_path):
+    (tmp_path / "bank" / "cards").mkdir(parents=True)
+    write(tmp_path, "top.yaml", "id: top\nmax_turns: 1\nuser: x\njudge: [y]\n")
+    write(tmp_path / "bank", "deposit.yaml", "id: deposit\nmax_turns: 1\nuser: x\njudge: [y]\n")
+    write(tmp_path / "bank" / "cards", "lost.yaml", "id: lost\nmax_turns: 1\nuser: x\njudge: [y]\n")
+    assert sorted(s.id for s in Scenarios(tmp_path)) == ["deposit", "lost", "top"]
+
+
+def test_an_id_repeated_in_another_folder_names_the_file(tmp_path):
+    (tmp_path / "bank").mkdir()
+    write(tmp_path, "a.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
+    write(tmp_path / "bank", "b.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
+    with pytest.raises(ValueError, match=r"bank/b\.yaml: another scenario already has the id"):
+        list(Scenarios(tmp_path))
+
+
 def test_matching_keeps_scenarios_by_mask():
     scenarios = [SCENARIO, Scenario("refund-late", 1, "x", ("y",))]
     assert [s.id for s in Matching(scenarios, "refund-*")] == ["refund-late"]

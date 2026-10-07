@@ -134,13 +134,13 @@ class TurnFailed(Exception):
 
 
 class Scenarios(Struct, frozen=True):
-    """Every `*.yaml` scenario in a directory, checked as it is read."""
+    """Every `*.yaml` scenario in a directory and the folders under it, checked as it is read."""
 
     directory: Path
 
     def __iter__(self) -> Iterator[Scenario]:
         seen: set[str] = set()
-        for path in sorted(self.directory.glob("*.yaml")):
+        for path in sorted(self.directory.rglob("*.yaml")):
             try:
                 scenario = msgspec.convert(
                     yamlrocks.loads(path.read_text(encoding="utf-8")), Scenario

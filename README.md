@@ -84,7 +84,7 @@ my-bench/
 ├── gateway.py        # the model gateway, shared by models.py and the agents
 ├── models.py         # the models that play the user and the judge
 ├── agents/           # one file per agent
-├── scenarios/        # one YAML file per scenario
+├── scenarios/        # one YAML file per scenario, in folders if you like
 └── results/          # a folder per run, and the report
 ```
 
@@ -268,7 +268,7 @@ connection — check an agent with `--smoke`.
 
 ## Scenarios
 
-A scenario is a YAML file in `scenarios/`:
+A scenario is a YAML file in `scenarios/` or any folder under it, such as `scenarios/bank/cards/`:
 
 ```yaml
 id: clarify-backup
