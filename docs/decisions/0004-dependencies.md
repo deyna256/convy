@@ -13,8 +13,8 @@ settings from the environment and the command line. Each dependency is a long-te
   the same API, including `MockTransport` for tests. httpx itself has seen almost no maintenance since
   November 2024 and closed its issue tracker in February 2026; the OpenAI SDK has moved to httpx2.
 - **[msgspec](https://msgspec.dev)** for every class: frozen `Struct`s, validation of scenarios with
-  `msgspec.convert`, and the journal with `msgspec.json`. Tagged unions let `Usage | NoUsage` and
-  `Verdict | NoVerdict` be written and read back without type checks in convy's code.
+  `msgspec.convert`, and runs with `msgspec.json`. Tagged unions let `Usage | NoUsage` and
+  `Verdict | Failed | NoVerdict` be written and read back without type checks in convy's code.
 - **[yamlrocks](https://pypi.org/project/yamlrocks/)** for YAML. It implements YAML 1.2 (no `no` →
   `False` surprise), is safe by default and passes the official YAML test suite. It is alpha, so it is
   pinned to `>=0.6,<0.7` and called in one place.

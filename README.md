@@ -18,7 +18,7 @@ neither its code nor its model.</p>
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![ty](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ty/main/assets/badge/v0.json)](https://github.com/astral-sh/ty)
 
-[Status](#status) · [Why convy](#why-convy) · [Quick start](#quick-start) · [Connect an agent](#connect-an-agent) · [Scenarios](#scenarios) · [Report](#the-report) · [Python](#run-from-python) · [FAQ](#faq) · [Contributing](CONTRIBUTING.md)
+[Status](#status) · [Why convy](#why-convy) · [Quick start](#quick-start) · [Connect an agent](#connect-an-agent) · [Scenarios](#scenarios) · [Runs](#runs) · [Report](#the-report) · [Python](#run-from-python) · [FAQ](#faq) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -26,7 +26,7 @@ neither its code nor its model.</p>
 
 ## Status
 
-convy 0.1 is the first release. It is in alpha: the Python API and the journal format may change
+convy 0.1 is the first release. It is in alpha: the Python API and the format of runs may change
 before 1.0, and every change is listed in the [changelog](CHANGELOG.md).
 
 ## Why convy
@@ -61,9 +61,10 @@ convy does exactly that and nothing more:
 ```
 
 For every attempt convy opens a fresh conversation with the agent, lets the simulated user talk to it
-until the user is done or the turns run out, and asks the judge whether every claim holds. Each attempt
-is written to a journal as soon as it ends, and `convy report` turns the journals into one static HTML
-page.
+until the user is done or the turns run out, and asks the judge whether each claim holds. Every run gets
+a folder of its own, and each attempt is written there as soon as it ends, so a stopped run can be
+continued. After a run convy rebuilds the report: a static page per agent, with all its runs side by
+side.
 
 ## Quick start
 
@@ -73,7 +74,7 @@ cd my-bench
 uv run convy run echo --smoke        # check convy itself: free, no models called
 cp .env.example .env                 # add the address and key of your model gateway
 uv run convy run echo                # a real run with the simulated user and the judge
-uv run convy report                  # results/index.html
+uv run convy report                  # results/index.html, a page per agent
 ```
 
 `convy init` creates a project of your own:
@@ -84,7 +85,7 @@ my-bench/
 ├── models.py         # the models that play the user and the judge
 ├── agents/           # one file per agent
 ├── scenarios/        # one YAML file per scenario
-└── results/          # journals and the report
+└── results/          # a folder per run, and the report
 ```
 
 ## Connect an agent
@@ -163,7 +164,7 @@ agent = SupportBot()
 ```
 
 There is no need to catch errors in `answer`: any exception counts as a failed turn, and convy
-records it in the dialogue. The text of an exception from your agent goes to the journal and the
+records it in the dialogue. The text of an exception from your agent goes to the run's folder and the
 report, so keep keys out of it; `Env`'s own errors never show the values read.
 
 ### A client without async
@@ -299,20 +300,67 @@ uv run convy run support_bot --turn-timeout 60
 `--turn-timeout` (600 by default) is the seconds for each step of the agent: opening a conversation,
 a turn, closing. A step that takes longer fails the attempt as an agent error.
 
+## Runs
+
+A run is one `convy run` of one agent: the scenarios it played, `k` attempts each. It has a folder of
+its own:
+
+```text
+results/
+├── index.html                          # every agent, its latest run
+└── support_bot/
+    ├── index.html                      # the agent's runs side by side
+    └── 2026-10-07T14-02-11_a3f9/       # a run: started at, and a random part
+        ├── run.json                    # what it played and with what, and whether it finished
+        └── attempts.jsonl              # a line per attempt
+```
+
+`run.json` keeps a copy of every scenario as it was played, the agent's `version`, the names of the
+models, the settings, and fingerprints of `agents/<agent>.py` and `models.py`. A run therefore
+describes itself: editing a scenario later does not change what an old run means.
+
+A run stopped by Ctrl+C is `interrupted`; convy says how to continue it:
+
+```text
+support_bot: run 2026-10-07T14-02-11_a3f9, 10 scenarios, 3 attempts each
+^C
+interrupted: 12 of 30 attempts recorded
+resume with: convy resume a3f9
+```
+
+`convy resume` takes the run's id or its random part and plays the attempts it lacks, exactly as the
+run started: the same scenarios, `k`, `--parallel` and `--turn-timeout`. It refuses, and says why, when
+the agent's file, `models.py`, the agent's `version` or a model's name has changed since — the run
+would no longer measure one thing. It cannot see a change in a module the agent imports, or in the
+service behind it. Attempts that ended in an error are recorded and are not played again.
+
+To forget a run, delete its folder and run `convy report`.
+
 ## The report
 
-`results/index.html` is a single static page that works offline:
+`results/<agent>/index.html` is a static page that works offline. It answers whether the agent got
+better or worse, and where:
 
-- **agents** — for each agent and version: the share of attempts passed, every attempt as a mark
-  (`●` passed, `✕` failed, `○` no verdict), the agent's tokens and time per scenario, its answer
-  time, and problems such as agent errors; the best value in each column is in bold;
-- **scenarios** — scenarios × agents, split into those where the agents' results differ and those
-  where they are the same; a filter such as `refund-*` narrows the list;
-- **a result** — select a cell to read each attempt: the claims, the judge's reasoning, and the
-  dialogue with the time and tokens of each answer. The address keeps the selected result, so a link
-  to the page opens it.
+- **runs** — a column per run, oldest on the left: when it started, the agent's `version`, whether it
+  finished, and a warning when the user's or the judge's model changed from the run before;
+- **passed** — the share of attempts passed, each scenario weighing the same, with its 95% margin
+  (`±`, from three scenarios). Under it, the change from the run before, counted only on scenarios both
+  runs played unchanged: `▲`/`▼` when it is beyond its margin, "within noise" when it is not;
+- **passed all attempts** — with `-k` above 1, the share of scenarios whose every attempt passed: an
+  agent that passes 70% at random and one that passes the same 70% every time are not the same agent;
+- the agent's tokens per attempt, its answer time, and problems such as agent errors;
+- **scenarios** — a row each, every attempt a mark (`●` passed, `✕` failed, `○` no verdict). A cell
+  is green or red when it did better or worse than the run before; `Δ` marks an older version of the
+  scenario and `·` a run that did not play it. Scenarios that changed in the latest run come first;
+  a filter such as `refund-*` narrows the list.
 
-Tokens and time are the agent's own: the simulated user and the judge are not counted.
+Select a row, or a cell, to open the scenario: what the simulated user was told, each claim with the
+judge's decision and reason, and the dialogue with the time and tokens of each answer. Switch between
+runs, or compare an attempt with the same attempt of another run side by side. The address keeps the
+open scenario, so a link opens it.
+
+`results/index.html` lists the agents with their latest run. Tokens and time are the agent's own: the
+simulated user and the judge are not counted.
 
 ## Run from Python
 
@@ -374,7 +422,8 @@ answer, or read them from the model gateway the agent uses.
 **What do the exit codes mean?**
 - `0` — every attempt finished;
 - `1` — an attempt ended with an agent error or a failure of convy's models;
-- `2` — the project could not be loaded, and nothing ran.
+- `2` — the project could not be loaded, or the run cannot be resumed, and nothing ran;
+- `130` — the run was interrupted with Ctrl+C; `convy resume` continues it.
 
 **Is it safe to run convy on someone else's project?**
 `convy run` executes `models.py` and `agents/*.py`. Treat a project like its tests: run only what you

@@ -1,0 +1,1 @@
+The report is a page per agent with its runs side by side: pass rate with its margin, how many scenarios passed every attempt, the change from the run before, and each scenario in a large window with its dialogues.

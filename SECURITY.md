@@ -16,9 +16,10 @@ Keep real credentials, agent answers and other private data out of the report.
 - **Project files are code.** `convy run` imports `models.py` and `agents/*.py` from the project and runs
   them in its own process. Run convy only on projects you trust, as you would run their tests.
 - **Keys** come from `.env` or the environment through `SecretStr` fields and should never appear in
-  output, journals or the report. Models are recorded by name only.
-- **Journals and the report contain the dialogues** with the agent, which may hold private data from the
-  agent's answers. `results/` is ignored by git in projects created by `convy init`.
+  output, runs or the report. Models are recorded by name only.
+- **Runs and the report contain the dialogues** with the agent, which may hold private data from the
+  agent's answers, and the text of every scenario played. `results/` is ignored by git in projects
+  created by `convy init`.
 - **Agent answers are untrusted text.** The report shows them only as text, so an answer cannot run
   code in the page.
 
