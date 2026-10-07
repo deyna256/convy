@@ -5,148 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Run</title>
 <style>
-:root {
-  --page: #eef1f5; --surface: #ffffff; --side: #f4f6f9; --ink: #18212f; --muted: #4a5464;
-  --rule: #d5dbe3; --user: #eef1f5; --focus: #2c4a74;
-  --pass: #1a6b43; --pass-bg: #e3f2ea; --fail: #b3261e; --fail-bg: #f8e3e1;
-  --flaky: #8a5100; --flaky-bg: #f6ecd9; --none: #4a5464; --none-bg: #e2e7ee; --on-status: #ffffff;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
-    --rule: #2e3440; --user: #232833; --focus: #9db4ff;
-    --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
-    --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
-  --rule: #2e3440; --user: #232833; --focus: #9db4ff;
-  --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
-  --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
-  color-scheme: dark;
-}
-* { box-sizing: border-box; }
-[hidden] { display: none !important; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-.page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
-.mono { font-family: var(--mono); }
-.muted { color: var(--muted); }
-.top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
-.top > div:first-child { flex: 1; min-width: 0; }
-.eyebrow { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
-.eyebrow a { color: inherit; }
-h1 { font-size: 22px; line-height: 1.25; margin: 8px 0 4px; font-weight: 650; overflow-wrap: anywhere; }
-.meta { color: var(--muted); margin: 0; }
-button { font: inherit; color: inherit; }
-:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.theme { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); cursor: pointer; font-size: 13px; }
-.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
-
-/* status icon, badge */
-.si { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--on-status); font: 800 11px/1 system-ui, sans-serif; flex: none; }
-.si.passing { background: var(--pass); } .si.failing { background: var(--fail); } .si.flaky { background: var(--flaky); } .si.none { background: var(--none); }
-.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; }
-.badge.passing { background: var(--pass-bg); color: var(--pass); } .badge.failing { background: var(--fail-bg); color: var(--fail); }
-.badge.flaky { background: var(--flaky-bg); color: var(--flaky); } .badge.none { background: var(--none-bg); color: var(--none); }
-
-/* tiles */
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
-.tile { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.tile .l { font-size: 12.5px; color: var(--muted); }
-.tile .v { font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
-.tile .v small { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 3px; }
-.tile.hero .v { font-size: 36px; }
-.tile .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
-
-/* table */
-.tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 22px 0 6px; }
-.tools h2 { font-size: 15px; margin: 0; }
-input[type=search] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; width: 220px; max-width: 100%; }
-.scroll { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; }
-th { font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
-td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
-tbody tr.row { cursor: pointer; }
-tbody tr.row:hover td { background: var(--side); }
-.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.metric { font-size: 15px; font-weight: 650; }
-.metric small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
-.open { all: unset; cursor: pointer; font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
-.open:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
-.group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
-.arrow { color: var(--muted); padding: 0 6px; }
+/*include base.css*/
+/*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
-.empty { color: var(--muted); padding: 24px 12px; }
-
-/* the scenario window */
-dialog.window { width: calc(100vw - 48px); height: calc(100vh - 48px); max-width: 1400px; max-height: none; padding: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--surface); color: var(--ink); overflow: hidden; }
-dialog.window::backdrop { background: rgb(0 0 0 / .5); }
-.frame { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.whead { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 64px 14px 20px; border-bottom: 1px solid var(--rule); }
-.whead h2 { margin: 0; font: 650 17px/1.3 var(--mono); overflow-wrap: anywhere; }
-.close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
-.close:hover { border-color: var(--rule); }
-.wbody { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 0; }
-.side { background: var(--side); padding: 18px 20px; border-right: 1px solid var(--rule); overflow: auto; }
-.main { padding: 16px 22px 24px; overflow: auto; min-width: 0; }
-.sec { font-size: 12px; font-weight: 650; color: var(--muted); margin: 0 0 8px; }
-.told { margin: 0 0 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.claims { list-style: none; margin: 0 0 18px; padding: 0; }
-.claims li { display: grid; grid-template-columns: 22px 18px 1fr; gap: 2px 8px; margin: 0 0 14px; }
-.claims .no, .judge .no { font: 650 13px/1.6 var(--mono); color: var(--muted); }
-.claims .si, .judge .si { margin-top: 3px; }
-.claims .tally { grid-column: 3; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
-.claims .tally .si { width: 15px; height: 15px; font-size: 9px; margin: 0; }
-.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); cursor: pointer; font-size: 13px; }
-.tab.plain { padding-left: 12px; }
-.tab[aria-selected="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); font-weight: 650; }
-.mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
-.mini > div { background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mini .l { font-size: 12.5px; color: var(--muted); }
-.mini .v { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.mini .v.failing { color: var(--fail); } .mini .v.passing { color: var(--pass); } .mini .v.none { color: var(--none); }
-.mini .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.judge { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px; margin-bottom: 20px; }
-.judge > div { display: grid; grid-template-columns: 22px 18px 1fr; gap: 0 8px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
-.judge > div:last-child { border-bottom: 0; }
-.judge .why { line-height: 1.55; overflow-wrap: anywhere; }
-.error { border-left: 3px solid var(--fail); padding: 8px 12px; margin-bottom: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg { max-width: min(72ch, 92%); margin: 16px 0; }
-.who { font: 650 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
-.msg.user .who { display: block; margin-bottom: 6px; }
-.bubble { padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
-.msg.user .bubble { background: var(--user); border-top-left-radius: 4px; white-space: pre-wrap; }
-.msg.agent { margin-left: auto; }
-.msg.agent .bubble { background: var(--surface); border: 1px solid var(--rule); border-top-right-radius: 4px; }
-.bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); font-size: 13px; line-height: 1.4; }
-.bhead .who { margin-right: auto; }
-.bhead .m { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
-.bhead svg { color: var(--muted); }
-.bubble p { margin: 0 0 10px; } .bubble p:last-child { margin-bottom: 0; }
-.bubble ul, .bubble ol { margin: 8px 0; padding-left: 22px; } .bubble li { margin: 4px 0; }
-.bubble .h { font-weight: 700; }
-.bubble code { font-family: var(--mono); font-size: 13.5px; background: var(--side); border-radius: 4px; padding: 1px 4px; }
-.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.colhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
-.colhead .badge { margin-left: auto; }
-.cols .msg { max-width: 100%; }
-@media (max-width: 860px) {
-  .wbody { grid-template-columns: 1fr; overflow: auto; }
-  .side { border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
-  .main { overflow: visible; }
-  .cols, .mini { grid-template-columns: 1fr; }
-  dialog.window { width: 100vw; height: 100vh; border-radius: 0; }
-}
-@media (max-width: 600px) { .tile.hero { grid-column: 1 / -1; } }
-@media print { dialog.window { position: static; } }
 </style>
+<script>
+/*include base.js*/
+</script>
 </head>
 <body>
 <div class="page">
@@ -158,167 +23,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
-// Every number and decision comes from the data; this script only draws it.
-// Everything from the data is added as text, never as HTML.
-
-function el(tag, props = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(props)) {
-    if (value == null || value === false) continue;
-    if (key.startsWith("aria-") || key.startsWith("data-") || key === "role" || key === "style") node.setAttribute(key, value);
-    else node[key] = value;
-  }
-  node.append(...children.flat(Infinity).filter(child => child != null && child !== false && child !== ""));
-  return node;
-}
-
-// The theme: Auto follows the system; the choice is kept where the browser allows it.
-const THEMES = ["auto", "light", "dark"];
-const NAMES = {auto: "Auto", light: "Light", dark: "Dark"};
-function storedTheme() {
-  try { return THEMES.includes(localStorage.getItem("convy-theme")) ? localStorage.getItem("convy-theme") : "auto"; }
-  catch { return "auto"; }
-}
-let theme = storedTheme();
-function applyTheme(button) {
-  if (theme === "auto") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", theme);
-  if (button) {
-    button.textContent = `Theme: ${NAMES[theme]}`;
-    button.setAttribute("aria-label", `Theme: ${NAMES[theme]}. Switch theme`);
-  }
-}
-function themeButton() {
-  const button = el("button", {className: "theme", type: "button"});
-  button.addEventListener("click", () => {
-    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
-    try { localStorage.setItem("convy-theme", theme); } catch { /* not kept: the next page opens in Auto */ }
-    applyTheme(button);
-  });
-  applyTheme(button);
-  return button;
-}
-applyTheme(null);
-
-const SCENARIO = {passing: "Passing", failing: "Failing", flaky: "Flaky", none: "No verdict"};
-const ATTEMPT = {passing: "Passed", failing: "Failed", none: "No verdict"};
-const GLYPH = {passing: "✓", failing: "✕", flaky: "◐", none: "–"};
-const STOPS = {user_stop: "the user finished", max_turns: "the turns ran out", agent_failure: "the agent failed", model_failure: "convy's model failed"};
-
-const kind = passed => passed == null ? "none" : passed ? "passing" : "failing";
-const icon = result => el("span", {className: `si ${result}`, "aria-hidden": "true"}, GLYPH[result]);
-const badge = (result, words = SCENARIO) => el("span", {className: `badge ${result}`}, icon(result), words[result]);
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const pct = rate => rate == null ? "—" : `${Math.round(rate * 100)}%`;
-const secs = s => s == null ? "—" : s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
-const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
-const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
-const STATUS = {running: "not finished", interrupted: "interrupted", finished: null};
-const clock = () => {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("width", "14"); svg.setAttribute("height", "14"); svg.setAttribute("aria-hidden", "true");
-  for (const [name, attrs] of [["circle", {cx: 8, cy: 8, r: 6.5}], ["path", {d: "M8 4.5V8l2.5 1.5", "stroke-linecap": "round"}]]) {
-    const part = document.createElementNS("http://www.w3.org/2000/svg", name);
-    for (const [key, value] of Object.entries({...attrs, fill: "none", stroke: "currentColor", "stroke-width": 1.5})) part.setAttribute(key, value);
-    svg.append(part);
-  }
-  return svg;
-};
-
-// A safe subset of Markdown, built as DOM nodes: paragraphs, line breaks, **bold**, *italic*,
-// `code`, lists and #–### headings. Anything else stays text.
-function inline(text) {
-  const nodes = [];
-  const pattern = /\*\*(.+?)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*/g;
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    nodes.push(text.slice(last, match.index));
-    if (match[1] != null) nodes.push(el("strong", {}, inline(match[1])));
-    else if (match[2] != null) nodes.push(el("code", {}, match[2]));
-    else nodes.push(el("em", {}, inline(match[3])));
-    last = match.index + match[0].length;
-  }
-  nodes.push(text.slice(last));
-  return nodes;
-}
-function markdown(text) {
-  const blocks = [];
-  let list = null, lines = [];
-  const flush = () => {
-    if (lines.length) blocks.push(el("p", {}, lines.flatMap((line, i) => i ? [el("br"), inline(line)] : [inline(line)])));
-    lines = [];
-  };
-  for (const raw of text.split("\n")) {
-    const line = raw.trimEnd();
-    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*\d+[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
-    if (bullet || number) {
-      flush();
-      const tag = bullet ? "ul" : "ol";
-      if (!list || list.tagName.toLowerCase() !== tag) { list = el(tag); blocks.push(list); }
-      list.append(el("li", {}, inline((bullet || number)[1])));
-      continue;
-    }
-    list = null;
-    if (heading) { flush(); blocks.push(el("p", {className: "h"}, inline(heading[1]))); }
-    else if (!line.trim()) flush();
-    else lines.push(line);
-  }
-  flush();
-  return blocks;
-}
-
-// The window's parts, shared by both pages.
-function claimTally(claim) {
-  if (!claim.judged) return "no verdict on this claim";
-  if (claim.held === claim.judged) return `held in ${claim.held} of ${claim.judged}`;
-  if (claim.held === 0) return `failed in ${claim.judged} of ${claim.judged}`;
-  return `held in ${claim.held} of ${claim.judged}`;
-}
-function attemptTiles(attempt) {
-  const answers = attempt.turns.length;
-  const result = kind(attempt.passed);
-  return el("div", {className: "mini"},
-    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
-    el("div", {}, el("span", {className: "l"}, "Answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
-    el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
-      el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out`)));
-}
-function judgeLines(attempt) {
-  if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
-  return el("div", {className: "judge"}, attempt.claims.map((claim, i) =>
-    el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)), el("span", {className: "why"}, claim.reason || "No reason given."))));
-}
-function dialogue(attempt) {
-  return attempt.turns.flatMap(t => [
-    el("div", {className: "msg user"}, el("span", {className: "who"}, "USER"), el("div", {className: "bubble"}, t.user)),
-    el("div", {className: "msg agent"}, el("div", {className: "bubble"},
-      el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
-        el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
-        el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
-          : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${count(t.input)} in · ${count(t.output)} out`)])),
-      markdown(t.agent))),
-  ]);
-}
-
-// The address keeps the open window: #<scenario>&attempt=<n>.
-function address(id, attempt) {
-  history.replaceState(null, "", `#${encodeURIComponent(id)}&attempt=${attempt}`);
-}
-function fromAddress() {
-  const hash = location.hash.slice(1);
-  const at = hash.lastIndexOf("&attempt=");
-  if (at < 0) return null;
-  try { return {id: decodeURIComponent(hash.slice(0, at)), attempt: Number(hash.slice(at + 9)) || 1}; }
-  catch { return null; }
-}
-function clearAddress() {
-  history.replaceState(null, "", location.pathname + location.search);
-}
-function filtered(ids) {
-  const mask = document.getElementById("filter").value.trim() || "*";
-  const pattern = new RegExp("^" + mask.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
-  return {mask, keep: id => pattern.test(id)};
-}
+/*include window.js*/
 
 // The run's page: its tiles, its scenarios, and the window of one scenario.
 const DATA = __DATA__;
@@ -346,7 +51,7 @@ function tiles() {
 }
 
 function table() {
-  const {mask, keep} = filtered(DATA.scenarios.map(s => s.id));
+  const {mask, keep} = filtered();
   const rows = DATA.scenarios.filter(s => keep(s.id)).map(s => {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
     const row = el("tr", {className: "row"},
@@ -373,7 +78,7 @@ function show(id, number) {
   close.addEventListener("click", () => dialog.close());
   const tabs = el("div", {className: "tabs", role: "tablist", "aria-label": "Attempts"}, s.attempts.map(a => {
     const tab = el("button", {className: "tab", type: "button", role: "tab", "aria-selected": String(a === attempt)}, icon(kind(a.passed)), `Attempt ${a.attempt}`);
-    tab.addEventListener("click", () => show(id, a.attempt));
+    tab.addEventListener("click", () => { show(id, a.attempt); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); });
     return tab;
   }));
   dialog.replaceChildren(el("div", {className: "frame"},

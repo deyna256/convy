@@ -1,7 +1,6 @@
 import json
 import secrets
 from datetime import UTC, datetime
-from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -438,9 +437,23 @@ def test_pages_show_dialogues_as_data_only(tmp_path):
     assert run["scenarios"][0]["attempts"][0]["turns"][0]["agent"] == hostile
 
 
-def test_every_use_of_storage_is_guarded():
-    for page in ("run.html", "compare.html", "index.html"):
-        text = files("convy").joinpath("pages", page).read_text(encoding="utf-8")
-        lines = [line for line in text.splitlines() if "localStorage" in line]
-        assert lines, page
-        assert all("try {" in line for line in lines), page
+def test_every_use_of_storage_is_guarded(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+        lines = [line for line in html.splitlines() if "localStorage" in line]
+        assert lines
+        assert all("try {" in line for line in lines)
+
+
+def test_a_written_page_stands_alone(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    pages = (Report(after).html(), Comparison(before, after).html(), Index([before]).html())
+    for html in pages:
+        assert "/*include" not in html
+        assert "function el(" in html
+    assert "function dialogue(" in pages[0] and "function dialogue(" in pages[1]
+    assert "function dialogue(" not in pages[2]  # the index has no scenario window

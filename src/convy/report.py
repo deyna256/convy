@@ -1,5 +1,6 @@
 """The report: runs read back, summed up, and rendered as static HTML pages."""
 
+import re
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
 from math import sqrt
@@ -286,7 +287,8 @@ class Sample(Struct, frozen=True):
 
 
 class Template(Struct, frozen=True):
-    """A page in `convy/pages/`, filled with its data."""
+    """A page in `convy/pages/`, assembled from the shared parts its `/*include <file>*/`
+    placeholders name and filled with its data: a written page stands alone."""
 
     name: str
 
@@ -294,7 +296,12 @@ class Template(Struct, frozen=True):
         # ponytail: every dialogue of a run is in its page (~5 KB per attempt); load
         # attempts.jsonl lazily when pages get heavy
         encoded = msgspec.json.encode(data).decode().replace("<", "\\u003c")
-        page = files("convy").joinpath("pages", self.name).read_text(encoding="utf-8")
+        folder = files("convy").joinpath("pages")
+        page = re.sub(
+            r"/\*include (\S+)\*/",
+            lambda match: folder.joinpath(match[1]).read_text(encoding="utf-8"),
+            folder.joinpath(self.name).read_text(encoding="utf-8"),
+        )
         return page.replace("__DATA__", encoded)
 
 
