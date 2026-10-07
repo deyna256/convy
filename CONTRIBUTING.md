@@ -91,7 +91,7 @@ Use the commands in the [Justfile](Justfile):
 | `just type` | checks types |
 | `just build` | builds the wheel and source distribution |
 | `just changelog` | shows the next release's changelog entry, changing nothing |
-| `just release-notes` | moves the fragments into CHANGELOG.md; run before a release |
+| `just release-notes` | moves the fragments into CHANGELOG.md; the Release workflow runs it |
 
 Run `just format` first and `just lint` after it. `just format` fixes what it can; whatever `just lint`
 still reports needs a person.
@@ -141,11 +141,13 @@ entry will look like.
 
 Releases are made by hand, from the Actions tab:
 
-1. Raise `version` in `pyproject.toml`, run `just release-notes` to move the fragments into
-   [CHANGELOG.md](CHANGELOG.md), and merge that change to `main`.
-2. Run the **Release** workflow on `main`. It runs the CI checks, builds the packages, signs where they
-   came from and creates a GitHub release with them. It refuses another branch and a version that is
-   already released.
+1. Raise the version with `uv version X.Y.Z` (it updates `pyproject.toml` and `uv.lock`) and merge
+   that change to `main`.
+2. Run the **Release** workflow on `main`. It runs the CI checks, moves the fragments from
+   `changelog.d/` into [CHANGELOG.md](CHANGELOG.md) with `just release-notes` and commits that to
+   `main`, then builds the packages from that commit, signs where they came from and creates a GitHub
+   release whose text is the version's changelog entry. It refuses another branch, a version that is
+   already released, and a release with no fragments in `changelog.d/`.
 3. Run the **Publish** workflow with the release's tag, for example `v0.1.0`. It uploads the release's
    packages to PyPI unchanged. It uses PyPI trusted publishing, so no PyPI token is stored anywhere.
 

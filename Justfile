@@ -28,6 +28,6 @@ build:
 changelog:
     uv run towncrier build --draft --version "$(uv version --short)"
 
-# Move the fragments into CHANGELOG.md under the version in pyproject.toml. Run before a release.
+# Move the fragments into CHANGELOG.md under the version in pyproject.toml. The Release workflow runs it.
 release-notes:
     uv run towncrier build --yes --version "$(uv version --short)"

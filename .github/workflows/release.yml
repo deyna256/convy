@@ -1,7 +1,8 @@
 name: Release
 
-# Creates a GitHub release from main, with the version from pyproject.toml. Run it by hand, then run
-# Publish to send the release to PyPI.
+# Creates a GitHub release from main, with the version from pyproject.toml: moves the changelog
+# fragments into CHANGELOG.md, commits that to main, builds and tags that commit. Run it by hand, then
+# run Publish to send the release to PyPI.
 on: workflow_dispatch
 
 jobs:
@@ -48,6 +49,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Check there are release notes
+        run: |
+          if ! compgen -G "changelog.d/*.md" >/dev/null; then
+            echo "::error::nothing to release: changelog.d/ has no fragments"
+            exit 1
+          fi
+          just changelog  # the entry this release will get
+
       - name: Check formatting and style
         run: just lint
 
@@ -63,7 +72,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
-      contents: write          # create the tag and the release
+      contents: write          # commit the changelog, create the tag and the release
       id-token: write          # sign the build provenance
       attestations: write
       artifact-metadata: write
@@ -75,7 +84,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v7
         with:
-          persist-credentials: false  # gh takes GH_TOKEN; git needs no token here
+          persist-credentials: true  # the job pushes the changelog commit to main
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -83,8 +92,22 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
+      - name: Set up Just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: '1.58.0'
+
+      - name: Move the release notes into the changelog
+        run: |
+          just changelog > notes.md  # the entry, as towncrier renders it: the release's text
+          just release-notes         # towncrier stages CHANGELOG.md and the removed fragments
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --message "release $VERSION"
+          git push origin HEAD:main  # fails if main moved since the checks: run the release again
+
       - name: Build the distributions
-        run: uv build
+        run: just build
 
       - name: Attest what was built
         uses: actions/attest-build-provenance@v4
@@ -95,4 +118,6 @@ jobs:
             dist/*.tar.gz
 
       - name: Publish the release
-        run: gh release create "v$VERSION" dist/*.whl dist/*.tar.gz --generate-notes
+        run: |
+          gh release create "v$VERSION" dist/*.whl dist/*.tar.gz \
+            --target "$(git rev-parse HEAD)" --notes-file notes.md
