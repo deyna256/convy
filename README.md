@@ -354,7 +354,8 @@ results = Path("results")
 journal = RunJournal(results, spec)
 journal.create()
 outcomes = asyncio.run(journal.play(bench, Echo(), journal))
-Path("results/index.html").write_text(Report(Runs(results)).html(), encoding="utf-8")
+for path, html in Report(Runs(results)).pages().items():  # index.html, echo/index.html
+    (results / path).write_text(html, encoding="utf-8")
 ```
 
 Put your own agent in place of `Echo()`. The fakes in `convy.fakes` are public too, for testing your

@@ -1,17 +1,19 @@
-"""The report: journals read back, summed up, and rendered as one static HTML page."""
+"""The report: runs read back, summed up, and rendered as static HTML pages."""
 
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
+from math import sqrt
 from pathlib import Path
-from statistics import mean
+from statistics import mean, stdev
+from typing import Literal
 
 import msgspec
 from msgspec import Struct
 
 from convy.agent import NoUsage, Usage
-from convy.bench import Pair, RunFile, RunSpec, Status
+from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import Failed, NoVerdict, Turn, Verdict
-from convy.scenario import Outcome, Stop
+from convy.scenario import Outcome, Scenario, Stop
 
 UNREADABLE = (msgspec.DecodeError, msgspec.ValidationError, ValueError, OSError)
 
@@ -94,7 +96,15 @@ class Runs(Struct, frozen=True):
         )
 
 
-# The page's data. It is JSON for the browser, so a number nobody reported is None (null).
+# The pages' data. It is JSON for the browser, so a number nobody reported is None (null).
+
+type Tint = Literal["better", "worse", ""]
+
+
+class ClaimView(Struct, frozen=True):
+    text: str
+    passed: bool | None  # None: the judge was not asked, or gave no verdict
+    reason: str
 
 
 class TurnView(Struct, frozen=True):
@@ -106,13 +116,11 @@ class TurnView(Struct, frozen=True):
 
 
 class AttemptView(Struct, frozen=True):
-    run: str
-    complete: bool
     attempt: int
-    claims: tuple[str, ...]
+    passed: bool | None  # None: no verdict, left out of pass rates
     stop: Stop
-    passed: bool | None
-    reason: str
+    error: str  # the agent's error, or the failure of convy's model
+    claims: tuple[ClaimView, ...]
     seconds: float
     input: int | None
     output: int | None
@@ -120,93 +128,297 @@ class AttemptView(Struct, frozen=True):
 
 
 class CellView(Struct, frozen=True):
-    passed: int
-    judged: int
-    seconds: float | None
-    input: float | None
+    """A scenario as one run played it."""
+
+    run: str
+    user: str
+    claims: tuple[str, ...]
+    max_turns: int
+    rate: float | None
+    changed: bool  # the scenario differs from the newest run that played it
+    earlier: str  # the nearest earlier run that played the scenario, or ""
+    revised: bool  # the scenario differs from the one in `earlier`
+    tint: Tint  # the pass rate against `earlier`, when the scenario is the same
     attempts: tuple[AttemptView, ...]
 
 
-class Rate(Struct, frozen=True):
-    mean: float
-    min: float
-    max: float
+class ChangeView(Struct, frozen=True):
+    delta: float  # the mean change of a scenario's pass rate, over scenarios both runs played
+    scenarios: int
+    verdict: Literal["better", "worse", "noise", "few"]
 
 
-class GroupView(Struct, frozen=True):
+class RunView(Struct, frozen=True):
     id: str
-    agent: str
+    short: str
+    started: str  # ISO 8601
     version: str
-    user: str  # the models of the latest run
+    status: Literal["running", "finished", "interrupted"]
+    user: str
     judge: str
-    started: str  # when the latest run started, ISO 8601
-    runs: int
-    stopped: int
-    passed: Rate | None
+    models_changed: bool
+    k: int
+    played: int  # scenarios in the run
+    passed: float | None
+    margin: float | None  # ± of `passed`, shown from three scenarios
+    steady: int  # scenarios whose k attempts all passed, when k > 1
+    counted: int  # scenarios that count for pass^k
+    change: ChangeView | None
     input: float | None
     output: float | None
-    seconds: float | None
     turn_mean: float | None
     turn_max: float | None
     agent_failures: int
     model_failures: int
+    unreadable: int
 
 
 class Page(Struct, frozen=True):
-    groups: tuple[GroupView, ...]
-    scenarios: tuple[str, ...]
-    cells: dict[str, CellView]  # keyed by "<scenario>|<group>"
+    """An agent's page: its runs, oldest first, and a cell per scenario and run."""
+
+    agent: str
+    runs: tuple[RunView, ...]
+    scenarios: tuple[str, ...]  # those that changed in the latest run first
+    changed: tuple[str, ...]
+    cells: dict[str, CellView]  # keyed by "<scenario>@<run id>"
+
+
+class AgentView(Struct, frozen=True):
+    agent: str
+    runs: int
+    latest: RunView
+
+
+class Index(Struct, frozen=True):
+    agents: tuple[AgentView, ...]
+
+
+class Sample(Struct, frozen=True):
+    """Values, one per scenario: their mean, and its 95% margin from three values on."""
+
+    values: tuple[float, ...]
+
+    def mean(self) -> float | None:
+        return mean(self.values) if self.values else None
+
+    def margin(self) -> float | None:
+        if len(self.values) < 3:
+            return None
+        return 1.96 * stdev(self.values) / sqrt(len(self.values))
+
+
+class Played(Struct, frozen=True):
+    """A run's attempts of one scenario."""
+
+    scenario: Scenario
+    outcomes: tuple[Outcome, ...]
+
+    def judged(self) -> list[bool]:
+        """Whether each attempt with a verdict passed; an agent that failed did not."""
+        found = []
+        for outcome in self.outcomes:
+            match outcome.verdict:
+                case Verdict() as verdict:
+                    found.append(verdict.passed)
+                case Failed():
+                    found.append(False)
+                case NoVerdict():
+                    pass
+        return found
+
+    def rate(self) -> float | None:
+        judged = self.judged()
+        return sum(judged) / len(judged) if judged else None
+
+    def steady(self, k: int) -> bool | None:
+        """Whether all `k` attempts passed; None when an attempt is missing or has no verdict."""
+        judged = self.judged()
+        return all(judged) if len(judged) == len(self.outcomes) == k else None
 
 
 class Report(Struct, frozen=True):
-    """The page `results/index.html`: a summary per group, a matrix of scenarios, every attempt."""
+    """The pages under `results/`: `index.html` with every agent, and `<agent>/index.html` with
+    an agent's runs. Every number and decision on them is made here; the pages only draw."""
 
     runs: Iterable[Run]
 
-    def html(self) -> str:
-        data = msgspec.json.encode(self.page()).decode().replace("<", "\\u003c")
-        template = files("convy").joinpath("report.html").read_text(encoding="utf-8")
-        return template.replace("__DATA__", data)
-
-    def page(self) -> Page:
+    def pages(self) -> dict[str, str]:
+        """Each page's path under the results directory, and its HTML."""
         runs = list(self.runs)
-        names = sorted({self.named(run) for run in runs})
-        cells: dict[str, list[AttemptView]] = {}
-        for run in runs:
-            for outcome in run.outcomes:
-                key = f"{outcome.scenario}|{self.named(run)}"
-                cells.setdefault(key, []).append(self.attempt(run, outcome))
-        views = {key: self.cell(attempts) for key, attempts in cells.items()}
-        scenarios = {outcome.scenario for run in runs for outcome in run.outcomes}
+        agents = sorted({run.spec.agent for run in runs})
+        pages = {
+            f"{agent}/index.html": self.html(
+                "report.html", self.page([run for run in runs if run.spec.agent == agent])
+            )
+            for agent in agents
+        }
+        pages["index.html"] = self.html("index.html", self.index(runs))
+        return pages
+
+    def html(self, template: str, data: Struct) -> str:
+        encoded = msgspec.json.encode(data).decode().replace("<", "\\u003c")
+        page = files("convy").joinpath("pages", template).read_text(encoding="utf-8")
+        return page.replace("__DATA__", encoded)
+
+    def index(self, runs: list[Run]) -> Index:
+        agents = sorted({run.spec.agent for run in runs})
+        views = []
+        for agent in agents:
+            page = self.page([run for run in runs if run.spec.agent == agent])
+            views.append(AgentView(agent, len(page.runs), page.runs[-1]))
+        return Index(tuple(views))
+
+    def page(self, runs: list[Run]) -> Page:
+        """The page of one agent's runs."""
+        runs = sorted(runs, key=lambda run: run.spec.started)
+        played = [self.played(run) for run in runs]
+        cells = {
+            f"{scenario}@{run.spec.id}": self.cell(runs, played, index, scenario)
+            for index, run in enumerate(runs)
+            for scenario in played[index]
+        }
+        ids = sorted({scenario for found in played for scenario in found})
+        newest = runs[-1].spec.id if runs else ""
+        changed = [s for s in ids if (c := cells.get(f"{s}@{newest}")) and c.tint]
         return Page(
-            groups=tuple(
-                self.group(name, [run for run in runs if self.named(run) == name]) for name in names
-            ),
-            scenarios=tuple(
-                sorted(scenarios, key=lambda s: (not self.differs(s, names, views), s))
-            ),
-            cells=views,
+            agent=runs[0].spec.agent if runs else "",
+            runs=tuple(self.run(runs, played, index) for index in range(len(runs))),
+            scenarios=(*changed, *(s for s in ids if s not in changed)),
+            changed=tuple(changed),
+            cells=cells,
         )
 
-    def attempt(self, run: Run, outcome: Outcome) -> AttemptView:
+    def played(self, run: Run) -> dict[str, Played]:
+        """The run's scenarios by id, each with its attempts in order."""
+        return {
+            scenario.id: Played(
+                scenario,
+                tuple(
+                    sorted(
+                        (o for o in run.outcomes if o.scenario == scenario.id),
+                        key=lambda outcome: outcome.attempt,
+                    )
+                ),
+            )
+            for scenario in run.spec.scenarios
+        }
+
+    def run(self, runs: list[Run], played: list[dict[str, Played]], index: int) -> RunView:
+        run, scenarios = runs[index], played[index]
+        rates = Sample(tuple(r for p in scenarios.values() if (r := p.rate()) is not None))
+        steady = [s for p in scenarios.values() if (s := p.steady(run.spec.k)) is not None]
+        attempts = [self.attempt(p.scenario, o) for p in scenarios.values() for o in p.outcomes]
+        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
+        previous = runs[index - 1].spec if index else None
+        return RunView(
+            id=run.spec.id,
+            short=run.spec.id.rpartition("_")[2],
+            started=run.spec.started.isoformat(),
+            version=run.spec.version,
+            status=self.status(run),
+            user=run.spec.user,
+            judge=run.spec.judge,
+            models_changed=previous is not None
+            and (previous.user, previous.judge) != (run.spec.user, run.spec.judge),
+            k=run.spec.k,
+            played=len(scenarios),
+            passed=rates.mean(),
+            margin=rates.margin(),
+            steady=sum(steady) if run.spec.k > 1 else 0,
+            counted=len(steady) if run.spec.k > 1 else 0,
+            change=self.change(played[index - 1], scenarios) if index else None,
+            input=self.average(a.input for a in attempts),
+            output=self.average(a.output for a in attempts),
+            turn_mean=self.average(turns),
+            turn_max=max(turns, default=None),
+            agent_failures=sum(a.stop == "agent_failure" for a in attempts),
+            model_failures=sum(a.stop == "model_failure" for a in attempts),
+            unreadable=run.unreadable,
+        )
+
+    def status(self, run: Run) -> Literal["running", "finished", "interrupted"]:
+        match run.status:
+            case Running():
+                return "running"
+            case Finished():
+                return "finished"
+            case Interrupted():
+                return "interrupted"
+
+    def change(self, before: dict[str, Played], after: dict[str, Played]) -> ChangeView | None:
+        """The change of pass rates over the scenarios both runs played unchanged, paired by
+        scenario; significant when it is beyond the 95% margin of the differences."""
+        differences = []
+        for scenario, played in after.items():
+            earlier = before.get(scenario)
+            if earlier is None or earlier.scenario.fingerprint() != played.scenario.fingerprint():
+                continue
+            rate, earlier_rate = played.rate(), earlier.rate()
+            if rate is not None and earlier_rate is not None:
+                differences.append(rate - earlier_rate)
+        if not differences:
+            return None
+        sample = Sample(tuple(differences))
+        delta, margin = mean(differences), sample.margin()
+        if margin is None:
+            verdict = "few"
+        elif abs(delta) > margin:
+            verdict = "better" if delta > 0 else "worse"
+        else:
+            verdict = "noise"
+        return ChangeView(delta, len(differences), verdict)
+
+    def cell(
+        self, runs: list[Run], played: list[dict[str, Played]], index: int, scenario: str
+    ) -> CellView:
+        here = played[index][scenario]
+        fingerprint = here.scenario.fingerprint()
+        newest = next(found[scenario] for found in reversed(played) if scenario in found)
+        before = next((i for i in reversed(range(index)) if scenario in played[i]), None)
+        earlier = None if before is None else played[before][scenario]
+        return CellView(
+            run=runs[index].spec.id,
+            user=here.scenario.instructions,
+            claims=here.scenario.claims,
+            max_turns=here.scenario.max_turns,
+            rate=here.rate(),
+            changed=newest.scenario.fingerprint() != fingerprint,
+            earlier="" if before is None else runs[before].spec.id,
+            revised=earlier is not None and earlier.scenario.fingerprint() != fingerprint,
+            tint=self.tint(earlier, here),
+            attempts=tuple(self.attempt(here.scenario, o) for o in here.outcomes),
+        )
+
+    def tint(self, earlier: Played | None, here: Played) -> Tint:
+        if earlier is None or earlier.scenario.fingerprint() != here.scenario.fingerprint():
+            return ""
+        before, after = earlier.rate(), here.rate()
+        if before is None or after is None or before == after:
+            return ""
+        return "better" if after > before else "worse"
+
+    def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
         match outcome.verdict:
-            case Verdict(claims=claims) as verdict:
-                reason = "\n".join(claim.reason for claim in claims)
-                judged: tuple[bool | None, str] = (verdict.passed, reason)
+            case Verdict(claims=decided) as verdict:
+                judged: tuple[bool | None, str] = (verdict.passed, "")
+                claims = tuple(
+                    ClaimView(text, claim.passed, claim.reason)
+                    for text, claim in zip(scenario.claims, decided, strict=True)
+                )
             case Failed(reason=reason):
                 judged = (False, reason)
+                claims = tuple(ClaimView(text, None, "") for text in scenario.claims)
             case NoVerdict(error=error):
                 judged = (None, error)
-        passed, reason = judged
+                claims = tuple(ClaimView(text, None, "") for text in scenario.claims)
+        passed, error = judged
         return AttemptView(
-            run=run.path.as_posix(),
-            complete=run.complete(),
             attempt=outcome.attempt,
-            claims=next(s.claims for s in run.spec.scenarios if s.id == outcome.scenario),
-            stop=outcome.stop,
             passed=passed,
-            reason=reason,
+            stop=outcome.stop,
+            error=error,
+            claims=claims,
             seconds=sum(turn.seconds for turn in turns),
             input=self.total(turn.input for turn in turns),
             output=self.total(turn.output for turn in turns),
@@ -220,57 +432,6 @@ class Report(Struct, frozen=True):
             case NoUsage():
                 tokens = (None, None)
         return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens)
-
-    def cell(self, attempts: list[AttemptView]) -> CellView:
-        judged = [a for a in attempts if a.passed is not None]
-        return CellView(
-            passed=sum(a.passed is True for a in judged),
-            judged=len(judged),
-            seconds=self.average(a.seconds for a in attempts),
-            input=self.average(a.input for a in attempts),
-            attempts=tuple(attempts),
-        )
-
-    def group(self, name: str, runs: list[Run]) -> GroupView:
-        complete = [[self.attempt(run, o) for o in run.outcomes] for run in runs if run.complete()]
-        attempts = [attempt for run in complete for attempt in run]
-        rates = [rate for run in complete if (rate := self.rate(run)) is not None]
-        turn_seconds = [turn.seconds for attempt in attempts for turn in attempt.turns]
-        latest = max((run.spec for run in runs), key=lambda spec: spec.started)
-        return GroupView(
-            id=name,
-            agent=latest.agent,
-            version=latest.version,
-            user=latest.user,
-            judge=latest.judge,
-            started=latest.started.isoformat(),
-            runs=len(runs),
-            stopped=len(runs) - len(complete),
-            passed=Rate(mean(rates), min(rates), max(rates)) if rates else None,
-            input=self.average(a.input for a in attempts),
-            output=self.average(a.output for a in attempts),
-            seconds=self.average(a.seconds for a in attempts),
-            turn_mean=self.average(turn_seconds),
-            turn_max=max(turn_seconds, default=None),
-            agent_failures=sum(a.stop == "agent_failure" for a in attempts),
-            model_failures=sum(a.stop == "model_failure" for a in attempts),
-        )
-
-    def named(self, run: Run) -> str:
-        """Runs of the same agent and version form a group in the report."""
-        return f"{run.spec.agent} {run.spec.version}".strip()
-
-    def rate(self, attempts: list[AttemptView]) -> float | None:
-        """The share passed among a run's attempts that have a verdict."""
-        judged = [a for a in attempts if a.passed is not None]
-        return sum(a.passed is True for a in judged) / len(judged) if judged else None
-
-    def differs(self, scenario: str, groups: list[str], cells: dict[str, CellView]) -> bool:
-        """Whether groups pass the scenario at different rates; such scenarios come first."""
-        rates = {
-            c.passed / c.judged for g in groups if (c := cells.get(f"{scenario}|{g}")) and c.judged
-        }
-        return len(rates) > 1
 
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]

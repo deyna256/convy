@@ -16,8 +16,8 @@ def test_run_from_python_example_runs(tmp_path: Path, monkeypatch: pytest.Monkey
     assert found is not None
     monkeypatch.chdir(tmp_path)
     exec(found[1], {})
-    page = (tmp_path / "results" / "index.html").read_text(encoding="utf-8")
-    assert '"id":"echo"' in page
+    page = (tmp_path / "results" / "echo" / "index.html").read_text(encoding="utf-8")
+    assert '"agent":"echo"' in page
     assert (tmp_path / "results" / "echo" / "first" / "run.json").is_file()
 
 

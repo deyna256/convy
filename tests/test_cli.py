@@ -36,6 +36,11 @@ agent = JsonAgent(JsonEndpoint("https://bot.test", transport=locked), {"q": "{te
 """
 
 
+def runs(project: Path, agent: str) -> list[Path]:
+    """The folders of the agent's runs, oldest first; its page sits next to them."""
+    return sorted(path for path in (project / "results" / agent).iterdir() if path.is_dir())
+
+
 def convy(*argv: str) -> int:
     with pytest.raises(SystemExit) as exit:
         main(list(argv))
@@ -77,7 +82,7 @@ def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
     with time_machine.travel("2026-10-06 14:05:00+00:00", tick=False):
         assert convy("run", "echo", "--scenarios", "c*", "-k", "2") == 0
-    (folder,) = (project / "results" / "echo").iterdir()
+    (folder,) = runs(project, "echo")
     assert folder.name.startswith("2026-10-06T")
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     assert file.spec.id == folder.name
@@ -86,7 +91,8 @@ def test_a_run_writes_a_journal_and_the_report(project: Path, capsys):
     assert file.spec.convy
     assert isinstance(file.status, Finished)
     assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
-    assert "echo" in (project / "results" / "index.html").read_text()
+    assert '"agent":"echo"' in (project / "results" / "index.html").read_text()
+    assert folder.name in (project / "results" / "echo" / "index.html").read_text()
     out = capsys.readouterr().out
     assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
@@ -120,7 +126,7 @@ def test_smoke_on_several_agents_greets_each(project: Path, capsys):
 def test_each_agent_gets_models_of_its_own(project: Path):
     (project / "models.py").write_text(FAKE_MODELS)
     assert convy("run", "echo", "echo", "--scenarios", "clarify-*") == 0
-    folders = sorted((project / "results" / "echo").iterdir())
+    folders = runs(project, "echo")
     assert len(folders) == 2
     for folder in folders:
         line = (folder / "attempts.jsonl").read_bytes().splitlines()[0]
@@ -186,13 +192,12 @@ def started_run(project: Path) -> Path:
         stdout=subprocess.PIPE,
         text=True,
     )
-    attempts = project / "results" / "slow"
-    while not any(attempts.glob("*/attempts.jsonl")):
+    while not any((project / "results" / "slow").glob("*/attempts.jsonl")):
         time.sleep(0.05)
     process.send_signal(signal.SIGINT)
     out, _ = process.communicate(timeout=10)
     assert process.returncode == 130
-    (folder,) = attempts.iterdir()
+    (folder,) = runs(project, "slow")
     assert "interrupted: 1 of 3 attempts recorded\n" in out
     assert f"resume with: convy resume {folder.name.rpartition('_')[2]}\n" in out
     return folder
@@ -218,7 +223,7 @@ def test_ctrl_c_interrupts_a_run_and_resume_plays_the_rest(project: Path, capsys
 def test_a_finished_run_is_not_resumed(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
     assert convy("run", "echo", "--scenarios", "clarify-*") == 0
-    (folder,) = (project / "results" / "echo").iterdir()
+    (folder,) = runs(project, "echo")
     assert convy("resume", folder.name) == 2
     assert (
         capsys.readouterr().err

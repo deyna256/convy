@@ -6,21 +6,32 @@ from pathlib import Path
 import pytest
 
 from convy.agent import Answer, Message, NoUsage, Usage
-from convy.bench import Finished, RunJournal, RunSpec
-from convy.dialog import Claim, NoVerdict, Transcript, Turn, Verdict
+from convy.bench import Finished, Interrupted, RunJournal, RunSpec
+from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
 from convy.report import Report, Runs
 from convy.scenario import Outcome, Scenario
 
+DAY = datetime(2026, 10, 6, tzinfo=UTC)
 PASSED = Verdict((Claim(True, ""),))
 FAILED = Verdict((Claim(False, ""),))
 
 
 def outcome(
-    scenario: str, verdict: Verdict | NoVerdict, text: str = "hello", tokens: int = 10
+    scenario: str,
+    verdict: Verdict | Failed | NoVerdict,
+    text: str = "hello",
+    tokens: int = 10,
+    attempt: int = 1,
 ) -> Outcome:
     turn = Turn(Message("hi"), Answer(text, Usage(tokens, tokens)), 2.0)
-    stop = "model_failure" if isinstance(verdict, NoVerdict) else "max_turns"
-    return Outcome(scenario, 1, Transcript((turn,)), verdict, stop)
+    match verdict:
+        case NoVerdict():
+            stop = "model_failure"
+        case Failed():
+            stop = "agent_failure"
+        case _:
+            stop = "max_turns"
+    return Outcome(scenario, attempt, Transcript((turn,)), verdict, stop)
 
 
 def journal(
@@ -32,16 +43,18 @@ def journal(
     started: datetime | None = None,
     models: tuple[str, str] = ("fake", "fake"),
     id: str = "",
+    k: int = 1,
+    asks: str = "Say hi.",
 ) -> RunJournal:
-    """A run of `planned` scenarios, `a`, `b`, …, one attempt each, holding `outcomes`."""
+    """A run of `planned` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
     started = started or datetime.now(UTC)
-    scenarios = tuple(Scenario(chr(97 + i), 1, "Say hi.", ("greets",)) for i in range(planned))
+    scenarios = tuple(Scenario(chr(97 + i), 1, asks, ("greets",)) for i in range(planned))
     spec = RunSpec(
         id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
         agent,
         version,
         *models,
-        1,
+        k,
         4,
         600,
         scenarios,
@@ -124,82 +137,202 @@ def test_a_run_that_is_not_there_or_not_one_is_an_error(tmp_path):
         Runs(tmp_path).run("a3f9")
 
 
-def test_page_sums_up_groups_and_cells(tmp_path):
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED), outcome("b", FAILED))
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED))  # stopped half way
-    journal(
-        tmp_path,
-        "bot",
-        "2",
-        3,
-        outcome("a", PASSED),
-        outcome("b", PASSED),
-        outcome("c", NoVerdict("down")),
-    )
-    page = Report(Runs(tmp_path)).page()
-    first, second = page.groups
-    assert (first.id, first.runs, first.stopped) == ("bot 1", 2, 1)
-    assert first.passed is not None and first.passed.mean == 0.5
-    assert (first.input, first.seconds, first.turn_max) == (10, 2.0, 2.0)
-    assert second.passed is not None and second.passed.mean == 1.0  # no verdict is not a failure
-    assert second.model_failures == 1
-    assert page.scenarios == ("b", "a", "c")  # the groups differ on b, so it comes first
-    assert page.cells["a|bot 1"].passed == 2
-    assert page.cells["a|bot 1"].judged == 2
+def page(directory: Path):
+    return Report(Runs(directory)).page(list(Runs(directory)))
 
 
-def test_html_shows_dialogues_as_data_only(tmp_path):
+def at(day: int) -> datetime:
+    return DAY.replace(day=day)
+
+
+def test_pass_rate_weighs_scenarios_equally_with_a_margin_from_three(tmp_path):
     journal(
         tmp_path,
         "bot",
         "1",
-        1,
-        outcome("a", PASSED, text="</script><img src=x onerror=alert(1)>"),
+        3,
+        outcome("a", PASSED),
+        outcome("a", PASSED, attempt=2),
+        outcome("b", PASSED),
+        outcome("b", FAILED, attempt=2),
+        outcome("c", FAILED),
+        outcome("c", Failed("down"), attempt=2),
+        k=2,
     )
-    html = Report(Runs(tmp_path)).html()
-    assert "</script><img" not in html
-    data = html[html.index("const DATA = ") + 13 : html.index(";\n", html.index("const DATA = "))]
-    assert json.loads(data)["cells"]["a|bot 1"]["attempts"][0]["turns"][0]["agent"].startswith(
-        "</script>"
-    )
-    assert "innerHTML" not in html
+    (run,) = page(tmp_path).runs
+    assert run.passed == 0.5
+    assert run.margin == pytest.approx(1.96 * 0.5 / 3**0.5)
+    assert (run.steady, run.counted, run.played) == (1, 3, 3)
+    assert run.agent_failures == 1
 
 
-def test_page_shows_runs_relative_to_the_results_directory(tmp_path):
-    written = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    (attempt,) = Report(Runs(tmp_path)).page().cells["a|bot 1"].attempts
-    assert attempt.run == f"bot/{written.spec.id}"
+def test_no_verdict_is_left_out_and_two_scenarios_get_no_margin(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        2,
+        outcome("a", PASSED),
+        outcome("a", NoVerdict("down"), attempt=2),
+        outcome("b", FAILED),
+        k=2,
+    )
+    (run,) = page(tmp_path).runs
+    assert (run.passed, run.margin) == (0.5, None)
+    assert (run.steady, run.counted) == (0, 0)  # a has no verdict on one, b lacks an attempt
+    assert run.model_failures == 1
+
+
+def test_one_attempt_each_has_no_pass_k(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
+    (run,) = page(tmp_path).runs
+    assert (run.k, run.steady, run.counted) == (1, 0, 0)
+
+
+def test_a_run_without_verdicts_has_no_pass_rate(tmp_path):
+    journal(tmp_path, "bot", "1", 2, outcome("a", NoVerdict("down")), outcome("b", NoVerdict("x")))
+    (run,) = page(tmp_path).runs
+    assert (run.passed, run.margin, run.change) == (None, None, None)
+    assert run.model_failures == 2
+
+
+def test_the_change_pairs_scenarios_played_unchanged_in_both_runs(tmp_path):
+    before = [outcome(s, FAILED) for s in "abcd"]
+    after = [outcome(s, PASSED) for s in "abc"] + [outcome("d", FAILED)]
+    journal(tmp_path, "bot", "1", 4, *before, started=at(5))
+    journal(tmp_path, "bot", "1", 4, *after, started=at(6))
+    first, second = page(tmp_path).runs
+    assert first.change is None
+    assert second.change is not None
+    assert (second.change.delta, second.change.scenarios) == (0.75, 4)
+    assert second.change.verdict == "better"  # 0.75 > 1.96 · 0.5 / √4 = 0.49
+
+
+def test_a_change_within_its_margin_is_noise_and_under_three_scenarios_too_few(tmp_path):
+    journal(tmp_path, "bot", "1", 3, *[outcome(s, FAILED) for s in "abc"], started=at(4))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        3,
+        outcome("a", PASSED),
+        outcome("b", FAILED),
+        outcome("c", FAILED),
+        started=at(5),
+    )
+    journal(tmp_path, "bot", "1", 2, outcome("a", FAILED), outcome("b", FAILED), started=at(6))
+    _, noise, few = page(tmp_path).runs
+    assert noise.change is not None and noise.change.verdict == "noise"
+    assert few.change is not None and few.change.verdict == "few"
+
+
+def test_a_changed_scenario_is_not_compared_and_is_marked(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5), asks="Say hi.")
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), asks="Say hello.")
+    report = page(tmp_path)
+    first, second = report.runs
+    assert second.change is None
+    old, new = (report.cells[f"a@{run.id}"] for run in report.runs)
+    assert (old.changed, new.changed) == (True, False)
+    assert (new.earlier, new.revised, new.tint) == (first.id, True, "")
+    assert (new.user, old.user) == ("Say hello.", "Say hi.")
+
+
+def test_cells_are_tinted_against_the_nearest_run_that_played_the_scenario(tmp_path):
+    journal(tmp_path, "bot", "1", 2, outcome("a", FAILED), outcome("b", PASSED), started=at(4))
+    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(5))  # does not play b
+    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED), outcome("b", FAILED), started=at(6))
+    report = page(tmp_path)
+    first, second, third = report.runs
+    assert f"b@{second.id}" not in report.cells
+    assert report.cells[f"a@{second.id}"].tint == ""
+    assert report.cells[f"a@{third.id}"].tint == "better"
+    b = report.cells[f"b@{third.id}"]
+    assert (b.earlier, b.revised, b.tint) == (first.id, False, "worse")
+    assert report.changed == ("a", "b")
+    assert report.scenarios == ("a", "b")
+
+
+def test_scenarios_changed_in_the_latest_run_come_first(tmp_path):
+    journal(tmp_path, "bot", "1", 3, *[outcome(s, PASSED) for s in "abc"], started=at(5))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        3,
+        outcome("a", PASSED),
+        outcome("b", PASSED),
+        outcome("c", FAILED),
+        started=at(6),
+    )
+    report = page(tmp_path)
+    assert (report.changed, report.scenarios) == (("c",), ("c", "a", "b"))
+
+
+def test_a_run_says_its_status_and_whether_the_models_changed(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
+    later = journal(tmp_path, "bot", "1", 1, started=at(6), models=("u", "j2"))
+    later.write(Interrupted(at(6)))
+    first, second = page(tmp_path).runs
+    assert (first.status, first.models_changed) == ("running", False)
+    assert (second.status, second.models_changed) == ("interrupted", True)
+    assert (second.played, second.passed) == (1, None)
+
+
+def test_an_attempt_shows_each_claim_with_its_decision(tmp_path):
+    decided = Verdict((Claim(False, "it did not greet"),))
+    journal(tmp_path, "bot", "1", 2, outcome("a", decided), outcome("b", Failed("down")))
+    report = page(tmp_path)
+    (run,) = report.runs
+    (judged,) = report.cells[f"a@{run.id}"].attempts
+    (failed,) = report.cells[f"b@{run.id}"].attempts
+    assert (judged.passed, judged.error) == (False, "")
+    assert [(c.text, c.passed, c.reason) for c in judged.claims] == [
+        ("greets", False, "it did not greet")
+    ]
+    assert (failed.passed, failed.error, failed.stop) == (False, "down", "agent_failure")
+    assert [(c.text, c.passed) for c in failed.claims] == [("greets", None)]
 
 
 def test_page_shows_unreported_tokens_as_null(tmp_path):
     turn = Turn(Message("hi"), Answer("hello", NoUsage()), 1.0)
     written = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 1, written)
-    page = Report(Runs(tmp_path)).page()
-    (attempt,) = page.cells["a|bot 1"].attempts
+    report = page(tmp_path)
+    (run,) = report.runs
+    (attempt,) = report.cells[f"a@{run.id}"].attempts
     assert (attempt.input, attempt.output) == (None, None)
     assert (attempt.turns[0].input, attempt.turns[0].output) == (None, None)
-    assert (page.groups[0].input, page.groups[0].output) == (None, None)
+    assert (run.input, run.output) == (None, None)
 
 
-def test_a_run_without_verdicts_has_no_pass_rate(tmp_path):
-    journal(tmp_path, "bot", "1", 2, outcome("a", NoVerdict("down")), outcome("b", NoVerdict("x")))
-    (group,) = Report(Runs(tmp_path)).page().groups
-    assert group.passed is None
-    assert group.model_failures == 2
+def test_pages_are_one_per_agent_and_an_index(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(6))
+    journal(tmp_path, "other", "1", 1, outcome("a", PASSED))
+    report = Report(Runs(tmp_path))
+    assert set(report.pages()) == {"index.html", "bot/index.html", "other/index.html"}
+    index = report.index(list(Runs(tmp_path)))
+    assert [(a.agent, a.runs, a.latest.version) for a in index.agents] == [
+        ("bot", 2, "2"),
+        ("other", 1, "1"),
+    ]
 
 
-def test_an_empty_runs_directory_renders_an_empty_page(tmp_path):
-    report = Report(Runs(tmp_path / "runs"))
-    assert report.page().groups == ()
-    assert '"groups":[]' in report.html()
+def test_pages_show_dialogues_as_data_only(tmp_path):
+    hostile = "</script><img src=x onerror=alert(1)>"
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile))
+    for html in Report(Runs(tmp_path)).pages().values():
+        assert "</script><img" not in html
+        assert "innerHTML" not in html
+    html = Report(Runs(tmp_path)).pages()["bot/index.html"]
+    start = html.index("const DATA = ") + len("const DATA = ")
+    data = json.loads(html[start : html.index(";\n", start)])
+    (cell,) = data["cells"].values()
+    assert cell["attempts"][0]["turns"][0]["agent"] == hostile
 
 
-def test_a_group_names_its_agent_version_models_and_latest_run(tmp_path):
-    for day, models in ((5, ("user-a", "judge-a")), (6, ("user-b", "judge-b"))):
-        started = datetime(2026, 10, day, tzinfo=UTC)
-        journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=started, models=models)
-    (group,) = Report(Runs(tmp_path)).page().groups
-    assert (group.agent, group.version) == ("bot", "1")
-    assert (group.user, group.judge) == ("user-b", "judge-b")  # the latest run's models
-    assert group.started == "2026-10-06T00:00:00+00:00"
+def test_no_runs_make_an_empty_index(tmp_path):
+    pages = Report(Runs(tmp_path / "results")).pages()
+    assert list(pages) == ["index.html"]
+    assert '"agents":[]' in pages["index.html"]

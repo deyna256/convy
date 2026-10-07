@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agents · convy</title>
+<style>
+:root {
+  --page: #f5f6f8; --surface: #ffffff; --ink: #1b1f27; --muted: #667085; --rule: #e3e6eb;
+  --pass: #15803d; --fail: #c0362c; --focus: #3557d4;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #111318; --surface: #171a21; --ink: #e6e8ec; --muted: #9aa3b2; --rule: #2a2f3a;
+    --pass: #3fb873; --fail: #f07167; --focus: #8da2fb;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.page { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+.eyebrow { font: 600 12px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+h1 { font-size: 24px; line-height: 1.2; margin: 6px 0 24px; font-weight: 650; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; vertical-align: top; padding: 10px 16px; border-bottom: 1px solid var(--rule); }
+tr:last-child > td { border-bottom: 0; }
+thead th { font-size: 12px; font-weight: 550; color: var(--muted); white-space: nowrap; }
+a { color: var(--focus); }
+.id { font-family: var(--mono); font-size: 13px; }
+.sub { display: block; font-size: 12px; color: var(--muted); }
+.rate { font-size: 18px; font-weight: 650; }
+.better { color: var(--pass); } .worse, .warn { color: var(--fail); }
+.empty { padding: 32px 16px; color: var(--muted); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">convy</div>
+  <h1>Agents</h1>
+  <div class="panel" id="agents"></div>
+</div>
+<script>
+// Every number comes from the data; this script only draws it, as text, never as HTML.
+const DATA = __DATA__;
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key.startsWith("aria-")) node.setAttribute(key, value);
+    else node[key] = value;
+  }
+  node.append(...children.flat(Infinity).filter(child => child != null && child !== false));
+  return node;
+}
+const percent = r => `${Math.round(r * 100)}%`;
+const points = r => `${Math.round(Math.abs(r) * 100)}`;
+const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
+const CHANGES = {better: "better", worse: "worse", noise: "within noise", few: "too few scenarios to tell"};
+
+const panel = document.getElementById("agents");
+if (!DATA.agents.length) {
+  panel.append(el("p", {className: "empty"}, "No runs yet. Run ", el("span", {className: "id"}, "convy run <agent>"), " and the results appear here."));
+} else {
+  panel.append(el("table", {},
+    el("thead", {}, el("tr", {}, ["Agent", "Latest run", "Passed", "Against the run before", "Runs"].map(t => el("th", {}, t)))),
+    el("tbody", {}, DATA.agents.map(({agent, runs, latest}) => el("tr", {},
+      el("td", {}, el("a", {className: "id", href: `${encodeURIComponent(agent)}/index.html`}, agent)),
+      el("td", {}, when(latest.started),
+        el("span", {className: "sub"}, [latest.version && `version ${latest.version}`,
+          latest.status !== "finished" && (latest.status === "interrupted" ? "interrupted" : "not finished")].filter(Boolean).join(" · "))),
+      el("td", {}, el("span", {className: "rate"}, latest.passed == null ? "—" : percent(latest.passed)),
+        latest.margin == null ? null : el("span", {className: "sub"}, `±${points(latest.margin)} pts`)),
+      el("td", {className: latest.change ? latest.change.verdict : ""}, latest.change == null ? "—"
+        : `${latest.change.delta > 0 ? "▲" : latest.change.delta < 0 ? "▼" : "="} ${points(latest.change.delta)} pts · ${CHANGES[latest.change.verdict]}`),
+      el("td", {}, String(runs)))))));
+}
+</script>
+</body>
+</html>

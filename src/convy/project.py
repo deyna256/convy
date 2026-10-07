@@ -67,11 +67,13 @@ class Project(Struct, frozen=True):
         return self.results() / "index.html"
 
     def report(self) -> tuple[Path, ...]:
-        """Write the page from every run; return the runs that could not be read whole, relative
-        to `results()`."""
+        """Write every page from every run; return the runs that could not be read whole,
+        relative to `results()`."""
         runs = Runs(self.results())
-        self.page().parent.mkdir(parents=True, exist_ok=True)
-        self.page().write_text(Report(runs).html(), encoding="utf-8")
+        for path, html in Report(runs).pages().items():
+            page = self.results() / path
+            page.parent.mkdir(parents=True, exist_ok=True)
+            page.write_text(html, encoding="utf-8")
         return runs.broken()
 
     def old_journals(self) -> bool:
