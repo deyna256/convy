@@ -96,7 +96,7 @@ def test_a_run_writes_its_folder_and_the_report(project: Path, capsys):
     out = capsys.readouterr().out
     assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
-    assert out.endswith(f"report: {folder / 'report.html'}\n")
+    assert out.endswith(f"report: {folder.relative_to(project) / 'report.html'}\n")
 
 
 @pytest.mark.parametrize(
@@ -152,7 +152,7 @@ def test_a_run_names_broken_runs(project: Path, capsys):
     (project / "results" / "x" / "broken" / "run.json").write_text("oops\n")
     assert convy("run", "echo", "--scenarios", "clarify-*") == 0
     err = capsys.readouterr().err
-    assert f"skipped unreadable lines or a whole run: {project / 'results' / 'x' / 'broken'}" in err
+    assert f"skipped unreadable lines or a whole run: {Path('results', 'x', 'broken')}" in err
 
 
 def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
@@ -161,9 +161,9 @@ def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
     main(["report"])
     assert (project / "results" / "index.html").is_file()
     out, err = capsys.readouterr()
-    assert out == f"index: {project / 'results' / 'index.html'}\n"
+    assert out == f"index: {Path('results', 'index.html')}\n"
     assert err == (
-        f"{project / 'results' / 'runs'} holds journals of convy 0.1, which this version does "
+        f"{Path('results', 'runs')} holds journals of convy 0.1, which this version does "
         "not read; run the agents again\n"
     )
 
@@ -284,7 +284,7 @@ def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
     capsys.readouterr()
     main(["compare", before, after])
     page = project / "results" / "compare" / f"{before}-vs-{after}.html"
-    assert capsys.readouterr().out == f"comparison: {page}\n"
+    assert capsys.readouterr().out == f"comparison: {page.relative_to(project)}\n"
     assert '"rows":[' in page.read_text()
 
 

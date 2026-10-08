@@ -134,7 +134,7 @@ class RunCommand(BaseModel):
     smoke: bool = Field(False, description="check the connection to the agent; no models called")
 
     def cli_cmd(self) -> None:
-        project = Project(Path.cwd())
+        project = Project(Path())
         try:
             agents = [project.agent(name) for name in self.agents]
             benches = [self.bench(project) for _ in agents]
@@ -221,7 +221,7 @@ class ResumeCommand(BaseModel):
     run: CliPositionalArg[str] = Field(description="the run's id, or its random part")
 
     def cli_cmd(self) -> None:
-        project = Project(Path.cwd())
+        project = Project(Path())
         try:
             run = Runs(project.results()).run(self.run)
             spec = run.spec
@@ -255,7 +255,7 @@ class ResumeCommand(BaseModel):
 
 class ReportCommand(BaseModel):
     def cli_cmd(self) -> None:
-        Rebuilt(Project(Path.cwd())).show()
+        Rebuilt(Project(Path())).show()
 
 
 class CompareCommand(BaseModel):
@@ -263,7 +263,7 @@ class CompareCommand(BaseModel):
     after: CliPositionalArg[str] = Field(description="the run that may have changed")
 
     def cli_cmd(self) -> None:
-        project = Project(Path.cwd())
+        project = Project(Path())
         runs = Runs(project.results())
         try:
             before, after = runs.run(self.before), runs.run(self.after)
