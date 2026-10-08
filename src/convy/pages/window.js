@@ -35,12 +35,12 @@ function markdown(text) {
   };
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
-    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*\d+[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*(\d+)[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
     if (bullet || number) {
       flush();
       const tag = bullet ? "ul" : "ol";
       if (!list || list.tagName.toLowerCase() !== tag) { list = el(tag); blocks.push(list); }
-      list.append(el("li", {}, inline((bullet || number)[1])));
+      list.append(el("li", number ? {value: Number(number[1])} : {}, inline(bullet ? bullet[1] : number[2])));
       continue;
     }
     list = null;
