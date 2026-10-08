@@ -1,13 +1,13 @@
 [project]
 name = "convy"
 version = "0.2.0"
-description = "Check conversational agents the way a person would: a simulated user talks to the agent, a judge rates the dialogue, and convy reports pass rate, tokens and response time."
+description = "Conversation tests for AI agents: a simulated user talks to your agent through its API, a judge checks every claim, and convy reports pass rate, tokens, time and what changed between builds."
 keywords = [
     "llm", "agents", "ai-agents", "evaluation", "llm-evaluation", "agent-evaluation", "testing",
     "conversational-ai", "chatbot-testing", "simulated-user", "llm-as-a-judge", "benchmark",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -39,7 +39,8 @@ convy = "convy.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/deyna256/convy"
-Documentation = "https://github.com/deyna256/convy#readme"
+Documentation = "https://github.com/deyna256/convy/tree/main/docs"
+Demo = "https://deyna256.github.io/convy/"
 Changelog = "https://github.com/deyna256/convy/blob/main/CHANGELOG.md"
 Issues = "https://github.com/deyna256/convy/issues"
 
