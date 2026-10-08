@@ -1,7 +1,7 @@
 # The report
 
 Every run has its own report: `results/<agent>/<run>/report.html`. It is a static page that works
-offline, with system, light and dark themes. [See a real one.](https://deyna256.github.io/convy/shop_bot/2026-10-08T14-38-03_5e85/report.html)
+offline, with system, light and dark themes. [See a real one.](https://deyna256.github.io/convy/report.html)
 
 ## Tiles
 
@@ -41,7 +41,7 @@ uv run convy compare e46f 4693       # before, then after
 ```
 
 The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old value and the change.
-[See a real one.](https://deyna256.github.io/convy/compare/7ad8-vs-5e85.html)
+[See a real one.](https://deyna256.github.io/convy/compare.html)
 
 - Green means better, red means worse.
 - Grey with `~` means the pass rate moved within noise. With few scenarios and attempts, a change that

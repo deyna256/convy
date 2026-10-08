@@ -1,5 +1,5 @@
-# The README's recording, part two: the two committed runs compared.
-# Record from examples/shop after demo.tape: vhs compare.tape.
+# The README's recording, part two: the two runs compared.
+# `just demo` puts the runs' ids in place of BEFORE AFTER and records it after demo.tape.
 Output compare.mp4
 Set Shell bash
 Set FontSize 16
@@ -12,5 +12,5 @@ Type "export PS1='$ ' && alias convy='uv run -q --project ../.. convy' && clear"
 Sleep 500ms
 Show
 Sleep 500ms
-Type "convy compare 7ad8 5e85" Sleep 500ms Enter
+Type "convy compare BEFORE AFTER" Sleep 500ms Enter
 Sleep 3s

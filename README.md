@@ -15,7 +15,7 @@ and convy shows what passed, what it cost and what changed.</p>
 [![CI](https://github.com/deyna256/convy/actions/workflows/ci.yml/badge.svg)](https://github.com/deyna256/convy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/deyna256/convy/blob/main/LICENSE)
 
-[Live report](https://deyna256.github.io/convy/shop_bot/2026-10-08T14-38-03_5e85/report.html) ·
+[Live report](https://deyna256.github.io/convy/report.html) ·
 [Quick start](https://github.com/deyna256/convy#quick-start) ·
 [Docs](https://github.com/deyna256/convy/tree/main/docs) ·
 [Changelog](https://github.com/deyna256/convy/blob/main/CHANGELOG.md)
@@ -27,9 +27,9 @@ and convy shows what passed, what it cost and what changed.</p>
 </p>
 
 <p align="center">
-  <a href="https://deyna256.github.io/convy/shop_bot/2026-10-08T14-38-03_5e85/report.html"><b>See a real report →</b></a>
+  <a href="https://deyna256.github.io/convy/report.html"><b>See a real report →</b></a>
   &nbsp;&nbsp;
-  <a href="https://deyna256.github.io/convy/compare/7ad8-vs-5e85.html"><b>See a comparison →</b></a>
+  <a href="https://deyna256.github.io/convy/compare.html"><b>See a comparison →</b></a>
 </p>
 
 ## Why convy

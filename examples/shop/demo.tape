@@ -1,5 +1,5 @@
 # The README's recording, part one: build 1.1 of the shop bot, played for real.
-# Record from examples/shop with a .env: vhs demo.tape. Part two is compare.tape.
+# `just demo` records it from examples/shop, after the build 1.0 run. Part two is compare.tape.
 Output run.mp4
 Set Shell bash
 Set FontSize 16

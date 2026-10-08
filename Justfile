@@ -32,7 +32,11 @@ changelog:
 release-notes:
     uv run towncrier build --yes --version "$(uv version --short)"
 
-# Build the demo's pages from its committed runs: every report, the index and the comparison.
+# Build the demo's pages from its two runs.
 demo-site:
-    cd examples/shop && uv run --project ../.. convy report
-    cd examples/shop && uv run --project ../.. convy compare 7ad8 5e85
+    uv run python examples/shop/demo.py site
+
+# Make the demo again: play both builds for real, record the GIF, build the pages.
+[confirm("This replaces the demo's runs and GIF and calls the models in examples/shop/.env. Go on?")]
+demo:
+    uv run python examples/shop/demo.py record
