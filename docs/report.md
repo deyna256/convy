@@ -1,7 +1,8 @@
 # The report
 
 Every run has its own report: `results/<agent>/<run>/report.html`. It is a static page that works
-offline, with system, light and dark themes. [See a real one.](https://deyna256.github.io/convy/report.html)
+offline, with system, light and dark themes.
+[See a real one.](https://deyna256.github.io/convy/report.html)
 
 ## Tiles
 
@@ -44,11 +45,11 @@ The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old v
 [See a real one.](https://deyna256.github.io/convy/compare.html)
 
 - Green means better, red means worse.
-- Grey with `~` means the pass rate moved within noise. With few scenarios and attempts, a change that
-  size can happen by chance.
+- Grey with `~` means the pass rate moved within noise. With few scenarios and attempts, a change
+  that size can happen by chance.
 
 Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. A scenario is not
-compared if only one run played it, it was edited between the runs, or one run has no verdict for it.
-A scenario's window shows both dialogues side by side.
+compared if only one run played it, it was edited between the runs, or one run has no verdict for
+it. A scenario's window shows both dialogues side by side.
 
 The runs may be of different agents. The page warns when the user's or the judge's model differs.

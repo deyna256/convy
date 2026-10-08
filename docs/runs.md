@@ -35,8 +35,8 @@ resume with: convy resume a3f9
 `convy resume` takes the run's id or its random part. It plays the missing attempts with exactly the
 run's settings: the same scenarios, `k`, `--parallel` and `--turn-timeout`.
 
-It refuses, and says why, if the agent's file, `models.py`, the agent's `version` or a model name has
-changed. The run would no longer measure one thing. It cannot see a change in a module the agent
+It refuses, and says why, if the agent's file, `models.py`, the agent's `version` or a model name
+has changed. The run would no longer measure one thing. It cannot see a change in a module the agent
 imports, or in the service behind the agent.
 
 Attempts that ended in an error are recorded and are not played again.

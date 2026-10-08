@@ -85,7 +85,8 @@ judge:
 ```
 
 The judge decides each claim on its own and says why. The report shows which claim failed, in which
-attempt, next to the dialogue. More in [Scenarios](https://github.com/deyna256/convy/blob/main/docs/scenarios.md).
+attempt, next to the dialogue. More in
+[Scenarios](https://github.com/deyna256/convy/blob/main/docs/scenarios.md).
 
 ## Connect your agent
 
@@ -122,7 +123,8 @@ uv run convy compare 7ad8 5e85       # before, then after
 
 The page shows each number before and after. Green is better, red is worse, and grey with `~` means
 the change is within noise. Scenarios are grouped as Worse, Better and Same, and you can read both
-dialogues side by side. More in [The report](https://github.com/deyna256/convy/blob/main/docs/report.md).
+dialogues side by side. More in
+[The report](https://github.com/deyna256/convy/blob/main/docs/report.md).
 
 ## convy and other tools
 
@@ -131,9 +133,9 @@ Checked against their docs on 8 October 2026.
 - [**Scenario**](https://github.com/langwatch/scenario) by LangWatch also has a simulated user and a
   judge. You write scenarios as code in Python, TypeScript or Go and run them with pytest or vitest.
   Pick it if you want scenarios next to your tests, or to script a dialogue step by step.
-- [**promptfoo**](https://www.promptfoo.dev/docs/providers/simulated-user/) tests prompts, models and
-  agents, and does red teaming. Its simulated user is one provider among many. Pick it if you need a
-  wide toolkit.
+- [**promptfoo**](https://www.promptfoo.dev/docs/providers/simulated-user/) tests prompts, models
+  and agents, and does red teaming. Its simulated user is one provider among many. Pick it if you
+  need a wide toolkit.
 - [**deepeval**](https://deepeval.com/docs/conversation-simulator) has a conversation simulator you
   call from Python, and many ready metrics. Pick it if you want those metrics.
 
@@ -166,8 +168,8 @@ trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SEC
 Issues and pull requests are welcome. Read
 [CONTRIBUTING.md](https://github.com/deyna256/convy/blob/main/CONTRIBUTING.md) first, and follow the
 [Code of Conduct](https://github.com/deyna256/convy/blob/main/CODE_OF_CONDUCT.md). Report
-vulnerabilities privately, as the [security policy](https://github.com/deyna256/convy/blob/main/SECURITY.md)
-says.
+vulnerabilities privately, as the
+[security policy](https://github.com/deyna256/convy/blob/main/SECURITY.md) says.
 
 ## License
 

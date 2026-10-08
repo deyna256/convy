@@ -25,13 +25,17 @@ class Demo:
     def site(self) -> None:
         """The reports, the index and the comparison, with report.html and compare.html at the
         site's root leading to the newer run and to the comparison: the README links those."""
-        before, after = self.runs()
+        older, newer = self.runs()
+        before, after = (run.rpartition("_")[2] for run in (older, newer))
         self.convy("report")
         self.convy(f"compare {before} {after}")
         results = self.folder / "results"
-        newer = next((results / "shop_bot").glob(f"*_{after}"))
-        (results / "report.html").write_text(LEAD.format(f"shop_bot/{newer.name}/report.html"))
-        (results / "compare.html").write_text(LEAD.format(f"compare/{before}-vs-{after}.html"))
+        lead = {
+            "report.html": f"shop_bot/{newer}/report.html",
+            "compare.html": f"compare/{before}-vs-{after}.html",
+        }
+        for page, target in lead.items():
+            (results / page).write_text(LEAD.format(target), encoding="utf-8")
 
     def record(self) -> None:
         missing = [tool for tool in TOOLS if shutil.which(tool) is None]
@@ -46,10 +50,12 @@ class Demo:
         try:
             self.convy("run shop_bot -k 3", build="1.0")
             self.run("vhs demo.tape")  # build 1.1, played while it is recorded
-            before, after = self.runs()
-            tape = (self.folder / "compare.tape").read_text()
-            with tempfile.NamedTemporaryFile("w", suffix=".tape", dir=self.folder) as compare:
-                compare.write(tape.replace("BEFORE AFTER", f"{before} {after}"))
+            ids = " ".join(run.rpartition("_")[2] for run in self.runs())
+            tape = (self.folder / "compare.tape").read_text(encoding="utf-8")
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", suffix=".tape", dir=self.folder
+            ) as compare:
+                compare.write(tape.replace("BEFORE AFTER", ids))
                 compare.flush()
                 self.run("vhs", compare.name)
             self.gif()
@@ -76,15 +82,15 @@ class Demo:
         self.run("ffmpeg -v error -y -i run.mp4 -i compare.mp4 -filter_complex", filters, str(GIF))
 
     def runs(self) -> tuple[str, str]:
-        """The random parts of the two runs' ids, the older first."""
-        folders = sorted(path.name for path in (self.folder / "results" / "shop_bot").iterdir())
-        if len(folders) != 2:
-            sys.exit(f"examples/shop must hold two runs of shop_bot; found {len(folders)}")
-        before, after = (name.rpartition("_")[2] for name in folders)
-        return before, after
+        """The two runs' ids, the older first."""
+        runs = sorted(path.name for path in (self.folder / "results" / "shop_bot").iterdir())
+        if len(runs) != 2:
+            sys.exit(f"examples/shop must hold two runs of shop_bot; found {len(runs)}")
+        older, newer = runs
+        return older, newer
 
     def convy(self, line: str, build: str | None = None) -> None:
-        env = os.environ | {"SHOP_BOT_BUILD": build} if build else None
+        env = (os.environ | {"SHOP_BOT_BUILD": build}) if build else None
         self.run(f"uv run --project ../.. convy {line}", env=env)
 
     def run(self, line: str, *args: str, env: dict[str, str] | None = None) -> None:

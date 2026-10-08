@@ -1,7 +1,7 @@
 # The shop demo
 
-A support bot for a made-up shop, in two builds. Build 1.1 cut the prompt to save tokens and lost the
-shop's rules on the way. convy shows it got worse.
+A support bot for a made-up shop, in two builds. Build 1.1 cut the prompt to save tokens and lost
+the shop's rules on the way. convy shows it got worse.
 
 - [The 1.1 run's report](https://deyna256.github.io/convy/report.html)
 - [1.0 and 1.1 compared](https://deyna256.github.io/convy/compare.html)

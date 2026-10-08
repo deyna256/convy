@@ -30,11 +30,11 @@ agent = JsonAgent(
 
 On every turn convy sends `body`. It puts the user's message in place of `{text}`, and an id that
 stays the same for the whole conversation in place of `{session}`. If your agent does not remember
-the dialogue, put `"{history}"` where it expects the list of messages. `reply` and `tokens` are paths
-in the JSON answer.
+the dialogue, put `"{history}"` where it expects the list of messages. `reply` and `tokens` are
+paths in the JSON answer.
 
-Files of the project can import each other, as in a script run from its folder. Put shared settings in
-one module, like `gateway.py` in a new project (`from gateway import gateway`).
+Files of the project can import each other, as in a script run from its folder. Put shared settings
+in one module, like `gateway.py` in a new project (`from gateway import gateway`).
 
 Check the connection. The agent answers for real; nothing else is called:
 
@@ -128,8 +128,8 @@ until it returns. Give the client its own timeout if it has one.
 
 ## Tokens counted from the start
 
-Some agents report only the tokens spent so far, not those of one answer. Read the counter before and
-after the turn. The difference is the turn's tokens:
+Some agents report only the tokens spent so far, not those of one answer. Read the counter before
+and after the turn. The difference is the turn's tokens:
 
 ```python
 import httpx2
@@ -164,10 +164,10 @@ add them to the agent's answer, or read them from the model gateway the agent us
 
 ## Corporate certificates
 
-An agent or a gateway behind a corporate certificate authority takes `Tls` in its endpoint. `ca` is an
-extra root certificate; `cert` and `key` are a client certificate. Declare the paths in your `Env` as
-pydantic's `FilePath`. Then a wrong path stops convy before the run (`error: …`, exit code 2) instead
-of failing every attempt:
+An agent or a gateway behind a corporate certificate authority takes `Tls` in its endpoint. `ca` is
+an extra root certificate; `cert` and `key` are a client certificate. Declare the paths in your
+`Env` as pydantic's `FilePath`. Then a wrong path stops convy before the run (`error: …`, exit
+code 2) instead of failing every attempt:
 
 ```python
 from pydantic import FilePath
