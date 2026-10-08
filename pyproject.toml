@@ -1,6 +1,6 @@
 [project]
 name = "convy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Check conversational agents the way a person would: a simulated user talks to the agent, a judge rates the dialogue, and convy reports pass rate, tokens and response time."
 keywords = [
     "llm", "agents", "ai-agents", "evaluation", "llm-evaluation", "agent-evaluation", "testing",
