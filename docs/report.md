@@ -21,7 +21,7 @@ Each scenario gets a row and a status:
 - **Failing**: no attempt passed.
 - **Flaky**: some attempts passed.
 - **Passing**: all attempts passed.
-- **No verdict**: the judge could not decide.
+- **No verdict**: one of convy's models failed, so no attempt was decided.
 
 The row also shows answer time and tokens. A filter such as `refund-*` narrows the list.
 
