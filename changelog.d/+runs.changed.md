@@ -1,1 +1,0 @@
-Each run is a folder, `results/<agent>/<run id>/`, with a copy of the scenarios it played, its settings and its status. Results of convy 0.1 are not read; run the agents again. In Python, `RunJournal` and `RunSpec` replace `JsonlJournal` and `RunHeader`, and `Outcome` no longer holds the claims.
