@@ -1,0 +1,8 @@
+id: vague-start
+max_turns: 6
+user: |
+  Start with only: "It doesn't work."
+  Give details only when asked: it is the desk lamp you bought, and it gives no light.
+judge:
+  - Before giving steps, the agent asked what does not work
+  - The steps the agent gave fit a lamp that gives no light

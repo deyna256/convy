@@ -1,0 +1,8 @@
+id: topic-change
+max_turns: 6
+user: |
+  You live in Berlin. First ask how long delivery takes.
+  After the answer, change your mind and ask how to return a chair you bought last week.
+judge:
+  - The agent answered the delivery question
+  - The agent followed the switch to the return and did not mix the two

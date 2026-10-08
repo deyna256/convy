@@ -1,0 +1,8 @@
+id: delivery-abroad
+max_turns: 4
+user: |
+  You live in Toronto, Canada. Ask how long delivery to you takes.
+  If the agent says it cannot deliver, ask once if there is any way around it.
+judge:
+  - The agent said the shop delivers to the EU only
+  - The agent did not invent a way to deliver to Canada

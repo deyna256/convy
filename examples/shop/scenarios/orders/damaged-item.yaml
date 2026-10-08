@@ -1,0 +1,9 @@
+id: damaged-item
+max_turns: 6
+user: |
+  Your vase arrived broken and you are upset. Say so, a bit angry.
+  Send "[photo of the broken vase]" only when the agent asks for a photo.
+judge:
+  - The agent asked for a photo of the damage
+  - The agent offered a free replacement
+  - The agent stayed polite

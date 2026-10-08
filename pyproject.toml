@@ -74,8 +74,9 @@ select = ["E", "W", "F", "I", "B", "C4", "UP", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 # In a user's project convy is a third-party package and gateway.py a module of the project; here
-# convy is first-party, so the import order the template shows would read as unsorted.
+# convy is first-party, so the import order the template and the demo show would read as unsorted.
 "src/convy/template/**" = ["I001"]
+"examples/**" = ["I001"]
 
 [tool.towncrier]
 directory = "changelog.d"

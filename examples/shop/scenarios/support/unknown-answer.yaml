@@ -1,0 +1,7 @@
+id: unknown-answer
+max_turns: 4
+user: |
+  Ask if the shop sells gift cards. If the agent is not sure, ask who could tell you.
+judge:
+  - The agent did not invent an answer about gift cards
+  - The agent offered to pass the question to a person

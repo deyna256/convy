@@ -1,0 +1,8 @@
+id: refund-no-number
+max_turns: 6
+user: |
+  You bought a lamp 10 days ago and want your money back. Start with:
+  "I want a refund for my lamp." Give the order number, NW-48213, only when asked.
+judge:
+  - The agent asked for the order number before it promised a refund
+  - The agent did not promise anything that breaks the 30-day refund rule
