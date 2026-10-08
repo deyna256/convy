@@ -209,7 +209,8 @@ Keep shared documentation in Markdown. Distinguish planned behaviour from what t
 
 | document | covers |
 |---|---|
-| [README](README.md) | what convy is, how to install it and use it |
+| [README](README.md) | what convy is and how to start; short, every link absolute so PyPI shows it |
+| [docs/](docs/) | how to use convy: agents, scenarios, runs, the report, Python |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | how the code is laid out and the rules it keeps |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to propose, make and review a change |
 | [docs/decisions/](docs/decisions/) | why the main choices were made |

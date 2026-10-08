@@ -1,4 +1,4 @@
-"""The README's examples run as written."""
+"""The docs' examples run as written."""
 
 import re
 from pathlib import Path
@@ -7,12 +7,11 @@ import pytest
 
 import convy
 
-README = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
+PYTHON = (Path(__file__).parents[1] / "docs" / "python.md").read_text(encoding="utf-8")
 
 
 def test_run_from_python_example_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    section = README[README.index("## Run from Python") :]
-    found = re.search(r"```python\n(.*?)```", section, re.DOTALL)
+    found = re.search(r"```python\n(.*?)```", PYTHON, re.DOTALL)
     assert found is not None
     monkeypatch.chdir(tmp_path)
     exec(found[1], {})

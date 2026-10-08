@@ -1,8 +1,8 @@
 # Architecture
 
 This document is for people who change convy's code. It describes how the code is laid out and the
-rules that hold everywhere in it. How to use convy is in the [README](README.md); why the main choices
-were made is in [docs/decisions](docs/decisions/).
+rules that hold everywhere in it. How to use convy is in the [README](README.md) and [docs/](docs/);
+why the main choices were made is in [docs/decisions](docs/decisions/).
 
 ## Bird's eye view
 
