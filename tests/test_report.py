@@ -457,3 +457,11 @@ def test_a_written_page_stands_alone(tmp_path):
         assert "function el(" in html
     assert "function dialogue(" in pages[0] and "function dialogue(" in pages[1]
     assert "function dialogue(" not in pages[2]  # the index has no scenario window
+
+
+def test_every_page_has_the_icon(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+        assert '<link rel="icon" href="data:image/svg+xml,' in html
