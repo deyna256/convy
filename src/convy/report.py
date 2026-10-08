@@ -51,8 +51,7 @@ class Runs(Struct, frozen=True):
     def broken(self, read: Iterable[Run]) -> tuple[Path, ...]:
         """The runs that could not be read whole, given the runs iterating read: the folders
         missing from them, and those with unreadable lines."""
-        runs = list(read)
-        whole = {run.path for run in runs if not run.unreadable}
+        whole = {run.path for run in read if not run.unreadable}
         found = (folder.relative_to(self.directory) for folder in self.folders())
         return tuple(path for path in found if path not in whole)
 
@@ -522,7 +521,9 @@ class Comparison(Struct, frozen=True):
             changes.append(ClaimChange(new.text, old.result, new.result, change))
         return tuple(changes)
 
-    def deltas(self, was: Metrics, now: Metrics, significant: Tone | None) -> Deltas:
+    def deltas(
+        self, was: Metrics, now: Metrics, significant: Literal["good", "bad"] | None
+    ) -> Deltas:
         if was.rate is None or now.rate is None:
             rate = Delta(None, "none")
         else:
@@ -551,7 +552,7 @@ class Comparison(Struct, frozen=True):
 
     def significant(
         self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
-    ) -> Tone | None:
+    ) -> Literal["good", "bad"] | None:
         """The pass rate's tone when the paired change over the scenarios both runs played
         unchanged is beyond its 95% margin; None when it is not."""
         differences = []
