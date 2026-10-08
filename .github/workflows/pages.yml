@@ -1,0 +1,61 @@
+name: Pages
+
+# The demo's pages: its committed runs, built into reports by the convy of this commit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: '1'
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Just
+        uses: extractions/setup-just@v4
+        with:
+          just-version: '1.58.0'
+
+      - name: Build the demo's pages
+        run: just demo-site
+
+      - name: Upload the pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: examples/shop/results
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the pages
+        id: deployment
+        uses: actions/deploy-pages@v5
