@@ -35,7 +35,7 @@ function markdown(text) {
   };
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
-    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*(\d+)[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*(\d{1,9})[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
     if (bullet || number) {
       flush();
       const tag = bullet ? "ul" : "ol";
