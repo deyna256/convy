@@ -188,9 +188,19 @@ def started_run(project: Path, models: str = TALKATIVE, options: tuple[str, ...]
     (project / "models.py").write_text(models)
     (project / "agents" / "slow.py").write_text(SLOW)
     command = [sys.executable, "-c", "from convy.cli import main; main()"]
-    argv = ["run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1", *options]
     process = subprocess.Popen(
-        [*command, *argv],
+        [
+            *command,
+            "run",
+            "slow",
+            "--scenarios",
+            "clarify-*",
+            "-k",
+            "3",
+            "--parallel",
+            "1",
+            *options,
+        ],
         cwd=project,
         env={**os.environ, "SLOW": "0.1"},
         stdout=subprocess.PIPE,
