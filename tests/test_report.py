@@ -7,13 +7,17 @@ import pytest
 
 from convy.agent import Answer, Message, NoUsage, Usage
 from convy.bench import Finished, Interrupted, RunJournal, RunSpec
-from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
+from convy.dialog import Claim, Confidence, Failed, NoVerdict, Transcript, Turn, Verdict
 from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
 PASSED = Verdict((Claim(True, ""),))
 FAILED = Verdict((Claim(False, ""),))
+
+
+def unsure(passed: bool, value: float) -> Verdict:
+    return Verdict((Claim(passed, "", Confidence(value)),))
 
 
 def outcome(
@@ -46,6 +50,7 @@ def journal(
     k: int = 1,
     asks: str = "Say hi.",
     claims: tuple[str, ...] = ("greets",),
+    trust: float = 0.0,
 ) -> RunJournal:
     """A run of `scenarios` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
     started = started or datetime.now(UTC)
@@ -60,6 +65,7 @@ def journal(
         600,
         played,
         started,
+        trust=trust,
     )
     written = RunJournal(directory, spec)
     written.create()
@@ -465,3 +471,55 @@ def test_every_page_has_the_icon(tmp_path):
     before, after = both(tmp_path)
     for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
         assert '<link rel="icon" href="data:image/svg+xml,' in html
+
+
+def test_attempts_below_trust_are_cut_out_and_counted(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        2,
+        outcome("a", unsure(True, 0.9)),
+        outcome("a", unsure(True, 0.5), attempt=2),
+        outcome("b", unsure(False, 0.6)),
+        outcome("b", unsure(True, 0.7), attempt=2),
+        k=2,
+        trust=0.8,
+    )
+    page = Report(only(tmp_path)).page()
+    assert (page.metrics.passed, page.metrics.judged, page.metrics.cut) == (1, 1, 3)
+    assert page.run.trust == 0.8
+    a, b = sorted(page.scenarios, key=lambda s: s.id)
+    assert (a.result, b.result) == ("passing", "none")
+    assert [(x.passed, x.cut) for x in a.attempts] == [(True, False), (None, True)]
+    assert [(c.held, c.judged, c.cut) for c in a.claims] == [(1, 1, 1)]
+    assert [(c.confidence, c.trusted) for c in a.attempts[1].claims] == [(0.5, False)]
+    assert page.metrics.stable == 0  # a cut attempt is not a pass
+
+
+def test_trust_0_cuts_nothing(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(False, 0.1)))
+    page = Report(only(tmp_path)).page()
+    assert (page.metrics.passed, page.metrics.judged, page.metrics.cut) == (0, 1, 0)
+    assert page.scenarios[0].result == "failing"
+
+
+def test_a_decision_without_confidence_is_trusted_and_shown_as_such(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), trust=0.9)
+    (scenario,) = Report(only(tmp_path)).page().scenarios
+    (claim,) = scenario.attempts[0].claims
+    assert (claim.passed, claim.confidence, claim.trusted) == (True, None, True)
+    assert scenario.result == "passing"
+
+
+def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.5)), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.5)), started=at(6), trust=0.8)
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.before.trust, page.after.trust) == (0, 0.8)
+    assert (page.was.judged, page.now.judged, page.now.cut) == (1, 0, 1)
+    assert page.models == ()  # trust is not a warning
+    assert [(row.run.trust, row.cut) for row in Index(Runs(tmp_path)).page().runs] == [
+        (0.8, 1),
+        (0, 0),
+    ]

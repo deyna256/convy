@@ -41,7 +41,7 @@ const GROUPS = {worse: "Worse", better: "Better", same: "Same", apart: "Not comp
 
 function header() {
   const title = BEFORE.agent === AFTER.agent ? BEFORE.agent : `${BEFORE.agent} vs ${AFTER.agent}`;
-  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)}`);
+  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)}${run.trust > 0 ? ` · trust ${run.trust}` : ""}`);
   return el("div", {className: "top"},
     el("div", {},
       el("div", {className: "eyebrow"}, el("a", {href: "../index.html"}, "CONVY"), " / compare"),
@@ -64,7 +64,7 @@ function tiles() {
   const tile = (label, value, was, delta, hero = false) => el("div", {className: hero ? "tile hero" : "tile"},
     el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta);
   return el("div", {className: "tiles"},
-    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}`, change(D.rate, v => v < 1 ? v.toFixed(1) : String(Math.round(v))), true),
+    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${NOW.cut ? ` · ${NOW.cut} not trusted` : ""}`, change(D.rate, v => v < 1 ? v.toFixed(1) : String(Math.round(v))), true),
     tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
     tile("Answer time", secs(NOW.seconds), `was ${secs(WAS.seconds)}`, change(D.seconds, secs)),
     tile("Tokens per attempt", count(NOW.tokens), `was ${count(WAS.tokens)}`, change(D.tokens, count)),
@@ -104,7 +104,7 @@ function column(word, run, view, number) {
   return el("div", {},
     el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
       attempt ? badge(kind(attempt.passed), ATTEMPT) : null),
-    attempt ? [attemptTiles(attempt), judgeLines(attempt), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
+    attempt ? [attemptTiles(attempt), judgeLines(attempt, run.trust), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
 }
 
 function show(id, number) {

@@ -54,21 +54,29 @@ function markdown(text) {
 
 // The scenario window's parts, and the filter of its table.
 function claimTally(c) {
-  return !c.judged ? "no verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`;
+  const cut = c.cut ? ` · ${c.cut} not trusted` : "";
+  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + cut;
 }
 function attemptTiles(attempt) {
   const answers = attempt.turns.length;
   const result = kind(attempt.passed);
   return el("div", {className: "mini"},
-    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
+    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), attempt.cut ? "Not trusted" : ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
     el("div", {}, el("span", {className: "l"}, "Answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out`)));
 }
-function judgeLines(attempt) {
+// How sure the judge was of a decision, at the run's trust.
+function sure(claim, trust) {
+  if (claim.confidence == null) return "sure: not given";
+  const said = `${Math.round(claim.confidence * 100)}% sure`;
+  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(trust * 100)}%`;
+}
+function judgeLines(attempt, trust) {
   if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
   return el("div", {className: "judge"}, attempt.claims.map((claim, i) =>
-    el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)), el("span", {className: "why"}, claim.reason || "No reason given."))));
+    el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
+      el("span", {className: "why"}, claim.reason || "No reason given.", el("small", {className: "muted"}, ` · ${sure(claim, trust)}`)))));
 }
 function dialogue(attempt) {
   return attempt.turns.flatMap(t => [
