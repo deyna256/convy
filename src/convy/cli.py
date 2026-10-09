@@ -102,11 +102,8 @@ class Recorded(Struct, frozen=True):
         self, bench: Bench, agent: Agent, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
         try:
-            return asyncio.run(
-                self.journal.play(
-                    bench, agent, Printed(self.journal, self.journal.spec.trust), done
-                )
-            )
+            printed = Printed(self.journal, self.journal.spec.trust)
+            return asyncio.run(self.journal.play(bench, agent, printed, done))
         except KeyboardInterrupt:
             spec = self.journal.spec
             run = Runs(self.project.results()).read(self.journal.folder())

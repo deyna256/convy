@@ -33,6 +33,7 @@ spec = RunSpec(
     turn_timeout=600,
     scenarios=bench.scenarios,
     started=datetime.now().astimezone(),
+    trust=0.0,  # leave out the judge's decisions less sure than this
 )
 results = Path("results")
 journal = RunJournal(results, spec)

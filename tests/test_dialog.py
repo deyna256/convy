@@ -150,6 +150,10 @@ async def test_checked_passes_a_right_answer_through():
         (Claim(True, "ok"), "answers: the decisions are not claims"),
         ((Claim(True, "ok"), Claim(True, "ok")), "answers: decided 2 claims of 1"),
         ((), "answers: decided 0 claims of 1"),
+        (
+            ({"pass": True, "reason": "", "confidence": {"type": "confidence", "value": 1.5}},),
+            "answers: the decisions are not claims",
+        ),
     ],
 )
 async def test_checked_turns_a_wrong_judge_into_a_model_failure(answer: object, error: str):

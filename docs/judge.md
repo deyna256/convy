@@ -71,4 +71,5 @@ Put it in `models.py`, or in a module `models.py` imports, and set `judge=Classi
 - An answer with the wrong number of claims, or a confidence outside 0 to 1, also leaves the attempt
   without a verdict.
 - `name` is saved with the run. `convy resume` refuses to go on if it changes.
-- Test your judge with the fakes in `convy.fakes`, as convy tests `ChatJudge`.
+- Test a judge that calls a service with `httpx2.MockTransport`. Test a judge built on a model
+  with the fakes in `convy.fakes`, e.g. `ChatJudge(FakeModel(...))`.

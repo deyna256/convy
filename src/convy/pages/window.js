@@ -69,7 +69,7 @@ function attemptTiles(attempt) {
 // How sure the judge was of a decision, at the run's trust.
 function sure(claim, trust) {
   if (claim.confidence == null) return "sure: not given";
-  const said = `${Math.round(claim.confidence * 100)}% sure`;
+  const said = `${Math.floor(claim.confidence * 100)}% sure`;
   return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(trust * 100)}%`;
 }
 function judgeLines(attempt, trust) {

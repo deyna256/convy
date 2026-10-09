@@ -103,7 +103,7 @@ function column(word, run, view, number) {
   const attempt = view.attempts.find(a => a.attempt === number) ?? view.attempts[0];
   return el("div", {},
     el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
-      attempt ? badge(kind(attempt.passed), ATTEMPT) : null),
+      attempt ? (attempt.cut ? badge("none", {none: "Not trusted"}) : badge(kind(attempt.passed), ATTEMPT)) : null),
     attempt ? [attemptTiles(attempt), judgeLines(attempt, run.trust), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
 }
 
