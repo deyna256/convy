@@ -28,13 +28,13 @@ All code is in `src/convy/`.
 |---|---|
 | `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `AgentFailure` — and `TimeLimited` |
 | `http.py` | `JsonEndpoint` (JSON over HTTP with retries) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
-| `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge's, and `Contained`, which turns any error of a model into `ModelFailure` |
+| `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`, `Judge`, its decisions `Verdict` and `Claim`, and the attempts without them, `Failed` and `NoVerdict` |
+| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge` and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure`; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
-| `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `MemoryJournal` |
+| `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
 | `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent` |
 | `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
@@ -65,7 +65,7 @@ in all of `src/convy/`.
    depends on the situation, such as whether a certificate file exists, stays in the method that needs
    it.
 3. **An interface (`typing.Protocol`) exists only where there are two implementations or more.** There
-   are four: `Agent`, `Conversation`, `Model` and `Journal`.
+   are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
 4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
    with a time limit on each step: opening a conversation, a turn, closing. Only exceptions inherit, from `Exception`.
 5. **"No value" is an empty object, not `None`:** `NoUsage`, `NoVerdict`. It is stored and read like the
@@ -79,8 +79,9 @@ in all of `src/convy/`.
    then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded with `msgspec.json`
    as the run's folder will do it, so a wrong one fails its turn instead of the run. Runs:
    `msgspec.json.decode` of `run.json`, whose `format` must be 2, and of `attempts.jsonl` line by line.
-   The judge's answer: `"claims"`, one object per claim, each with a `"pass"` of `true` or
-   `false`. The environment and the command line: pydantic-settings.
+   The judge's answer: `Checked` encodes and decodes it with `msgspec.json` as the run's folder will,
+   and wants one `Claim` per claim; `ChatJudge` first wants `"claims"`, one object per claim, each
+   with a `"pass"` of `true` or `false`. The environment and the command line: pydantic-settings.
    Pydantic is used only there; every other class is msgspec.
 8. **Every interface has a fake** in `fakes.py`, part of the public API. A fake is a simple working
    object, not a mock. Fakes get no methods that exist only for tests; a fake may keep what it collected
@@ -134,16 +135,19 @@ it.
   judge, so a broken agent cannot pass on what it said before.
 - `ModelFailure` — the simulated user's or the judge's model failed after retries, or gave an answer
   convy cannot use: an empty message, or a judge's answer without one decision per claim whose
-  `"pass"` is `true` or `false`; or raised any other error, which `Contained` turns into
-  `ModelFailure`. The attempt has `NoVerdict` and is left out of the pass rate.
+  `"pass"` is `true` or `false`; or raised any other error, which `Contained` (the user's model) or
+  `Checked` (the judge) turns into `ModelFailure`. The judge may also give an answer that is not one
+  `Claim` per claim, which `Checked` turns into `ModelFailure` too. The attempt has `NoVerdict` and
+  is left out of the pass rate.
 - Configuration errors — raised while loading the project, or a run that cannot be resumed, before any
   request: the command prints them and exits with code 2.
 
-`except Exception` appears in three places: in `scenario.py` around the agent's code — opening a
+`except Exception` appears in four places: in `scenario.py` around the agent's code — opening a
 conversation, a turn, closing it — because a bug there must not stop a run; in `Contained`
-(`model.py`) around a model's `reply`, which `Scenario.outcome` wraps both models in, so a bug in a
-model is a `ModelFailure`, not the agent's failure or a crashed run; and in `cli.py` around loading
-the project, where any error is a configuration error.
+(`model.py`) around the simulated user's model's `reply`, so a bug in it is a `ModelFailure`, not the
+agent's failure or a crashed run; in `Checked` (`dialog.py`) around a judge's `decide`, for the same
+reason; and in `cli.py` around
+loading the project, where any error is a configuration error.
 
 **Retries** live only in `JsonConnection`, which `JsonEndpoint` opens; everything that talks HTTP
 goes through it. Only requests the service did not process are repeated — 429, 503 and a connection
