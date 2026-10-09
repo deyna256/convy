@@ -18,8 +18,8 @@ Each attempt is written as soon as it ends, so a stopped run loses nothing.
 
 `run.json` keeps a copy of every scenario as it was played. It also keeps the agent's `version`, the
 convy version, the model names, the settings (`k`, `trust` and the rest), and fingerprints of
-`agents/<agent>.py` and `models.py`. So a run describes itself: editing a scenario later does not change what an old run
-means.
+`agents/<agent>.py` and `models.py`. So a run describes itself: editing a scenario later does not
+change what an old run means.
 
 ## Stop and resume
 

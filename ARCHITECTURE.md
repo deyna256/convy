@@ -75,14 +75,14 @@ in all of `src/convy/`.
    `to_dict()` methods. `RunJournal` writes with `msgspec.json.encode`; `Runs` reads back with
    `msgspec.json.decode`. The report's pages embed data of their own: `Summary` builds the view records
    for the browser from the runs; `Template` encodes them.
-7. **Outside data is checked where it enters and is typed after that.** Scenarios: `yamlrocks.loads`,
-   then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded with `msgspec.json`
-   as the run's folder will do it, so a wrong one fails its turn instead of the run. Runs:
-   `msgspec.json.decode` of `run.json`, whose `format` must be 2, and of `attempts.jsonl` line by line.
-   The judge's answer: `Checked` encodes and decodes it with `msgspec.json` as the run's folder will,
-   and wants one `Claim` per claim; `ChatJudge` first wants `"claims"`, one object per claim, each
-   with a `"pass"` of `true` or `false`. The environment and the command line: pydantic-settings.
-   Pydantic is used only there; every other class is msgspec.
+7. **Outside data is checked where it enters and is typed after that.** Scenarios:
+   `yamlrocks.loads`, then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded
+   with `msgspec.json` as the run's folder will do it, so a wrong one fails its turn instead of the
+   run. Runs: `msgspec.json.decode` of `run.json`, whose `format` must be 2, and of `attempts.jsonl`
+   line by line. The judge's answer: `Checked` encodes and decodes it with `msgspec.json` as the
+   run's folder will, and wants one `Claim` per claim; `ChatJudge` first wants `"claims"`, one
+   object per claim, each with a `"pass"` of `true` or `false`. The environment and the command
+   line: pydantic-settings. Pydantic is used only there; every other class is msgspec.
 8. **Every interface has a fake** in `fakes.py`, part of the public API. A fake is a simple working
    object, not a mock. Fakes get no methods that exist only for tests; a fake may keep what it collected
    in public fields (`outcomes`, `peak`).
@@ -135,19 +135,18 @@ it.
   judge, so a broken agent cannot pass on what it said before.
 - `ModelFailure` — the simulated user's or the judge's model failed after retries, or gave an answer
   convy cannot use: an empty message, or a judge's answer without one decision per claim whose
-  `"pass"` is `true` or `false`; or raised any other error, which `Contained` (the user's model) or
-  `Checked` (the judge) turns into `ModelFailure`. The judge may also give an answer that is not one
-  `Claim` per claim, which `Checked` turns into `ModelFailure` too. The attempt has `NoVerdict` and
-  is left out of the pass rate.
+  `"pass"` is `true` or `false`; or raised any other error, which `Contained` (the user's model)
+  turns into `ModelFailure`; or a judge that raised any error, or gave an answer that is not one
+  `Claim` per claim, which `Checked` turns into `ModelFailure`. The attempt has `NoVerdict` and is
+  left out of the pass rate.
 - Configuration errors — raised while loading the project, or a run that cannot be resumed, before any
   request: the command prints them and exits with code 2.
 
 `except Exception` appears in four places: in `scenario.py` around the agent's code — opening a
 conversation, a turn, closing it — because a bug there must not stop a run; in `Contained`
-(`model.py`) around the simulated user's model's `reply`, so a bug in it is a `ModelFailure`, not the
-agent's failure or a crashed run; in `Checked` (`dialog.py`) around a judge's `decide`, for the same
-reason; and in `cli.py` around
-loading the project, where any error is a configuration error.
+(`model.py`) around the simulated user's model's `reply`, so a bug in it is a `ModelFailure`, not
+the agent's failure or a crashed run; in `Checked` (`dialog.py`) around a judge's `decide`, for the
+same reason; and in `cli.py` around loading the project, where any error is a configuration error.
 
 **Retries** live only in `JsonConnection`, which `JsonEndpoint` opens; everything that talks HTTP
 goes through it. Only requests the service did not process are repeated — 429, 503 and a connection

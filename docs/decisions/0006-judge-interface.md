@@ -29,9 +29,9 @@ How sure a judge is cannot be measured well in one way that fits everyone:
   `ChatJudge`, a chat model with a prompt, which does not say how sure it is.
 - **A decision may carry a `Confidence` from 0 to 1, or `NoConfidence`.** convy does not check that
   the number is calibrated; that is the judge's owner's job.
-- **A run has a `trust` level,** recorded in `run.json` like `k`. A verdict the judge is less sure of
-  is cut out of the sample: it counts as neither pass nor fail, and the report shows how many were
-  cut next to every pass rate. A decision with no confidence is trusted.
+- **A run has a `trust` level,** recorded in `run.json` like `k`. A verdict the judge is less sure
+  of is cut out of the sample: it counts as neither pass nor fail, and the report shows how many
+  were cut next to every pass rate. A decision with no confidence is trusted.
 - **Raw decisions and confidence are kept;** `trust` only reads them.
 
 ## Alternatives
@@ -41,8 +41,8 @@ How sure a judge is cannot be measured well in one way that fits everyone:
 - **A built-in Jev judge.** A closed service in early access, without reasons for its decisions.
   Anyone can write it as their own judge.
 - **`trust` applied when pages are built** (`convy report --trust`), not recorded in the run. Then
-  the pages depend on the last command: `convy run` rebuilds every page. Since `trust` decides what a
-  run measured, it belongs to the run.
+  the pages depend on the last command: `convy run` rebuilds every page. Since `trust` decides what
+  a run measured, it belongs to the run.
 - **A slider on the page.** Every number would have to be computed in the browser, a second copy of
   `report.py` without tests.
 - **Count an unsure verdict as a fail.** The agent would pay for the judge's doubt.
