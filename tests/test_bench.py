@@ -162,3 +162,15 @@ def test_a_run_unchanged_has_no_reasons_to_stop():
 )
 def test_a_changed_version_or_model_is_a_reason_not_to_resume(now: tuple[str, str, str], reason):
     assert SPEC.changes(*now, Files()) == (reason,)
+
+
+@pytest.mark.parametrize("trust", [-0.5, 1.5])
+def test_a_run_spec_rejects_a_trust_outside_0_to_1(trust: float):
+    with pytest.raises(ValueError, match="trust must be from 0 to 1"):
+        RunSpec("r", "bot", "1", "fake", "fake", 2, 4, 600, SCENARIOS, STARTED, trust=trust)
+
+
+def test_an_old_run_file_reads_with_trust_0():
+    old = msgspec.json.decode(msgspec.json.encode(RunFile(2, SPEC, Running())))
+    del old["spec"]["trust"]  # a run.json written before trust existed
+    assert msgspec.json.decode(msgspec.json.encode(old), type=RunFile).spec.trust == 0

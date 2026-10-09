@@ -115,6 +115,14 @@ class Claim(Struct, frozen=True):
     reason: str
     confidence: Confidence | NoConfidence = NoConfidence()
 
+    def trusted(self, trust: float) -> bool:
+        """Whether the decision counts at `trust`: a judge that did not say is trusted."""
+        match self.confidence:
+            case Confidence(value=value):
+                return value >= trust
+            case NoConfidence():
+                return True
+
 
 class Verdict(Struct, frozen=True, tag="verdict"):
     """The judge's decision on each claim, in the order of the scenario's claims."""
@@ -125,6 +133,13 @@ class Verdict(Struct, frozen=True, tag="verdict"):
     def passed(self) -> bool:
         """An attempt passes when every claim holds."""
         return all(claim.passed for claim in self.claims)
+
+    def decided(self, trust: float) -> bool:
+        """Whether the verdict counts at `trust`: a trusted claim failed, or every claim is
+        trusted. One that does not count is cut out of the sample; `passed` still says what the
+        judge decided."""
+        trusted = [claim for claim in self.claims if claim.trusted(trust)]
+        return len(trusted) == len(self.claims) or any(not claim.passed for claim in trusted)
 
 
 class Failed(Struct, frozen=True, tag="failed"):

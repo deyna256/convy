@@ -155,3 +155,29 @@ async def test_checked_passes_a_right_answer_through():
 async def test_checked_turns_a_wrong_judge_into_a_model_failure(answer: object, error: str):
     with pytest.raises(ModelFailure, match=error):
         await Checked(Answers(answer)).decide(TRANSCRIPT, ("greets",))
+
+
+def sure(passed: bool, value: float | None = None) -> Claim:
+    return Claim(passed, "", NoConfidence() if value is None else Confidence(value))
+
+
+@pytest.mark.parametrize(
+    ("claims", "decided", "passed"),
+    [
+        ((sure(True, 0.9), sure(True, 0.95)), True, True),
+        ((sure(True, 0.9), sure(False, 0.85)), True, False),
+        ((sure(True, 0.6), sure(False, 0.85)), True, False),
+        ((sure(True, 0.9), sure(False, 0.6)), False, False),
+        ((sure(True), sure(True, 0.8)), True, True),
+    ],
+)
+def test_a_verdict_counts_when_a_trusted_claim_failed_or_every_claim_is_trusted(
+    claims: tuple[Claim, ...], decided: bool, passed: bool
+):
+    verdict = Verdict(claims)
+    assert verdict.decided(0.8) is decided
+    assert verdict.passed is passed
+
+
+def test_trust_0_trusts_every_decision():
+    assert Verdict((sure(True, 0.0), sure(False, 0.1))).decided(0)

@@ -293,3 +293,28 @@ def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
 def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
     assert convy("compare", "nope", "nada") == 2
     assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
+
+
+UNSURE_MODELS = """
+from convy import Claim, Confidence, Models
+from convy.fakes import FakeJudge, FakeModel
+
+unsure = Claim(True, "ok", Confidence(0.5))
+models = Models(user=FakeModel("Hello!", "###STOP###"), judge=FakeJudge((unsure, unsure)))
+"""
+
+
+def test_trust_goes_into_the_run_and_cuts_unsure_decisions(project: Path, capsys):
+    (project / "models.py").write_text(UNSURE_MODELS)
+    assert convy("run", "echo", "--scenarios", "clarify-*", "--trust", "0.8") == 0
+    (folder,) = runs(project, "echo")
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.trust == 0.8
+    out = capsys.readouterr().out
+    assert "? clarify-backup #1" in out
+    assert out.count("not trusted") == 1
+
+
+def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
+    assert convy("run", "echo", "--trust", "1.5") == 2
+    assert "trust" in capsys.readouterr().err
