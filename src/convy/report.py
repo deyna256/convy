@@ -269,9 +269,9 @@ class IndexRow(Struct, frozen=True):
     run: RunHead
     passed: int
     judged: int
+    cut: int
     rate: float | None
     report: str  # the run's report, relative to the index
-    cut: int
 
 
 class IndexPage(Struct, frozen=True):
@@ -608,9 +608,9 @@ class Index(Struct, frozen=True):
                     summary.head(),
                     metrics.passed,
                     metrics.judged,
+                    metrics.cut,
                     metrics.rate,
                     report,
-                    metrics.cut,
                 )
             )
         return IndexPage(tuple(rows))

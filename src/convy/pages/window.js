@@ -54,8 +54,7 @@ function markdown(text) {
 
 // The scenario window's parts, and the filter of its table.
 function claimTally(c) {
-  const cut = c.cut ? ` · ${c.cut} not trusted` : "";
-  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + cut;
+  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + notTrusted(c.cut);
 }
 function attemptTiles(attempt) {
   const answers = attempt.turns.length;

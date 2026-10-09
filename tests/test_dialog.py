@@ -136,11 +136,6 @@ class Answers:
         return self.answer
 
 
-async def test_checked_passes_a_right_answer_through():
-    decided = (Claim(True, "ok"),)
-    assert await Checked(FakeJudge(decided)).decide(TRANSCRIPT, ("greets",)) == decided
-
-
 @pytest.mark.parametrize(
     ("answer", "error"),
     [

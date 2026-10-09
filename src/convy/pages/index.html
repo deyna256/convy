@@ -42,7 +42,7 @@ function table() {
         el("td", {className: "mono"}, run.short),
         el("td", {className: "muted"}, run.version || "—"),
         el("td", {className: "muted"}, STATUS[run.status] ?? "finished"),
-        el("td", {className: "n"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, ` · ${row.passed} of ${row.judged}${row.cut ? ` · ${row.cut} not trusted` : ""}${run.trust > 0 ? ` · trust ${run.trust}` : ""}`)),
+        el("td", {className: "n"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, ` · ${row.passed} of ${row.judged}${notTrusted(row.cut)}${atTrust(run.trust)}`)),
         el("td", {}, el("a", {href: row.report}, "report")));
     })));
 }

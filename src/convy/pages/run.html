@@ -44,7 +44,7 @@ function header() {
 function tiles() {
   const tile = (label, value, detail, hero = false) => el("div", {className: hero ? "tile hero" : "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, detail));
   return el("div", {className: "tiles"},
-    tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${M.cut ? ` · ${M.cut} not trusted` : ""}`, true),
+    tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
     tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
     tile("Answer time", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
     tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out`),
