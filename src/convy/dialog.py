@@ -94,11 +94,26 @@ class SimulatedUser(Struct, frozen=True):
         return Message(text)
 
 
+class Confidence(Struct, frozen=True, tag="confidence"):
+    """How sure the judge is of its decision on a claim: from 0 to 1."""
+
+    value: float
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.value <= 1:  # NaN fails too
+            raise ValueError(f"confidence must be from 0 to 1, got {self.value}")
+
+
+class NoConfidence(Struct, frozen=True, tag="no_confidence"):
+    """The judge did not say how sure it is."""
+
+
 class Claim(Struct, frozen=True):
-    """The judge's decision on one claim of a scenario."""
+    """The judge's decision on one claim of a scenario, and how sure it is."""
 
     passed: bool = field(name="pass")
     reason: str
+    confidence: Confidence | NoConfidence = NoConfidence()
 
 
 class Verdict(Struct, frozen=True, tag="verdict"):

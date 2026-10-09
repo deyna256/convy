@@ -1,5 +1,6 @@
 from typing import Any
 
+import msgspec
 import pytest
 
 from convy.agent import Answer, Message
@@ -7,7 +8,9 @@ from convy.dialog import (
     ChatJudge,
     Checked,
     Claim,
+    Confidence,
     Finished,
+    NoConfidence,
     SimulatedUser,
     Transcript,
     Turn,
@@ -17,6 +20,27 @@ from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
 TRANSCRIPT = Transcript().with_turn(Turn(Message("hi"), Answer("hello"), 1.0))
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.5, float("nan")])
+def test_confidence_is_from_0_to_1(value: float):
+    with pytest.raises(ValueError, match="confidence must be from 0 to 1"):
+        Confidence(value)
+
+
+def test_a_claim_without_confidence_reads_as_no_confidence():
+    old = b'{"pass": true, "reason": "ok"}'  # a line written before confidence existed
+    assert msgspec.json.decode(old, type=Claim) == Claim(True, "ok", NoConfidence())
+
+
+def test_a_claim_keeps_its_confidence_through_the_run_folder():
+    claim = Claim(False, "no", Confidence(0.93))
+    assert msgspec.json.decode(msgspec.json.encode(claim), type=Claim) == claim
+
+
+async def test_checked_passes_confidence_through():
+    decided = (Claim(True, "ok", Confidence(0.5)),)
+    assert await Checked(FakeJudge(decided)).decide(TRANSCRIPT, ("greets",)) == decided
 
 
 def test_with_turn_keeps_the_original():
