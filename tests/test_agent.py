@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 from convy.agent import AgentFailure, Answer, Conversation, Message, NoUsage, TimeLimited, Usage
+from convy.dialog import ChatJudge
 from convy.fakes import Echo, EchoConversation, FakeAgent, FakeModel
 from convy.model import Models
 from convy.scenario import Scenario
@@ -39,7 +40,9 @@ async def test_time_limited_fails_a_slow_opening_or_closing(agent: Slow):
 @pytest.mark.parametrize("agent", SLOW)
 async def test_a_slow_opening_or_closing_fails_the_attempt(agent: Slow):
     scenario = Scenario("greet", 1, "Say hi.", ("greets",))
-    models = Models(user=FakeModel("hi"), judge=FakeModel('{"claims": [{"pass": true}]}'))
+    models = Models(
+        user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}'))
+    )
     outcome = await scenario.outcome(TimeLimited(agent, 0.05), models, attempt=1)
     assert outcome.stop == "agent_failure"
 

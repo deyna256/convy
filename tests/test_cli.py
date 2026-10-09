@@ -18,12 +18,14 @@ from convy.scenario import Outcome
 
 # Every scenario of the template has two claims, so the fake judge decides two.
 FAKE_MODELS = """
-from convy import Models
+from convy import ChatJudge, Models
 from convy.fakes import FakeModel
 
 models = Models(
     user=FakeModel("Hello!", "###STOP###"),
-    judge=FakeModel('{"claims": [{"pass": true, "reason": "ok"}, {"pass": true, "reason": "ok"}]}'),
+    judge=ChatJudge(
+        FakeModel('{"claims": [{"pass": true, "reason": "ok"}, {"pass": true, "reason": "ok"}]}')
+    ),
 )
 """
 

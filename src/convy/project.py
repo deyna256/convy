@@ -38,6 +38,14 @@ class Project(Struct, frozen=True):
         found = getattr(self.module(self.directory / "models.py"), "models", None)
         if not isinstance(found, Models):
             raise ValueError("models.py: expected `models = Models(user=…, judge=…)`")
+        judge = found.judge
+        if not isinstance(getattr(judge, "name", None), str) or not callable(
+            getattr(judge, "decide", None)
+        ):
+            raise ValueError(
+                "models.py: expected a judge, such as judge=ChatJudge(model), "
+                "with a `name` and a `decide` method"
+            )
         return found
 
     def agent(self, name: str) -> ProjectAgent:

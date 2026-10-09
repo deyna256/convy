@@ -20,7 +20,7 @@ from pydantic_settings import (
 
 from convy.agent import Agent, NoUsage, TimeLimited, Usage
 from convy.bench import Bench, Files, Finished, Journal, Pair, RunJournal, RunSpec
-from convy.dialog import Failed, NoVerdict, Verdict
+from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
@@ -167,7 +167,7 @@ class RunCommand(BaseModel):
         calls, and a project's models are built fresh by running `models.py`."""
         if self.smoke:
             user = FakeModel("Hello! What can you help me with?", "Thank you!")
-            judge = FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}')
+            judge = ChatJudge(FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}'))
             return Bench((SMOKE,), Models(user, judge))
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
         return Bench(scenarios, project.models(), self.k, self.parallel)
