@@ -182,14 +182,15 @@ version = "1"
 TALKATIVE = FAKE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
 
 
-def started_run(project: Path) -> Path:
+def started_run(project: Path, models: str = TALKATIVE, options: tuple[str, ...] = ()) -> Path:
     """Run the slow agent on one scenario with three attempts, and stop the run on Ctrl+C after
     its first attempt. Return the run's folder."""
-    (project / "models.py").write_text(TALKATIVE)
+    (project / "models.py").write_text(models)
     (project / "agents" / "slow.py").write_text(SLOW)
     command = [sys.executable, "-c", "from convy.cli import main; main()"]
+    argv = ["run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1", *options]
     process = subprocess.Popen(
-        [*command, "run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1"],
+        [*command, *argv],
         cwd=project,
         env={**os.environ, "SLOW": "0.1"},
         stdout=subprocess.PIPE,
@@ -318,3 +319,12 @@ def test_trust_goes_into_the_run_and_cuts_unsure_decisions(project: Path, capsys
 def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
     assert convy("run", "echo", "--trust", "1.5") == 2
     assert "trust" in capsys.readouterr().err
+
+
+def test_resume_keeps_the_trust_of_the_run(project: Path, capsys):
+    talkative = UNSURE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
+    folder = started_run(project, talkative, ("--trust", "0.8"))
+    assert convy("resume", folder.name) == 0
+    assert capsys.readouterr().out.count("not trusted") == 2
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.trust == 0.8
