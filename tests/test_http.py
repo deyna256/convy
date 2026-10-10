@@ -1,5 +1,6 @@
 import os
 import ssl
+import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -106,7 +107,10 @@ async def test_a_wrong_tls_is_an_http_failure(tls: Tls):
         await JsonEndpoint("https://agent.test/chat", tls=tls, transport=Service()).post({})
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="Windows cannot hide a file from its owner with chmod, and root reads any file",
+)
 async def test_an_unreadable_certificate_is_an_http_failure(tmp_path):
     ca = tmp_path / "ca.pem"
     ca.write_text("")

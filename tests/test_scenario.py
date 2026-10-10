@@ -1,6 +1,7 @@
 import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx2
 import msgspec
@@ -142,7 +143,7 @@ async def test_a_judge_with_a_broken_tls_leaves_no_verdict():
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
     assert isinstance(outcome.verdict, NoVerdict)
-    assert "/missing.pem" in outcome.verdict.error
+    assert str(Path("/missing.pem")) in outcome.verdict.error
 
 
 async def test_settings_missing_in_an_agent_do_not_leak_keys(tmp_path, monkeypatch):
