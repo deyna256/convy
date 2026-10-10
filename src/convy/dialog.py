@@ -31,8 +31,8 @@ JUDGE_PROMPT = """Below are a dialogue between a user and an agent, and a number
 about it. Check every claim strictly against the text of the dialogue.
 Answer with JSON only: {{"claims": [{{"pass": true or false, "reason": "a short explanation"}}, …]}}
 Give one entry per claim, in the order of the list. "pass" is true only if the claim holds.
-A claim followed by "grades:" is graded instead: give "grade", exactly one of its grades, which
-are listed from worst to best, and no "pass".
+A claim that ends with "(grades: …)" is graded: instead of "pass", give "grade", exactly one of
+those grades. They are listed from worst to best.
 Write the reasons in the language of the claims.
 
 Dialogue:
@@ -275,14 +275,17 @@ class ChatJudge(Struct, frozen=True):
         reason = str(item.get("reason", ""))
         match claim:
             case str():
-                if type(item.get("pass")) is not bool:
+                passed = item.get("pass")
+                if not isinstance(passed, bool):
                     raise ModelFailure(f'the judge\'s "pass" is not true or false: {text[:200]}')
-                return Claim(item["pass"] is True, reason)
+                return Claim(passed, reason)
             case Graded(levels=levels):
-                grade = item.get("grade")
-                if type(grade) not in (str, int) or str(grade) not in levels:
-                    raise ModelFailure(f'the judge\'s "grade" is not one of {levels}: {text[:200]}')
-                return Claim(claim.passes(str(grade)), reason, grade=Grade(str(grade)))
+                found = item.get("grade")
+                grade = str(found)  # a scale's 4 is "4"
+                if type(found) not in (str, int) or grade not in levels:
+                    grades = ", ".join(levels)
+                    raise ModelFailure(f'the judge\'s "grade" is not one of {grades}: {text[:200]}')
+                return Claim(claim.passes(grade), reason, grade=Grade(grade))
 
 
 class Checked(Struct, frozen=True):
@@ -330,7 +333,8 @@ class Checked(Struct, frozen=True):
             case Graded(), NoGrade():
                 return "no grade for a graded claim"
             case Graded(levels=levels), Grade(value=value) if value not in levels:
-                return f"the grade {value!r} is not one of {levels}"
+                return f"the grade {value!r} is not one of {', '.join(levels)}"
             case Graded(), Grade(value=value) if decision.passed != claim.passes(value):
-                return f"the grade {value!r} {'passes' if claim.passes(value) else 'fails'}"
+                verdict = "passes" if claim.passes(value) else "fails"
+                return f"the grade {value!r} {verdict}, but pass is {decision.passed}"
         return ""

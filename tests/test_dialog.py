@@ -245,8 +245,8 @@ async def test_judge_without_one_of_the_grades_is_a_model_failure(answer: str):
         ("greets", Claim(True, "", grade=Grade("full")), "a grade, 'full', for a claim that is"),
         (STEPS, Claim(True, ""), "no grade for a graded claim"),
         (STEPS, Claim(True, "", grade=Grade("most")), "the grade 'most' is not one of"),
-        (STEPS, Claim(True, "", grade=Grade("none")), "the grade 'none' fails"),
-        (STEPS, Claim(False, "", grade=Grade("full")), "the grade 'full' passes"),
+        (STEPS, Claim(True, "", grade=Grade("none")), "the grade 'none' fails, but pass is True"),
+        (STEPS, Claim(False, "", grade=Grade("full")), "the grade 'full' passes, but pass is"),
     ],
 )
 async def test_checked_refuses_a_grade_the_scenario_does_not_allow(

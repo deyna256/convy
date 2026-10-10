@@ -434,18 +434,12 @@ class Summary(Struct, frozen=True):
         cut = sum(d.passed is not None and not d.trusted for d in decisions)
         match claim:
             case str():
-                return ClaimSummary(claim, tally.held, tally.judged, tally.result(), cut)
+                text, grades, typical = claim, (), None
             case Graded(text=text, levels=levels):
                 ranks = sorted(levels.index(d.grade) for d in trusted if d.grade in levels)
-                return ClaimSummary(
-                    text,
-                    tally.held,
-                    tally.judged,
-                    tally.result(),
-                    cut,
-                    grades=tuple((level, ranks.count(i)) for i, level in enumerate(levels)),
-                    typical=levels[ranks[(len(ranks) - 1) // 2]] if ranks else None,
-                )
+                grades = tuple((level, ranks.count(i)) for i, level in enumerate(levels))
+                typical = levels[ranks[(len(ranks) - 1) // 2]] if ranks else None
+        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut, grades, typical)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
@@ -586,12 +580,8 @@ class Comparison(Struct, frozen=True):
         for old, new in zip(was.claims, now.claims, strict=True):
             before = Tally(old.held, old.judged).rate()
             after = Tally(new.held, new.judged).rate()
-            moved: Change = "unchanged"
-            if old.typical and new.typical and old.typical != new.typical:
-                levels = [grade for grade, _ in new.grades]  # the same before: not edited
-                up = levels.index(new.typical) > levels.index(old.typical)
-                moved = "better" if up else "worse"
-            change: Change = moved
+            moved = self.moved(old, new)
+            change = moved
             if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
             changes.append(
@@ -600,6 +590,14 @@ class Comparison(Struct, frozen=True):
                 )
             )
         return tuple(changes)
+
+    def moved(self, old: ClaimSummary, new: ClaimSummary) -> Change:
+        """Where a claim's typical grade went. Its grades are the same in both runs: a scenario
+        edited between them is not compared."""
+        if not old.typical or not new.typical or old.typical == new.typical:
+            return "unchanged"
+        levels = [grade for grade, _ in new.grades]
+        return "better" if levels.index(new.typical) > levels.index(old.typical) else "worse"
 
     def deltas(
         self, was: Metrics, now: Metrics, significant: Literal["good", "bad"] | None
