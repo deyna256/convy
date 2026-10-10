@@ -53,8 +53,8 @@ The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old v
   that size can happen by chance.
 
 Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. Inside a scenario,
-a graded claim whose typical grade moved says so, such as `full → partial` in red, even when its
-pass rate did not change. The typical grade is the middle one of its attempts, the worse of the two
+a graded claim whose typical grade moved says so, such as `full → partial`: red when it fell, green
+when it rose, whatever the pass rate did. The typical grade is the middle one of its attempts, the worse of the two
 in the middle. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.

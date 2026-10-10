@@ -116,6 +116,7 @@ class Runs(Struct, frozen=True):
 type Result = Literal["failing", "flaky", "passing", "none"]
 type Tone = Literal["good", "bad", "same", "noise", "none"]
 type Group = Literal["worse", "better", "same", "apart"]
+type Change = Literal["unchanged", "worse", "better"]
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
@@ -258,9 +259,10 @@ class ClaimChange(Struct, frozen=True):
     text: str
     before: Result
     after: Result
-    change: Literal["unchanged", "worse", "better"]
+    change: Change  # by the pass rate; when that is equal, as `moved`
     was: str | None = None  # the typical grade before; None: not graded
     now: str | None = None
+    moved: Change = "unchanged"  # where the typical grade went, whatever the pass rate did
 
 
 class CompareRow(Struct, frozen=True):
@@ -584,15 +586,18 @@ class Comparison(Struct, frozen=True):
         for old, new in zip(was.claims, now.claims, strict=True):
             before = Tally(old.held, old.judged).rate()
             after = Tally(new.held, new.judged).rate()
-            change: Literal["unchanged", "worse", "better"] = "unchanged"
+            moved: Change = "unchanged"
+            if old.typical and new.typical and old.typical != new.typical:
+                levels = [grade for grade, _ in new.grades]  # the same before: not edited
+                up = levels.index(new.typical) > levels.index(old.typical)
+                moved = "better" if up else "worse"
+            change: Change = moved
             if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
-            elif old.typical and new.typical and old.typical != new.typical:
-                levels = [grade for grade, _ in new.grades]  # the same before: not edited
-                better = levels.index(new.typical) > levels.index(old.typical)
-                change = "better" if better else "worse"
             changes.append(
-                ClaimChange(new.text, old.result, new.result, change, old.typical, new.typical)
+                ClaimChange(
+                    new.text, old.result, new.result, change, old.typical, new.typical, moved
+                )
             )
         return tuple(changes)
 

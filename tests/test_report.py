@@ -325,7 +325,18 @@ def test_a_comparison_sees_a_graded_claim_get_worse_with_the_same_pass_rate(tmp_
         journal(tmp_path, "bot", "1", 1, *graded(*grades), k=2, claims=(STEPS,), started=at(day))
     (row,) = Comparison(*both(tmp_path)).page().rows
     assert row.group == "same"
-    assert [(c.change, c.was, c.now) for c in row.claims] == [("worse", "full", "partial")]
+    assert [(c.change, c.was, c.now, c.moved) for c in row.claims] == [
+        ("worse", "full", "partial", "worse")
+    ]
+
+
+def test_a_typical_grade_that_fell_is_worse_even_when_the_pass_rate_rose(tmp_path):
+    for day, grades in ((5, ("none", "full", "full")), (6, ("partial", "partial", "partial"))):
+        journal(tmp_path, "bot", "1", 1, *graded(*grades), k=3, claims=(STEPS,), started=at(day))
+    (row,) = Comparison(*both(tmp_path)).page().rows
+    assert [(c.change, c.was, c.now, c.moved) for c in row.claims] == [
+        ("better", "full", "partial", "worse")
+    ]
 
 
 def test_a_comparison_groups_scenarios_by_what_changed(tmp_path):
