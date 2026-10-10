@@ -16,7 +16,8 @@ judge:
 ```
 
 - `user` tells the simulated user who to be and what to want.
-- `judge` lists claims. All of them must hold for the scenario to pass.
+- `judge` lists claims, as text or [graded](#graded-claims). All of them must hold for the scenario
+  to pass.
 - `max_turns` is how many messages the user may send.
 - `id` must be unique across all folders.
 
