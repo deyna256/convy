@@ -9,7 +9,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, Usage
 from convy.bench import RunJournal, RunSpec
-from convy.dialog import Claim, Failed, NoVerdict, Verdict
+from convy.dialog import ChatJudge, Claim, Failed, NoVerdict, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
 from convy.http import JsonEndpoint, Tls
@@ -22,7 +22,7 @@ PASS = '{"claims": [{"pass": true, "reason": "fine"}]}'
 
 
 def models(*user: str | ModelFailure, judge: str | ModelFailure = PASS) -> Models:
-    return Models(user=FakeModel(*user), judge=FakeModel(judge))
+    return Models(user=FakeModel(*user), judge=ChatJudge(FakeModel(judge)))
 
 
 async def test_turns_run_out():
@@ -45,7 +45,7 @@ async def test_the_user_finishes():
 @pytest.mark.parametrize("error", [AgentFailure("down"), KeyError("bug")])
 async def test_a_failed_turn_fails_the_attempt_without_the_judge(error: Exception):
     judge = FakeModel(PASS)
-    used = Models(user=FakeModel("hi"), judge=judge)
+    used = Models(user=FakeModel("hi"), judge=ChatJudge(judge))
     outcome = await SCENARIO.outcome(FakeAgent("hello", error), used, attempt=1)
     assert outcome.stop == "agent_failure"
     assert isinstance(outcome.verdict, Failed)
@@ -103,8 +103,8 @@ class Buggy:
 @pytest.mark.parametrize(
     "used",
     [
-        Models(user=Buggy(), judge=FakeModel(PASS)),
-        Models(user=FakeModel("hi", "###STOP###"), judge=Buggy()),
+        Models(user=Buggy(), judge=ChatJudge(FakeModel(PASS))),
+        Models(user=FakeModel("hi", "###STOP###"), judge=ChatJudge(Buggy())),
     ],
 )
 async def test_a_bug_in_a_model_is_a_model_failure(used: Models):
@@ -124,7 +124,7 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
     content = json.dumps({"choices": [{"message": {"content": verdict}}]}).encode()
     service = httpx2.MockTransport(lambda request: httpx2.Response(200, content=content))
     judge = OpenAiModel(JsonEndpoint("https://llm.test", transport=service), "gpt")
-    used = Models(user=FakeModel("hi", "###STOP###"), judge=judge)
+    used = Models(user=FakeModel("hi", "###STOP###"), judge=ChatJudge(judge))
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
     started = datetime(2026, 10, 6, tzinfo=UTC)
@@ -138,7 +138,7 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
 
 async def test_a_judge_with_a_broken_tls_leaves_no_verdict():
     endpoint = JsonEndpoint("https://llm.test/chat/completions", tls=Tls(ca="/missing.pem"))
-    used = Models(user=FakeModel("hi", "###STOP###"), judge=OpenAiModel(endpoint, "gpt"))
+    used = Models(user=FakeModel("hi", "###STOP###"), judge=ChatJudge(OpenAiModel(endpoint, "gpt")))
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
     assert isinstance(outcome.verdict, NoVerdict)

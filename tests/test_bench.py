@@ -6,12 +6,12 @@ import pytest
 
 from convy.agent import AgentFailure
 from convy.bench import Bench, Files, Finished, Interrupted, RunFile, RunJournal, Running, RunSpec
-from convy.dialog import Claim, NoVerdict, Transcript, Verdict
+from convy.dialog import ChatJudge, Claim, NoVerdict, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
 
-MODELS = Models(user=FakeModel("hi"), judge=FakeModel('{"claims": [{"pass": true}]}'))
+MODELS = Models(user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}')))
 SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
 STARTED = datetime(2026, 10, 6, 14, 5, tzinfo=UTC)
 SPEC = RunSpec(
@@ -162,3 +162,15 @@ def test_a_run_unchanged_has_no_reasons_to_stop():
 )
 def test_a_changed_version_or_model_is_a_reason_not_to_resume(now: tuple[str, str, str], reason):
     assert SPEC.changes(*now, Files()) == (reason,)
+
+
+@pytest.mark.parametrize("trust", [-0.5, 1.5])
+def test_a_run_spec_rejects_a_trust_outside_0_to_1(trust: float):
+    with pytest.raises(ValueError, match="trust must be from 0 to 1"):
+        RunSpec("r", "bot", "1", "fake", "fake", 2, 4, 600, SCENARIOS, STARTED, trust=trust)
+
+
+def test_an_old_run_file_reads_with_trust_0():
+    old = msgspec.json.decode(msgspec.json.encode(RunFile(2, SPEC, Running())))
+    del old["spec"]["trust"]  # a run.json written before trust existed
+    assert msgspec.json.decode(msgspec.json.encode(old), type=RunFile).spec.trust == 0

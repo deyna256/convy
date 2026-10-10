@@ -9,6 +9,7 @@ offline, with system, light and dark themes.
 Five tiles sum up the run:
 
 - **Pass rate**: the share of attempts the judge passed, with the count (`67% · 8 of 12 attempts`).
+  With `--trust`, it also says how many attempts were left out (`· 4 not trusted`).
 - **Stable scenarios**: those that passed every attempt.
 - **Answer time**: the mean per answer, and the slowest. Only the agent's own time counts, not the
   simulated user's or the judge's.
@@ -22,14 +23,16 @@ Each scenario gets a row and a status:
 - **Failing**: no attempt passed.
 - **Flaky**: some attempts passed.
 - **Passing**: all attempts passed.
-- **No verdict**: one of convy's models failed, so no attempt was decided.
+- **No verdict**: no attempt was decided, because one of convy's models failed or the judge was not
+  sure enough.
 
 The row also shows answer time and tokens. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
-many attempts it held in. For each attempt you see the judge's decision on every claim with its
-reason, and the dialogue with the time and tokens of each answer. The address keeps the open
-scenario, so you can send a link to it.
+many attempts it held in and how many of its decisions were not trusted. For each attempt you see
+the judge's decision on every claim with its reason, and the dialogue with the time and tokens of
+each answer. If the judge says how sure it is, each decision shows that too, or "sure: not given"
+where it did not say. The address keeps the open scenario, so you can send a link to it.
 
 `results/index.html` lists every run, newest first, with a link to its report.
 
@@ -51,5 +54,7 @@ The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old v
 Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.
+
+Each run is read with its own `trust`, shown next to it in the page's head.
 
 The runs may be of different agents. The page warns when the user's or the judge's model differs.

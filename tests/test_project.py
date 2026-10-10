@@ -102,12 +102,22 @@ def test_a_missing_agent_is_named(tmp_path: Path):
 def test_models_come_from_models_py(tmp_path: Path):
     write(
         tmp_path / "models.py",
-        "from convy import Models\nfrom convy.fakes import FakeModel\n"
-        "models = Models(user=FakeModel('hi'), judge=FakeModel('{}'))\n",
+        "from convy import Models\nfrom convy.fakes import FakeJudge, FakeModel\n"
+        "models = Models(user=FakeModel('hi'), judge=FakeJudge(()))\n",
     )
     assert isinstance(Project(tmp_path).models(), Models)
     write(tmp_path / "models.py", "models = 1\n")
     with pytest.raises(ValueError, match="expected `models = Models"):
+        Project(tmp_path).models()
+
+
+def test_a_model_given_as_the_judge_is_named(tmp_path: Path):
+    write(
+        tmp_path / "models.py",
+        "from convy import Models\nfrom convy.fakes import FakeModel\n"
+        "models = Models(user=FakeModel('hi'), judge=FakeModel('{}'))\n",
+    )
+    with pytest.raises(ValueError, match=r"expected a judge, such as judge=ChatJudge\(model\)"):
         Project(tmp_path).models()
 
 

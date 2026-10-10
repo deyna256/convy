@@ -20,7 +20,18 @@ from convy.bench import (
     Running,
     RunSpec,
 )
-from convy.dialog import Claim, Failed, NoVerdict, Transcript, Turn, Verdict
+from convy.dialog import (
+    ChatJudge,
+    Claim,
+    Confidence,
+    Failed,
+    Judge,
+    NoConfidence,
+    NoVerdict,
+    Transcript,
+    Turn,
+    Verdict,
+)
 from convy.env import Env
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
 from convy.model import Model, ModelFailure, Models, OpenAiModel
@@ -32,8 +43,10 @@ __all__ = [
     "AgentFailure",
     "Answer",
     "Bench",
+    "ChatJudge",
     "Claim",
     "Comparison",
+    "Confidence",
     "Conversation",
     "Env",
     "Failed",
@@ -45,11 +58,13 @@ __all__ = [
     "Journal",
     "JsonAgent",
     "JsonEndpoint",
+    "Judge",
     "Matching",
     "Message",
     "Model",
     "ModelFailure",
     "Models",
+    "NoConfidence",
     "NoUsage",
     "NoVerdict",
     "OpenAiModel",

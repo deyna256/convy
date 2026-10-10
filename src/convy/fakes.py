@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from msgspec import Struct
 
 from convy.agent import Answer, Conversation, Message, Usage
+from convy.dialog import Claim, Transcript
 from convy.model import ModelFailure
 from convy.scenario import Outcome
 
@@ -91,6 +92,28 @@ class FakeModel:
     async def reply(self, messages: list[dict[str, str]]) -> str:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append(list(messages))
+        if isinstance(step, ModelFailure):
+            raise step
+        return step
+
+
+class FakeJudge:
+    """A judge that decides from a list: a step is the claims to return, or an exception to raise.
+
+    The list runs across all calls, and the last step repeats. Its `name` is `"fake"`.
+    """
+
+    name = "fake"
+
+    def __init__(self, *steps: tuple[Claim, ...] | ModelFailure):
+        if not steps:
+            raise ValueError("FakeJudge needs at least one step")
+        self.steps = steps
+        self.calls: list[tuple[Transcript, tuple[str, ...]]] = []
+
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
+        step = self.steps[min(len(self.calls), len(self.steps) - 1)]
+        self.calls.append((transcript, claims))
         if isinstance(step, ModelFailure):
             raise step
         return step

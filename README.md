@@ -157,6 +157,7 @@ trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SEC
 |---|---|
 | [Connect an agent](https://github.com/deyna256/convy/blob/main/docs/agents.md) | JSON agents, your own classes, tokens, certificates |
 | [Scenarios](https://github.com/deyna256/convy/blob/main/docs/scenarios.md) | how to write them, verdicts, `convy run` options |
+| [The judge](https://github.com/deyna256/convy/blob/main/docs/judge.md) | how sure it is, `--trust`, your own judge |
 | [Runs](https://github.com/deyna256/convy/blob/main/docs/runs.md) | the run folder, stop and resume, exit codes |
 | [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) | tiles, statuses, the scenario window, comparing runs |
 | [Run from Python](https://github.com/deyna256/convy/blob/main/docs/python.md) | the library behind the command |

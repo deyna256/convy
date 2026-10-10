@@ -12,9 +12,9 @@ from msgspec import Struct, field
 
 from convy.agent import Agent, AgentFailure, Answer, Conversation, Message
 from convy.dialog import (
+    Checked,
     Failed,
     Finished,
-    Judge,
     NoVerdict,
     SimulatedUser,
     Transcript,
@@ -79,10 +79,10 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         except Exception as error:  # opening or closing the conversation is the agent's code too
             return self.failed(attempt, transcript, self.agent_error(error))
         try:
-            verdict = await Judge(Contained(models.judge)).verdict(transcript, self.claims)
+            decided = await Checked(models.judge).decide(transcript, self.claims)
         except ModelFailure as failure:
             return self.ended(attempt, transcript, NoVerdict(str(failure)), "model_failure")
-        return self.ended(attempt, transcript, verdict, stop)
+        return self.ended(attempt, transcript, Verdict(decided), stop)
 
     async def turn(self, conversation: Conversation, message: Message) -> Turn:
         start = time.monotonic()

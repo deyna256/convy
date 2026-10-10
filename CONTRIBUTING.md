@@ -113,8 +113,8 @@ is out of date.
   `convy init`.
 - Test through the public interface. A test that needs a private attribute means the class has the
   wrong shape.
-- `Agent` and `Model` each have a contract test that the real implementation and its fake both pass.
-  A new implementation of either joins that test.
+- `Agent`, `Model` and `Judge` each have a contract test that the real implementation and its fake
+  both pass. A new implementation of one joins that test.
 - Async tests need no marker (`asyncio_mode = "auto"`). A test that runs longer than 30 seconds fails
   (pytest-timeout).
 - Use time-machine to set the current date and time. It leaves `time.monotonic` alone, so asyncio
