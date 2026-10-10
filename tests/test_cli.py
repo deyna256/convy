@@ -18,12 +18,14 @@ from convy.scenario import Outcome
 
 # Every scenario of the template has two claims, so the fake judge decides two.
 FAKE_MODELS = """
-from convy import Models
+from convy import ChatJudge, Models
 from convy.fakes import FakeModel
 
 models = Models(
     user=FakeModel("Hello!", "###STOP###"),
-    judge=FakeModel('{"claims": [{"pass": true, "reason": "ok"}, {"pass": true, "reason": "ok"}]}'),
+    judge=ChatJudge(
+        FakeModel('{"claims": [{"pass": true, "reason": "ok"}, {"pass": true, "reason": "ok"}]}')
+    ),
 )
 """
 
@@ -180,14 +182,25 @@ version = "1"
 TALKATIVE = FAKE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
 
 
-def started_run(project: Path) -> Path:
+def started_run(project: Path, models: str = TALKATIVE, options: tuple[str, ...] = ()) -> Path:
     """Run the slow agent on one scenario with three attempts, and stop the run on Ctrl+C after
     its first attempt. Return the run's folder."""
-    (project / "models.py").write_text(TALKATIVE)
+    (project / "models.py").write_text(models)
     (project / "agents" / "slow.py").write_text(SLOW)
     command = [sys.executable, "-c", "from convy.cli import main; main()"]
     process = subprocess.Popen(
-        [*command, "run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1"],
+        [
+            *command,
+            "run",
+            "slow",
+            "--scenarios",
+            "clarify-*",
+            "-k",
+            "3",
+            "--parallel",
+            "1",
+            *options,
+        ],
         cwd=project,
         env={**os.environ, "SLOW": "0.1"},
         stdout=subprocess.PIPE,
@@ -291,3 +304,37 @@ def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
 def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
     assert convy("compare", "nope", "nada") == 2
     assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
+
+
+UNSURE_MODELS = """
+from convy import Claim, Confidence, Models
+from convy.fakes import FakeJudge, FakeModel
+
+unsure = Claim(True, "ok", Confidence(0.5))
+models = Models(user=FakeModel("Hello!", "###STOP###"), judge=FakeJudge((unsure, unsure)))
+"""
+
+
+def test_trust_goes_into_the_run_and_cuts_unsure_decisions(project: Path, capsys):
+    (project / "models.py").write_text(UNSURE_MODELS)
+    assert convy("run", "echo", "--scenarios", "clarify-*", "--trust", "0.8") == 0
+    (folder,) = runs(project, "echo")
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.trust == 0.8
+    out = capsys.readouterr().out
+    assert "? clarify-backup #1" in out
+    assert out.count("not trusted") == 1
+
+
+def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
+    assert convy("run", "echo", "--trust", "1.5") == 2
+    assert "trust" in capsys.readouterr().err
+
+
+def test_resume_keeps_the_trust_of_the_run(project: Path, capsys):
+    talkative = UNSURE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
+    folder = started_run(project, talkative, ("--trust", "0.8"))
+    assert convy("resume", folder.name) == 0
+    assert capsys.readouterr().out.count("not trusted") == 2
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.trust == 0.8

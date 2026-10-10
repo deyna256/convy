@@ -13,7 +13,7 @@ from msgspec import Struct
 
 from convy.agent import NoUsage, Usage
 from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
-from convy.dialog import Failed, NoVerdict, Turn, Verdict
+from convy.dialog import Claim, Confidence, Failed, NoConfidence, NoVerdict, Turn, Verdict
 from convy.scenario import Outcome, Scenario, Stop
 
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
@@ -132,6 +132,8 @@ class ClaimView(Struct, frozen=True):
 
     passed: bool | None  # None: the judge was not asked, or gave no verdict
     reason: str
+    confidence: float | None = None  # None: the judge did not say
+    trusted: bool = True  # False: less sure than the run's trust
 
 
 class TurnView(Struct, frozen=True):
@@ -146,6 +148,7 @@ class TurnView(Struct, frozen=True):
 class AttemptView(Struct, frozen=True):
     attempt: int
     passed: bool | None  # None: no verdict, left out of pass rates
+    cut: bool  # the judge was not sure enough: left out of pass rates
     stop: Stop
     error: str  # the agent's error, or the failure of convy's model
     claims: tuple[ClaimView, ...]
@@ -164,6 +167,7 @@ class ClaimSummary(Struct, frozen=True):
     held: int
     judged: int
     result: Result
+    cut: int  # decisions less sure than the run's trust
 
 
 class ScenarioView(Struct, frozen=True):
@@ -186,6 +190,7 @@ class Metrics(Struct, frozen=True):
 
     passed: int  # judged attempts that passed
     judged: int
+    cut: int  # attempts left out because the judge was not sure enough
     rate: float | None
     stable: int  # scenarios whose k attempts all passed
     seconds: float | None  # mean per answer
@@ -210,6 +215,8 @@ class RunHead(Struct, frozen=True):
     k: int
     scenarios: int
     unreadable: int
+    trust: float
+    confident: bool  # some decision of the run says how sure the judge was
 
 
 class RunPage(Struct, frozen=True):
@@ -263,6 +270,7 @@ class IndexRow(Struct, frozen=True):
     run: RunHead
     passed: int
     judged: int
+    cut: int
     rate: float | None
     report: str  # the run's report, relative to the index
 
@@ -330,7 +338,18 @@ class Summary(Struct, frozen=True):
             k=spec.k,
             scenarios=len(spec.scenarios),
             unreadable=self.run.unreadable,
+            trust=spec.trust,
+            confident=self.confident(),
         )
+
+    def confident(self) -> bool:
+        """Whether some decision of the run says how sure the judge was: only then does a page
+        mark the decisions that do not."""
+        for outcome in self.run.outcomes:
+            match outcome.verdict:
+                case Verdict(claims=claims) if any(c.confidence != NoConfidence() for c in claims):
+                    return True
+        return False
 
     def metrics(self, scenarios: Iterable[ScenarioView]) -> Metrics:
         """The tiles over the views `scenarios()` made."""
@@ -344,6 +363,7 @@ class Summary(Struct, frozen=True):
         return Metrics(
             passed=sum(judged),
             judged=len(judged),
+            cut=sum(a.cut for a in attempts),
             rate=Tally(sum(judged), len(judged)).rate(),
             stable=sum(
                 len(v.attempts) == k and all(a.passed is True for a in v.attempts) for v in views
@@ -377,7 +397,7 @@ class Summary(Struct, frozen=True):
             rate=tally.rate(),
             result=tally.result(),
             claims=tuple(
-                self.claim(text, [a.claims[i].passed for a in attempts])
+                self.claim(text, [a.claims[i] for a in attempts])
                 for i, text in enumerate(scenario.claims)
             ),
             seconds=self.average(turns),
@@ -388,16 +408,23 @@ class Summary(Struct, frozen=True):
             attempts=attempts,
         )
 
-    def claim(self, text: str, decisions: list[bool | None]) -> ClaimSummary:
-        tally = Tally(decisions.count(True), len(decisions) - decisions.count(None))
-        return ClaimSummary(text, tally.held, tally.judged, tally.result())
+    def claim(self, text: str, decisions: list[ClaimView]) -> ClaimSummary:
+        """A claim over the attempts the judge decided, cut or not: its trusted decisions are
+        tallied, the rest counted as cut."""
+        trusted = [d.passed for d in decisions if d.passed is not None and d.trusted]
+        tally = Tally(trusted.count(True), len(trusted))
+        cut = sum(d.passed is not None and not d.trusted for d in decisions)
+        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
+        trust = self.run.spec.trust
+        cut = False
         match outcome.verdict:
             case Verdict(claims=decided) as verdict:
-                judged: tuple[bool | None, str] = (verdict.passed, "")
-                claims = tuple(ClaimView(claim.passed, claim.reason) for claim in decided)
+                cut = not verdict.decided(trust)
+                judged: tuple[bool | None, str] = (None if cut else verdict.passed, "")
+                claims = tuple(self.decision(claim, trust) for claim in decided)
             case Failed(reason=reason):
                 judged = (False, reason)
                 claims = tuple(ClaimView(None, "") for _ in scenario.claims)
@@ -408,6 +435,7 @@ class Summary(Struct, frozen=True):
         return AttemptView(
             attempt=outcome.attempt,
             passed=passed,
+            cut=cut,
             stop=outcome.stop,
             error=error,
             claims=claims,
@@ -418,6 +446,14 @@ class Summary(Struct, frozen=True):
             tokens=self.total(turn.tokens for turn in turns),
             turns=turns,
         )
+
+    def decision(self, claim: Claim, trust: float) -> ClaimView:
+        match claim.confidence:
+            case Confidence(value=value):
+                sure: float | None = value
+            case NoConfidence():
+                sure = None
+        return ClaimView(claim.passed, claim.reason, sure, claim.trusted(trust))
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
@@ -579,7 +615,14 @@ class Index(Struct, frozen=True):
             metrics = summary.metrics(summary.scenarios().values())
             report = f"{run.path.as_posix()}/report.html"
             rows.append(
-                IndexRow(summary.head(), metrics.passed, metrics.judged, metrics.rate, report)
+                IndexRow(
+                    summary.head(),
+                    metrics.passed,
+                    metrics.judged,
+                    metrics.cut,
+                    metrics.rate,
+                    report,
+                )
             )
         return IndexPage(tuple(rows))
 

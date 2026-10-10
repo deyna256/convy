@@ -28,8 +28,10 @@ The judge decides each claim on its own and gives a reason, so the report shows 
 
 - If the agent fails a turn, the attempt fails. The judge is not asked.
 - If one of convy's own models fails, the attempt gets no verdict and does not count in the pass
-  rate. That happens when a model does not answer, or the judge does not give one decision per claim
-  in JSON (`"pass"` of `true` or `false`).
+  rate. That happens when a model does not answer, or the judge does not give one decision per
+  claim.
+- If the judge is less sure than the run's `--trust`, the attempt does not count either. See
+  [The judge](judge.md).
 
 ## Running
 
@@ -38,6 +40,7 @@ uv run convy run support_bot -k 3                  # every scenario, three attem
 uv run convy run support_bot --scenarios 'refund-*'
 uv run convy run support_bot new_bot               # several agents, one after another
 uv run convy run support_bot --turn-timeout 60
+uv run convy run support_bot --trust 0.8           # leave out unsure verdicts
 ```
 
 `--turn-timeout` (600 by default) is the seconds for each step of the agent: opening a conversation,

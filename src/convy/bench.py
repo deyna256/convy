@@ -38,6 +38,11 @@ class RunSpec(Struct, frozen=True):
     started: datetime
     convy: str = ""
     files: Files = Files()
+    trust: float = 0.0  # decisions the judge is less sure of are cut out; 0 cuts nothing
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.trust <= 1:
+            raise ValueError(f"trust must be from 0 to 1, got {self.trust}")
 
     def changes(self, version: str, user: str, judge: str, files: Files) -> tuple[str, ...]:
         """What differs now from what the run started with: each a reason it cannot continue

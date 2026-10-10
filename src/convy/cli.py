@@ -20,7 +20,7 @@ from pydantic_settings import (
 
 from convy.agent import Agent, NoUsage, TimeLimited, Usage
 from convy.bench import Bench, Files, Finished, Journal, Pair, RunJournal, RunSpec
-from convy.dialog import Failed, NoVerdict, Verdict
+from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
@@ -36,13 +36,18 @@ SMOKE = Scenario(
 
 
 class Printed(Struct, frozen=True):
-    """A journal that also prints each outcome as it is recorded."""
+    """A journal that also prints each outcome as it is recorded; one the judge was not sure
+    enough of, at the run's `trust`, is marked "not trusted"."""
 
     journal: Journal
+    trust: float
 
     def record(self, outcome: Outcome) -> None:
         self.journal.record(outcome)
+        note = ""
         match outcome.verdict:
+            case Verdict() as verdict if not verdict.decided(self.trust):
+                mark, note = "?", "  not trusted"
             case Verdict(passed=True):
                 mark = "✓"
             case Verdict() | Failed():
@@ -50,7 +55,8 @@ class Printed(Struct, frozen=True):
             case NoVerdict():
                 mark = "?"
         seconds = sum(turn.seconds for turn in outcome.transcript.turns)
-        print(f"  {mark} {outcome.scenario} #{outcome.attempt}  {seconds:.1f} s  {outcome.stop}")
+        line = f"  {mark} {outcome.scenario} #{outcome.attempt}  {seconds:.1f} s  {outcome.stop}"
+        print(line + note)
 
 
 class Invalid(Struct, frozen=True):
@@ -96,7 +102,8 @@ class Recorded(Struct, frozen=True):
         self, bench: Bench, agent: Agent, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
         try:
-            return asyncio.run(self.journal.play(bench, agent, Printed(self.journal), done))
+            printed = Printed(self.journal, self.journal.spec.trust)
+            return asyncio.run(self.journal.play(bench, agent, printed, done))
         except KeyboardInterrupt:
             spec = self.journal.spec
             run = Runs(self.project.results()).read(self.journal.folder())
@@ -130,6 +137,12 @@ class RunCommand(BaseModel):
         600,
         gt=0,
         description="seconds for each step of the agent: opening a conversation, a turn, closing",
+    )
+    trust: float = Field(
+        0.0,
+        ge=0,
+        le=1,
+        description="cut out the judge's decisions it is less sure of than this, from 0 to 1",
     )
     smoke: bool = Field(False, description="check the connection to the agent; no models called")
 
@@ -167,7 +180,7 @@ class RunCommand(BaseModel):
         calls, and a project's models are built fresh by running `models.py`."""
         if self.smoke:
             user = FakeModel("Hello! What can you help me with?", "Thank you!")
-            judge = FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}')
+            judge = ChatJudge(FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}'))
             return Bench((SMOKE,), Models(user, judge))
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
         return Bench(scenarios, project.models(), self.k, self.parallel)
@@ -186,6 +199,7 @@ class RunCommand(BaseModel):
             k=bench.attempts,
             parallel=bench.parallel,
             turn_timeout=self.turn_timeout,
+            trust=self.trust,
             scenarios=bench.scenarios,
             started=started,
             convy=version("convy"),

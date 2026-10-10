@@ -1,10 +1,13 @@
 """The models convy itself uses: the simulated user's and the judge's."""
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from msgspec import Struct
 
 from convy.http import HttpFailure, JsonEndpoint, JsonPath
+
+if TYPE_CHECKING:  # dialog.py imports this module
+    from convy.dialog import Judge
 
 
 class ModelFailure(Exception):
@@ -65,7 +68,7 @@ class Contained(Struct, frozen=True):
 
 
 class Models(Struct, frozen=True):
-    """The model that plays the user, and the model that judges."""
+    """The model that plays the user, and the judge."""
 
     user: Model
-    judge: Model
+    judge: "Judge"
