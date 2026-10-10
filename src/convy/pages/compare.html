@@ -104,7 +104,7 @@ function column(word, run, view, number) {
   return el("div", {},
     el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
       attempt ? (attempt.cut ? badge("none", {none: "Not trusted"}) : badge(kind(attempt.passed), ATTEMPT)) : null),
-    attempt ? [attemptTiles(attempt), judgeLines(attempt, run.trust), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
+    attempt ? [attemptTiles(attempt), judgeLines(attempt, run), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
 }
 
 function show(id, number) {

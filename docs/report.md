@@ -30,9 +30,9 @@ The row also shows answer time and tokens. A filter such as `refund-*` narrows t
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
 many attempts it held in and how many of its decisions were not trusted. For each attempt you see
-the judge's decision on every claim with its reason, and how sure the judge was, and the dialogue
-with the time and tokens of each answer. The address keeps the open scenario, so you can send a link
-to it.
+the judge's decision on every claim with its reason, and the dialogue with the time and tokens of
+each answer. If the judge says how sure it is, each decision shows that too, or "sure: not given"
+where it did not say. The address keeps the open scenario, so you can send a link to it.
 
 `results/index.html` lists every run, newest first, with a link to its report.
 

@@ -216,6 +216,7 @@ class RunHead(Struct, frozen=True):
     scenarios: int
     unreadable: int
     trust: float
+    confident: bool  # some decision of the run says how sure the judge was
 
 
 class RunPage(Struct, frozen=True):
@@ -338,7 +339,17 @@ class Summary(Struct, frozen=True):
             scenarios=len(spec.scenarios),
             unreadable=self.run.unreadable,
             trust=spec.trust,
+            confident=self.confident(),
         )
+
+    def confident(self) -> bool:
+        """Whether some decision of the run says how sure the judge was: only then does a page
+        mark the decisions that do not."""
+        for outcome in self.run.outcomes:
+            match outcome.verdict:
+                case Verdict(claims=claims) if any(c.confidence != NoConfidence() for c in claims):
+                    return True
+        return False
 
     def metrics(self, scenarios: Iterable[ScenarioView]) -> Metrics:
         """The tiles over the views `scenarios()` made."""

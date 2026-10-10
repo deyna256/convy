@@ -523,3 +523,11 @@ def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
         (0.8, 1),
         (0, 0),
     ]
+
+
+def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.9)), started=at(6))
+    without, with_confidence = both(tmp_path)
+    assert Report(without).page().run.confident is False
+    assert Report(with_confidence).page().run.confident is True

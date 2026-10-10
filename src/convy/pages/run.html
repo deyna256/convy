@@ -91,7 +91,7 @@ function show(id, number) {
         el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
         el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text), el("span", {className: "tally"}, claimTally(c)))))),
       el("div", {className: "main"},
-        attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN.trust), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
+        attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
           : el("p", {className: "empty"}, "No attempts recorded yet.")))));
   if (!dialog.open) dialog.showModal();
 }

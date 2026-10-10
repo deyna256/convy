@@ -65,17 +65,19 @@ function attemptTiles(attempt) {
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out`)));
 }
-// How sure the judge was of a decision, at the run's trust.
-function sure(claim, trust) {
-  if (claim.confidence == null) return "sure: not given";
+// How sure the judge was of a decision, at the run's trust; nothing when the run's judge never says.
+function sure(claim, run) {
+  if (claim.confidence == null) return run.confident ? "sure: not given" : null;
   const said = `${Math.floor(claim.confidence * 100)}% sure`;
-  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(trust * 100)}%`;
+  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(run.trust * 100)}%`;
 }
-function judgeLines(attempt, trust) {
+function judgeLines(attempt, run) {
   if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
-  return el("div", {className: "judge"}, attempt.claims.map((claim, i) =>
-    el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
-      el("span", {className: "why"}, claim.reason || "No reason given.", el("small", {className: "muted"}, ` · ${sure(claim, trust)}`)))));
+  return el("div", {className: "judge"}, attempt.claims.map((claim, i) => {
+    const note = sure(claim, run);
+    return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
+      el("span", {className: "why"}, claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
+  }));
 }
 function dialogue(attempt) {
   return attempt.turns.flatMap(t => [
