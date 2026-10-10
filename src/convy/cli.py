@@ -2,6 +2,7 @@
 exit code."""
 
 import asyncio
+import io
 import secrets
 import sys
 from datetime import datetime
@@ -312,6 +313,9 @@ class Convy(BaseSettings):
 
 def main(argv: list[str] | None = None) -> None:
     """The command's entry point."""
+    for stream in (sys.stdout, sys.stderr):  # a pipe or a file on Windows is not UTF-8 by default
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8")
     try:
         CliApp.run(Convy, cli_args=argv)  # None: sys.argv[1:]
     except ValidationError as error:
