@@ -99,9 +99,9 @@ still reports needs a person.
 Run the relevant checks before submitting changes. Documentation-only changes need link and formatting
 checks, not tests.
 
-The [CI workflow](.github/workflows/ci.yml) runs `just lint` and `just type` once and `just test` on
-Python 3.12, 3.13 and 3.14, for pull requests to `main` and pushes to `main`. It fails when `uv.lock`
-is out of date.
+The [CI workflow](.github/workflows/ci.yml) runs `just lint` and `just type` once, and `just test` on
+Ubuntu with Python 3.12, 3.13 and 3.14, and on Windows and macOS with Python 3.14, for pull requests
+to `main` and pushes to `main`. It fails when `uv.lock` is out of date.
 
 [Dependabot](.github/dependabot.yml) opens a pull request once a month with updated dependencies in
 `uv.lock`, and another with new versions of the GitHub Actions; CI checks them like any other.

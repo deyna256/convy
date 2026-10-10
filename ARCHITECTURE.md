@@ -91,9 +91,10 @@ in all of `src/convy/`.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
     `Message | Finished`, `Usage | NoUsage`, `Verdict | Failed | NoVerdict`, a run's status — and
     records such as `Outcome`.
-    Objects with behaviour are called through their interface, not checked for type. The exception is
-    input validation: `Project` checks the type of what a project file defines
-    (`isinstance(models, Models)`), as outside data is checked where it enters.
+    Objects with behaviour are called through their interface, not checked for type. There are two
+    exceptions, both where convy meets the outside: `Project` checks the type of what a project file
+    defines (`isinstance(models, Models)`), as outside data is checked where it enters; and `main`
+    checks that stdout and stderr are text streams before it sets them to UTF-8.
 
 **Where convy departs from *Elegant Objects*:**
 

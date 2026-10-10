@@ -1,6 +1,8 @@
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx2
 import msgspec
@@ -142,7 +144,7 @@ async def test_a_judge_with_a_broken_tls_leaves_no_verdict():
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
     assert isinstance(outcome.verdict, NoVerdict)
-    assert "/missing.pem" in outcome.verdict.error
+    assert str(Path("/missing.pem")) in outcome.verdict.error
 
 
 async def test_settings_missing_in_an_agent_do_not_leak_keys(tmp_path, monkeypatch):
@@ -219,7 +221,10 @@ def test_an_id_repeated_in_another_folder_names_the_file(tmp_path):
     (tmp_path / "bank").mkdir()
     write(tmp_path, "a.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
     write(tmp_path / "bank", "b.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
-    with pytest.raises(ValueError, match=r"bank/b\.yaml: another scenario already has the id"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(f"{Path('bank', 'b.yaml')}: another scenario already has the id"),
+    ):
         list(Scenarios(tmp_path))
 
 

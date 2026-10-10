@@ -1,10 +1,8 @@
 """The `convy` command, run in a fresh project from the template. No network: agents are fakes."""
 
 import os
-import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 import msgspec
@@ -59,7 +57,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_init_creates_the_template_and_keeps_existing_files(tmp_path: Path, capsys):
     (tmp_path / "models.py").write_text("# mine\n")
     main(["init", str(tmp_path)])
-    assert (tmp_path / "models.py").read_text() == "# mine\n"
+    assert (tmp_path / "models.py").read_text(encoding="utf-8") == "# mine\n"
     for name in (".env.example", ".gitignore", "agents/echo.py", "scenarios/clarify-backup.yaml"):
         assert (tmp_path / name).is_file()
     main(["init", str(tmp_path)])
@@ -93,8 +91,8 @@ def test_a_run_writes_its_folder_and_the_report(project: Path, capsys):
     assert file.spec.convy
     assert isinstance(file.status, Finished)
     assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
-    assert folder.name in (project / "results" / "index.html").read_text()
-    assert '"agent":"echo"' in (folder / "report.html").read_text()
+    assert folder.name in (project / "results" / "index.html").read_text(encoding="utf-8")
+    assert '"agent":"echo"' in (folder / "report.html").read_text(encoding="utf-8")
     out = capsys.readouterr().out
     assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
@@ -172,65 +170,76 @@ def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
 
 SLOW = """
 import os
+import signal
+
 from convy.fakes import FakeAgent
 
-agent = FakeAgent("hello", delay=float(os.environ.get("SLOW", "0")))
+
+class Stopping:
+    \"\"\"A fake agent, slowed by SLOW. With STOP set, it presses Ctrl+C when its second
+    conversation opens, as a person would.\"\"\"
+
+    def __init__(self):
+        self.agent = FakeAgent("hello", delay=float(os.environ.get("SLOW", "0")))
+
+    def conversation(self):
+        if os.environ.get("STOP") and self.agent.opened:
+            signal.raise_signal(signal.SIGINT)
+        return self.agent.conversation()
+
+
+agent = Stopping()
 version = "1"
 """
 
-# The user talks until the turns run out: every attempt takes the agent's delay six times.
+# The user talks until the turns run out, so every attempt reaches the agent, even after a stop.
 TALKATIVE = FAKE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
 
 
-def started_run(project: Path, models: str = TALKATIVE, options: tuple[str, ...] = ()) -> Path:
-    """Run the slow agent on one scenario with three attempts, and stop the run on Ctrl+C after
-    its first attempt. Return the run's folder."""
+def started_run(
+    project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    models: str = TALKATIVE,
+    options: tuple[str, ...] = (),
+) -> Path:
+    """Run the slow agent on one scenario with three attempts; it presses Ctrl+C when its second
+    attempt opens. Return the run's folder. `asyncio.run` handles the signal as a real Ctrl+C."""
     (project / "models.py").write_text(models)
     (project / "agents" / "slow.py").write_text(SLOW)
-    command = [sys.executable, "-c", "from convy.cli import main; main()"]
-    process = subprocess.Popen(
-        [
-            *command,
-            "run",
-            "slow",
-            "--scenarios",
-            "clarify-*",
-            "-k",
-            "3",
-            "--parallel",
-            "1",
-            *options,
-        ],
-        cwd=project,
-        env={**os.environ, "SLOW": "0.1"},
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    while not any((project / "results" / "slow").glob("*/attempts.jsonl")):
-        time.sleep(0.05)
-    process.send_signal(signal.SIGINT)
-    out, _ = process.communicate(timeout=10)
-    assert process.returncode == 130
+    argv = ["run", "slow", "--scenarios", "clarify-*", "-k", "3", "--parallel", "1", *options]
+    with monkeypatch.context() as stopping:
+        stopping.setenv("STOP", "1")
+        assert convy(*argv) == 130
     (folder,) = runs(project, "slow")
-    assert "interrupted: 1 of 3 attempts recorded\n" in out
-    assert f"resume with: convy resume {folder.name.rpartition('_')[2]}\n" in out
     return folder
+
+
+def recorded(folder: Path) -> int:
+    return len((folder / "attempts.jsonl").read_bytes().splitlines())
 
 
 def status(folder: Path) -> object:
     return msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile).status
 
 
-def test_ctrl_c_interrupts_a_run_and_resume_plays_the_rest(project: Path, capsys):
-    folder = started_run(project)
+def test_ctrl_c_interrupts_a_run_and_resume_plays_the_rest(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    folder = started_run(project, monkeypatch)
+    short = folder.name.rpartition("_")[2]
+    before = recorded(folder)
+    assert 0 < before < 3
+    out = capsys.readouterr().out
+    assert f"interrupted: {before} of 3 attempts recorded\n" in out
+    assert f"resume with: convy resume {short}\n" in out
     assert isinstance(status(folder), Interrupted)
-    assert convy("resume", folder.name.rpartition("_")[2]) == 0
+    assert convy("resume", short) == 0
     assert isinstance(status(folder), Finished)
     lines = (folder / "attempts.jsonl").read_bytes().splitlines()
     assert sorted(msgspec.json.decode(line, type=Outcome).attempt for line in lines) == [1, 2, 3]
     out = capsys.readouterr().out
-    assert f"slow: resuming run {folder.name}, 1 of 3 attempts recorded" in out
-    assert out.count("✓") == 2
+    assert f"slow: resuming run {folder.name}, {before} of 3 attempts recorded" in out
+    assert out.count("✓") == 3 - before
     assert "report: " in out
 
 
@@ -252,8 +261,11 @@ def test_a_finished_run_is_not_resumed(project: Path, capsys):
         (("models.py", TALKATIVE + "# edited\n"), "models.py changed since the run started"),
     ],
 )
-def test_a_run_resumes_only_unchanged(project: Path, change: tuple[str, str], error: str, capsys):
-    folder = started_run(project)
+def test_a_run_resumes_only_unchanged(
+    project: Path, monkeypatch: pytest.MonkeyPatch, change: tuple[str, str], error: str, capsys
+):
+    folder = started_run(project, monkeypatch)
+    capsys.readouterr()
     path, text = change
     (project / path).write_text(text)
     short = folder.name.rpartition("_")[2]
@@ -262,8 +274,11 @@ def test_a_run_resumes_only_unchanged(project: Path, change: tuple[str, str], er
     assert isinstance(status(folder), Interrupted)
 
 
-def test_a_run_whose_agent_is_gone_is_not_resumed(project: Path, capsys):
-    folder = started_run(project)
+def test_a_run_whose_agent_is_gone_is_not_resumed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    folder = started_run(project, monkeypatch)
+    capsys.readouterr()
     (project / "agents" / "slow.py").unlink()
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err.startswith("error: ")
@@ -271,15 +286,16 @@ def test_a_run_whose_agent_is_gone_is_not_resumed(project: Path, capsys):
 
 
 def test_resume_keeps_the_turn_timeout_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch):
-    folder = started_run(project)
+    folder = started_run(project, monkeypatch)
+    before = recorded(folder)
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     spec = msgspec.structs.replace(file.spec, turn_timeout=0.05)
     (folder / "run.json").write_bytes(msgspec.json.encode(msgspec.structs.replace(file, spec=spec)))
     monkeypatch.setenv("SLOW", "0.2")
     assert convy("resume", folder.name) == 1
     lines = (folder / "attempts.jsonl").read_bytes().splitlines()
-    played = [msgspec.json.decode(line, type=Outcome) for line in lines][1:]
-    assert len(played) == 2
+    played = [msgspec.json.decode(line, type=Outcome) for line in lines][before:]
+    assert len(played) == 3 - before
     for outcome in played:
         assert outcome.stop == "agent_failure"
         assert "no answer in 0.05 s" in str(outcome.verdict)
@@ -298,7 +314,7 @@ def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
     main(["compare", before, after])
     page = project / "results" / "compare" / f"{before}-vs-{after}.html"
     assert capsys.readouterr().out == f"comparison: {page.relative_to(project)}\n"
-    assert '"rows":[' in page.read_text()
+    assert '"rows":[' in page.read_text(encoding="utf-8")
 
 
 def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
@@ -331,10 +347,27 @@ def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
     assert "trust" in capsys.readouterr().err
 
 
-def test_resume_keeps_the_trust_of_the_run(project: Path, capsys):
+def test_resume_keeps_the_trust_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch, capsys):
     talkative = UNSURE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
-    folder = started_run(project, talkative, ("--trust", "0.8"))
+    folder = started_run(project, monkeypatch, talkative, ("--trust", "0.8"))
+    before = recorded(folder)
+    capsys.readouterr()
     assert convy("resume", folder.name) == 0
-    assert capsys.readouterr().out.count("not trusted") == 2
+    assert capsys.readouterr().out.count("not trusted") == 3 - before
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     assert file.spec.trust == 0.8
+
+
+def test_a_run_prints_through_a_pipe(project: Path):
+    """convy's output read through a pipe, as `convy run … | tee log` does: on Windows a pipe is
+    not UTF-8 unless convy makes it so."""
+    (project / "models.py").write_text(FAKE_MODELS)
+    command = [sys.executable, "-c", "from convy.cli import main; main()"]
+    done = subprocess.run(
+        [*command, "run", "echo", "--scenarios", "clarify-*"],
+        cwd=project,
+        capture_output=True,
+        env={k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")},
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    assert "✓ clarify-backup #1" in done.stdout.decode("utf-8")
