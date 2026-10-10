@@ -27,5 +27,6 @@ def test_running_from_python_is_public_api():
     names |= {"Comparison", "Index"}
     names |= {"Judge", "ChatJudge"}
     names |= {"Confidence", "NoConfidence"}
+    names |= {"Graded", "Grade", "NoGrade"}
     assert names <= set(convy.__all__)
     assert all(hasattr(convy, name) for name in convy.__all__)

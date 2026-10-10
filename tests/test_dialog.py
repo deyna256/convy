@@ -10,7 +10,10 @@ from convy.dialog import (
     Claim,
     Confidence,
     Finished,
+    Grade,
+    Graded,
     NoConfidence,
+    NoGrade,
     SimulatedUser,
     Transcript,
     Turn,
@@ -130,7 +133,9 @@ class Answers:
     def __init__(self, answer: Any):  # Any: wrong answers on purpose
         self.answer = answer
 
-    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
+    async def decide(
+        self, transcript: Transcript, claims: tuple[str | Graded, ...]
+    ) -> tuple[Claim, ...]:
         if isinstance(self.answer, Exception):
             raise self.answer
         return self.answer
@@ -180,3 +185,72 @@ def test_a_verdict_counts_when_a_trusted_claim_failed_or_every_claim_is_trusted(
 
 def test_trust_0_trusts_every_decision():
     assert Verdict((sure(True, 0.0), sure(False, 0.1))).decided(0)
+
+
+STEPS = Graded("covers every step", ("none", "partial", "full"), "partial")
+
+
+@pytest.mark.parametrize(
+    ("grades", "threshold", "error"),
+    [
+        (("full",), "full", "at least two grades"),
+        (("none", "full", "none"), "full", "a grade is listed twice"),
+        ((1, "1"), 1, "a grade is listed twice"),
+        (("none", "full"), "partial", "pass must be one of the grades"),
+    ],
+)
+def test_graded_rejects_grades_it_cannot_use(grades: tuple, threshold: str, error: str):
+    with pytest.raises(ValueError, match=error):
+        Graded("covers every step", grades, threshold)
+
+
+def test_graded_passes_at_its_threshold_and_above():
+    assert [STEPS.passes(grade) for grade in STEPS.levels] == [False, True, True]
+    polite = msgspec.convert({"claim": "polite", "grades": [1, 2, 3, 4, 5], "pass": 4}, Graded)
+    assert polite.levels == ("1", "2", "3", "4", "5")
+    assert [polite.passes(grade) for grade in polite.levels] == [False] * 3 + [True] * 2
+
+
+def test_an_old_decision_has_no_grade():
+    old = b'{"pass": true, "reason": "ok"}'
+    assert msgspec.json.decode(old, type=Claim).grade == NoGrade()
+
+
+async def test_judge_grades_a_graded_claim_and_the_scenario_says_if_it_passes():
+    model = FakeModel(
+        '{"claims": [{"pass": true, "reason": "hi"}, {"grade": "none", "reason": "no steps"}]}'
+    )
+    decided = await ChatJudge(model).decide(TRANSCRIPT, ("greets", STEPS))
+    assert decided == (Claim(True, "hi"), Claim(False, "no steps", grade=Grade("none")))
+    assert "2. covers every step (grades: none, partial, full)" in model.calls[0][0]["content"]
+
+
+async def test_judge_reads_a_number_as_its_grade():
+    polite = Graded("polite", (1, 2, 3), 2)
+    decided = await ChatJudge(FakeModel('{"claims": [{"grade": 3}]}')).decide(TRANSCRIPT, (polite,))
+    assert decided == (Claim(True, "", grade=Grade("3")),)
+
+
+@pytest.mark.parametrize(
+    "answer", ['{"claims": [{"grade": "most"}]}', '{"claims": [{"pass": true}]}']
+)
+async def test_judge_without_one_of_the_grades_is_a_model_failure(answer: str):
+    with pytest.raises(ModelFailure, match='"grade" is not one of'):
+        await ChatJudge(FakeModel(answer)).decide(TRANSCRIPT, (STEPS,))
+
+
+@pytest.mark.parametrize(
+    ("claim", "decision", "error"),
+    [
+        ("greets", Claim(True, "", grade=Grade("full")), "a grade, 'full', for a claim that is"),
+        (STEPS, Claim(True, ""), "no grade for a graded claim"),
+        (STEPS, Claim(True, "", grade=Grade("most")), "the grade 'most' is not one of"),
+        (STEPS, Claim(True, "", grade=Grade("none")), "the grade 'none' fails, but pass is True"),
+        (STEPS, Claim(False, "", grade=Grade("full")), "the grade 'full' passes, but pass is"),
+    ],
+)
+async def test_checked_refuses_a_grade_the_scenario_does_not_allow(
+    claim: str | Graded, decision: Claim, error: str
+):
+    with pytest.raises(ModelFailure, match=f"answers: claim 1: {error}"):
+        await Checked(Answers((decision,))).decide(TRANSCRIPT, (claim,))

@@ -29,10 +29,12 @@ Each scenario gets a row and a status:
 The row also shows answer time and tokens. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
-many attempts it held in and how many of its decisions were not trusted. For each attempt you see
-the judge's decision on every claim with its reason, and the dialogue with the time and tokens of
-each answer. If the judge says how sure it is, each decision shows that too, or "sure: not given"
-where it did not say. The address keeps the open scenario, so you can send a link to it.
+many attempts it held in and how many of its decisions were not trusted. A graded claim also says
+how often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you
+see the judge's decision on every claim with its grade, if it has one, and its reason, and the
+dialogue with the time and tokens of each answer. If the judge says how sure it is, each decision
+shows that too, or "sure: not given" where it did not say. The address keeps the open scenario, so
+you can send a link to it.
 
 `results/index.html` lists every run, newest first, with a link to its report.
 
@@ -54,6 +56,10 @@ The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old v
 Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.
+
+A graded claim whose typical grade moved says so in the window, such as `full → partial`: red when
+it fell, green when it rose, whatever the pass rate did. The typical grade is the middle one of its
+attempts; with two in the middle, the worse.
 
 Each run is read with its own `trust`, shown next to it in the page's head.
 

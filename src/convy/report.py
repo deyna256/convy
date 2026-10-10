@@ -13,7 +13,18 @@ from msgspec import Struct
 
 from convy.agent import NoUsage, Usage
 from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
-from convy.dialog import Claim, Confidence, Failed, NoConfidence, NoVerdict, Turn, Verdict
+from convy.dialog import (
+    Claim,
+    Confidence,
+    Failed,
+    Grade,
+    Graded,
+    NoConfidence,
+    NoGrade,
+    NoVerdict,
+    Turn,
+    Verdict,
+)
 from convy.scenario import Outcome, Scenario, Stop
 
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
@@ -105,6 +116,7 @@ class Runs(Struct, frozen=True):
 type Result = Literal["failing", "flaky", "passing", "none"]
 type Tone = Literal["good", "bad", "same", "noise", "none"]
 type Group = Literal["worse", "better", "same", "apart"]
+type Change = Literal["unchanged", "worse", "better"]
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
@@ -134,6 +146,7 @@ class ClaimView(Struct, frozen=True):
     reason: str
     confidence: float | None = None  # None: the judge did not say
     trusted: bool = True  # False: less sure than the run's trust
+    grade: str | None = None  # None: the claim is not graded
 
 
 class TurnView(Struct, frozen=True):
@@ -168,6 +181,8 @@ class ClaimSummary(Struct, frozen=True):
     judged: int
     result: Result
     cut: int  # decisions less sure than the run's trust
+    grades: tuple[tuple[str, int], ...] = ()  # each grade, worst to best, and how many trusted
+    typical: str | None = None  # the median trusted grade, the worse of two; None: not graded
 
 
 class ScenarioView(Struct, frozen=True):
@@ -244,7 +259,10 @@ class ClaimChange(Struct, frozen=True):
     text: str
     before: Result
     after: Result
-    change: Literal["unchanged", "worse", "better"]
+    change: Change  # by the pass rate; when that is equal, as `moved`
+    was: str | None = None  # the typical grade before; None: not graded
+    now: str | None = None
+    moved: Change = "unchanged"  # where the typical grade went, whatever the pass rate did
 
 
 class CompareRow(Struct, frozen=True):
@@ -397,8 +415,8 @@ class Summary(Struct, frozen=True):
             rate=tally.rate(),
             result=tally.result(),
             claims=tuple(
-                self.claim(text, [a.claims[i] for a in attempts])
-                for i, text in enumerate(scenario.claims)
+                self.claim(claim, [a.claims[i] for a in attempts])
+                for i, claim in enumerate(scenario.claims)
             ),
             seconds=self.average(turns),
             slowest=max(turns, default=None),
@@ -408,13 +426,20 @@ class Summary(Struct, frozen=True):
             attempts=attempts,
         )
 
-    def claim(self, text: str, decisions: list[ClaimView]) -> ClaimSummary:
+    def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:
         """A claim over the attempts the judge decided, cut or not: its trusted decisions are
-        tallied, the rest counted as cut."""
-        trusted = [d.passed for d in decisions if d.passed is not None and d.trusted]
-        tally = Tally(trusted.count(True), len(trusted))
+        tallied, the rest counted as cut. A graded claim also counts each grade."""
+        trusted = [d for d in decisions if d.passed is not None and d.trusted]
+        tally = Tally(sum(d.passed is True for d in trusted), len(trusted))
         cut = sum(d.passed is not None and not d.trusted for d in decisions)
-        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut)
+        match claim:
+            case str():
+                text, grades, typical = claim, (), None
+            case Graded(text=text, levels=levels):
+                ranks = sorted(levels.index(d.grade) for d in trusted if d.grade in levels)
+                grades = tuple((level, ranks.count(i)) for i, level in enumerate(levels))
+                typical = levels[ranks[(len(ranks) - 1) // 2]] if ranks else None
+        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut, grades, typical)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
@@ -453,7 +478,12 @@ class Summary(Struct, frozen=True):
                 sure: float | None = value
             case NoConfidence():
                 sure = None
-        return ClaimView(claim.passed, claim.reason, sure, claim.trusted(trust))
+        match claim.grade:
+            case Grade(value=value):
+                grade: str | None = value
+            case NoGrade():
+                grade = None
+        return ClaimView(claim.passed, claim.reason, sure, claim.trusted(trust), grade)
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
@@ -550,12 +580,24 @@ class Comparison(Struct, frozen=True):
         for old, new in zip(was.claims, now.claims, strict=True):
             before = Tally(old.held, old.judged).rate()
             after = Tally(new.held, new.judged).rate()
-            if before is None or after is None or before == after:
-                change: Literal["unchanged", "worse", "better"] = "unchanged"
-            else:
+            moved = self.moved(old, new)
+            change = moved
+            if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
-            changes.append(ClaimChange(new.text, old.result, new.result, change))
+            changes.append(
+                ClaimChange(
+                    new.text, old.result, new.result, change, old.typical, new.typical, moved
+                )
+            )
         return tuple(changes)
+
+    def moved(self, old: ClaimSummary, new: ClaimSummary) -> Change:
+        """Where a claim's typical grade went. Its grades are the same in both runs: a scenario
+        edited between them is not compared."""
+        if not old.typical or not new.typical or old.typical == new.typical:
+            return "unchanged"
+        levels = [grade for grade, _ in new.grades]
+        return "better" if levels.index(new.typical) > levels.index(old.typical) else "worse"
 
     def deltas(
         self, was: Metrics, now: Metrics, significant: Literal["good", "bad"] | None
