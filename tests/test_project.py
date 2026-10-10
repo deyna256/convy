@@ -23,7 +23,7 @@ def test_init_copies_the_template_once(tmp_path: Path):
     assert tmp_path / ".gitignore" in created
     assert tmp_path / "agents" / "echo.py" in created
     assert tmp_path / "models.py" not in created
-    assert (tmp_path / "models.py").read_text() == "# mine\n"
+    assert (tmp_path / "models.py").read_text(encoding="utf-8") == "# mine\n"
     assert Project(tmp_path).init() == ()
 
 

@@ -1,4 +1,5 @@
 import os
+import re
 import ssl
 import sys
 from collections.abc import Mapping
@@ -145,7 +146,9 @@ async def test_failures_do_not_show_the_query_of_the_url():
 
 
 def test_tls_names_a_missing_file(tmp_path):
-    with pytest.raises(FileNotFoundError, match=f"tls ca: no file {tmp_path}/none.pem"):
+    with pytest.raises(
+        FileNotFoundError, match=re.escape(f"tls ca: no file {tmp_path / 'none.pem'}")
+    ):
         Tls(ca=str(tmp_path / "none.pem")).context()
 
 

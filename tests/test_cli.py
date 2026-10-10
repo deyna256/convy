@@ -57,7 +57,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_init_creates_the_template_and_keeps_existing_files(tmp_path: Path, capsys):
     (tmp_path / "models.py").write_text("# mine\n")
     main(["init", str(tmp_path)])
-    assert (tmp_path / "models.py").read_text() == "# mine\n"
+    assert (tmp_path / "models.py").read_text(encoding="utf-8") == "# mine\n"
     for name in (".env.example", ".gitignore", "agents/echo.py", "scenarios/clarify-backup.yaml"):
         assert (tmp_path / name).is_file()
     main(["init", str(tmp_path)])
@@ -91,8 +91,8 @@ def test_a_run_writes_its_folder_and_the_report(project: Path, capsys):
     assert file.spec.convy
     assert isinstance(file.status, Finished)
     assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
-    assert folder.name in (project / "results" / "index.html").read_text()
-    assert '"agent":"echo"' in (folder / "report.html").read_text()
+    assert folder.name in (project / "results" / "index.html").read_text(encoding="utf-8")
+    assert '"agent":"echo"' in (folder / "report.html").read_text(encoding="utf-8")
     out = capsys.readouterr().out
     assert f"echo: run {folder.name}, 3 scenarios, 2 attempts each" in out
     assert out.count("✓") == 6
@@ -314,7 +314,7 @@ def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
     main(["compare", before, after])
     page = project / "results" / "compare" / f"{before}-vs-{after}.html"
     assert capsys.readouterr().out == f"comparison: {page.relative_to(project)}\n"
-    assert '"rows":[' in page.read_text()
+    assert '"rows":[' in page.read_text(encoding="utf-8")
 
 
 def test_compare_names_a_run_it_cannot_find(project: Path, capsys):

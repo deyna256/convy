@@ -1,4 +1,5 @@
 import json
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -220,7 +221,10 @@ def test_an_id_repeated_in_another_folder_names_the_file(tmp_path):
     (tmp_path / "bank").mkdir()
     write(tmp_path, "a.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
     write(tmp_path / "bank", "b.yaml", "id: same\nmax_turns: 1\nuser: x\njudge: [y]\n")
-    with pytest.raises(ValueError, match=r"bank/b\.yaml: another scenario already has the id"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(f"{Path('bank', 'b.yaml')}: another scenario already has the id"),
+    ):
         list(Scenarios(tmp_path))
 
 
