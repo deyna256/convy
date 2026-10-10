@@ -22,6 +22,26 @@ judge:
 
 Write scenarios in any language. The simulated user speaks the language of its instructions.
 
+## Graded claims
+
+Some things are not yes or no: how complete an answer is, or how polite. Such a claim lists its
+grades, from worst to best, and the worst grade that still passes:
+
+```yaml
+judge:
+  - Before giving a finished script, the agent asked what to back up and where to
+  - claim: The final script covers every step
+    grades: [none, partial, full]
+    pass: partial
+  - claim: The agent is polite
+    grades: [1, 2, 3, 4, 5]
+    pass: 4
+```
+
+The judge picks one grade. The scenario says whether it passes: here `partial` and `full` pass,
+`none` fails. The report shows each grade, and the comparison of two runs shows when a claim's
+typical grade moved, even if it still passes.
+
 ## Verdicts
 
 The judge decides each claim on its own and gives a reason, so the report shows which claim failed.
@@ -29,7 +49,7 @@ The judge decides each claim on its own and gives a reason, so the report shows 
 - If the agent fails a turn, the attempt fails. The judge is not asked.
 - If one of convy's own models fails, the attempt gets no verdict and does not count in the pass
   rate. That happens when a model does not answer, or the judge does not give one decision per
-  claim.
+  claim, or gives a grade the claim does not have.
 - If the judge is less sure than the run's `--trust`, the attempt does not count either. See
   [The judge](judge.md).
 
