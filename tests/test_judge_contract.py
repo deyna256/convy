@@ -2,16 +2,17 @@
 
 import pytest
 
-from convy.dialog import ChatJudge, Claim, Judge, Transcript
+from convy.dialog import ChatJudge, Claim, Grade, Graded, Judge, Transcript
 from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
-DECIDED = '{"claims": [{"pass": true, "reason": "ok"}, {"pass": false, "reason": "no"}]}'
-CLAIMS = ("greets", "is brief")
+DECIDED = '{"claims": [{"pass": true, "reason": "ok"}, {"grade": "most", "reason": "no"}]}'
+CLAIMS = ("greets", Graded("is brief", ("long", "most", "brief"), "brief"))
+CLAIMED = (Claim(True, "ok"), Claim(False, "no", grade=Grade("most")))
 
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),
-    "FakeJudge": lambda: FakeJudge((Claim(True, "ok"), Claim(False, "no"))),
+    "FakeJudge": lambda: FakeJudge(CLAIMED),
 }
 FAILING = {
     "ChatJudge": lambda: ChatJudge(FakeModel(ModelFailure("down"))),
@@ -22,7 +23,7 @@ FAILING = {
 @pytest.mark.parametrize("make", JUDGES.values(), ids=JUDGES)
 async def test_decide_gives_one_claim_per_claim_in_order_and_name_is_set(make):
     judge: Judge = make()
-    assert await judge.decide(Transcript(), CLAIMS) == (Claim(True, "ok"), Claim(False, "no"))
+    assert await judge.decide(Transcript(), CLAIMS) == CLAIMED
     assert judge.name
 
 

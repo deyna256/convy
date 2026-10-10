@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from msgspec import Struct
 
 from convy.agent import Answer, Conversation, Message, Usage
-from convy.dialog import Claim, Transcript
+from convy.dialog import Claim, Graded, Transcript
 from convy.model import ModelFailure
 from convy.scenario import Outcome
 
@@ -109,9 +109,11 @@ class FakeJudge:
         if not steps:
             raise ValueError("FakeJudge needs at least one step")
         self.steps = steps
-        self.calls: list[tuple[Transcript, tuple[str, ...]]] = []
+        self.calls: list[tuple[Transcript, tuple[str | Graded, ...]]] = []
 
-    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
+    async def decide(
+        self, transcript: Transcript, claims: tuple[str | Graded, ...]
+    ) -> tuple[Claim, ...]:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append((transcript, claims))
         if isinstance(step, ModelFailure):

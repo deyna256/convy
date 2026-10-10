@@ -11,7 +11,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, Usage
 from convy.bench import RunJournal, RunSpec
-from convy.dialog import ChatJudge, Claim, Failed, NoVerdict, Verdict
+from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
 from convy.http import JsonEndpoint, Tls
@@ -177,6 +177,14 @@ def test_scenarios_are_read_from_yaml(tmp_path):
     assert list(Scenarios(tmp_path)) == [Scenario("a", 3, "Say no.\n", ("no",))]
 
 
+def test_a_scenario_mixes_plain_and_graded_claims(tmp_path):
+    graded = "  - claim: polite\n    grades: [1, 2, 3]\n    pass: 2\n"
+    write(tmp_path, "a.yaml", "id: a\nmax_turns: 3\nuser: x\njudge:\n  - no\n" + graded)
+    (scenario,) = Scenarios(tmp_path)
+    assert scenario.claims == ("no", Graded("polite", (1, 2, 3), 2))
+    assert msgspec.json.decode(msgspec.json.encode(scenario), type=Scenario) == scenario
+
+
 @pytest.mark.parametrize(
     ("text", "error"),
     [
@@ -185,6 +193,11 @@ def test_scenarios_are_read_from_yaml(tmp_path):
         ("id: a\nmax_turns: 0\nuser: x\njudge: [y]\n", "max_turns must be at least 1, got 0"),
         ("id: a\nmax_turns: 3\nuser: x\njudge: []\n", "judge must list at least one claim"),
         ("id: [a\n", "a.yaml"),
+        (
+            "id: a\nmax_turns: 3\nuser: x\njudge:\n"
+            "  - claim: y\n    grades: [no, yes]\n    pass: maybe\n",
+            "'y': pass must be one of the grades",
+        ),
     ],
 )
 def test_a_wrong_scenario_names_the_file_and_the_problem(tmp_path, text: str, error: str):

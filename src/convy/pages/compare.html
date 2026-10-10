@@ -10,6 +10,7 @@
 /*include window.css*/
 .delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
+.tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
 .group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
 .arrow { color: var(--muted); padding: 0 6px; }
 .tab.plain { padding-left: 12px; }
@@ -122,7 +123,8 @@ function show(id, number) {
   }));
   const claims = r.claims.length
     ? el("ol", {className: "claims"}, r.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.after), el("span", {}, c.text),
-        el("span", {className: "tally"}, c.change === "unchanged" ? "unchanged" : [icon(c.before), "→", icon(c.after), c.change === "worse" ? "got worse" : "got better"]))))
+        el("span", {className: "tally"}, c.change === "unchanged" ? "unchanged" : [icon(c.before), "→", icon(c.after), c.change === "worse" ? "got worse" : "got better"],
+          c.was && c.now && c.was !== c.now && el("span", {className: c.change === "worse" ? "bad" : "good"}, `· ${c.was} → ${c.now}`)))))
     : el("p", {className: "told muted"}, r.why || "No claims to compare.");
   dialog.replaceChildren(el("div", {className: "frame"},
     el("div", {className: "whead"}, el("h2", {id: "window-title"}, r.id),

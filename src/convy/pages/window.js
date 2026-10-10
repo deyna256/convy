@@ -54,7 +54,8 @@ function markdown(text) {
 
 // The scenario window's parts, and the filter of its table.
 function claimTally(c) {
-  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + notTrusted(c.cut);
+  const grades = c.grades.filter(([, n]) => n).reverse().map(([grade, n]) => ` · ${grade} ${n}`).join("");  // best first
+  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + grades + notTrusted(c.cut);
 }
 function attemptTiles(attempt) {
   const answers = attempt.turns.length;
@@ -76,7 +77,7 @@ function judgeLines(attempt, run) {
   return el("div", {className: "judge"}, attempt.claims.map((claim, i) => {
     const note = sure(claim, run);
     return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
-      el("span", {className: "why"}, claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
+      el("span", {className: "why"}, claim.grade != null && [el("strong", {}, claim.grade), " · "], claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
   }));
 }
 function dialogue(attempt) {

@@ -7,7 +7,17 @@ import pytest
 
 from convy.agent import Answer, Message, NoUsage, Usage
 from convy.bench import Finished, Interrupted, RunJournal, RunSpec
-from convy.dialog import Claim, Confidence, Failed, NoVerdict, Transcript, Turn, Verdict
+from convy.dialog import (
+    Claim,
+    Confidence,
+    Failed,
+    Grade,
+    Graded,
+    NoVerdict,
+    Transcript,
+    Turn,
+    Verdict,
+)
 from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Outcome, Scenario
 
@@ -49,7 +59,7 @@ def journal(
     id: str = "",
     k: int = 1,
     asks: str = "Say hi.",
-    claims: tuple[str, ...] = ("greets",),
+    claims: tuple[str | Graded, ...] = ("greets",),
     trust: float = 0.0,
 ) -> RunJournal:
     """A run of `scenarios` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
@@ -278,6 +288,44 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
         "down",
         [None, None],
     )
+
+
+STEPS = Graded("covers every step", ("none", "partial", "full"), "partial")
+
+
+def graded(*grades: str) -> list[Outcome]:
+    """An attempt per grade of `STEPS`, numbered from 1."""
+    return [
+        outcome("a", Verdict((Claim(STEPS.passes(g), "", grade=Grade(g)),)), attempt=n)
+        for n, g in enumerate(grades, 1)
+    ]
+
+
+def test_a_graded_claim_counts_its_grades_and_its_typical_one_is_the_lower_median(tmp_path):
+    journal(
+        tmp_path, "bot", "1", 1, *graded("full", "none", "full", "partial"), k=4, claims=(STEPS,)
+    )
+    (scenario,) = Report(only(tmp_path)).page().scenarios
+    (claim,) = scenario.claims
+    assert (claim.text, claim.held, claim.judged) == ("covers every step", 3, 4)
+    assert claim.grades == (("none", 1), ("partial", 1), ("full", 2))
+    assert claim.typical == "partial"
+    assert [a.claims[0].grade for a in scenario.attempts] == ["full", "none", "full", "partial"]
+
+
+def test_a_plain_claim_has_no_grades(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
+    (scenario,) = Report(only(tmp_path)).page().scenarios
+    assert (scenario.claims[0].grades, scenario.claims[0].typical) == ((), None)
+    assert scenario.attempts[0].claims[0].grade is None
+
+
+def test_a_comparison_sees_a_graded_claim_get_worse_with_the_same_pass_rate(tmp_path):
+    for day, grades in ((5, ("full", "full")), (6, ("partial", "partial"))):
+        journal(tmp_path, "bot", "1", 1, *graded(*grades), k=2, claims=(STEPS,), started=at(day))
+    (row,) = Comparison(*both(tmp_path)).page().rows
+    assert row.group == "same"
+    assert [(c.change, c.was, c.now) for c in row.claims] == [("worse", "full", "partial")]
 
 
 def test_a_comparison_groups_scenarios_by_what_changed(tmp_path):
