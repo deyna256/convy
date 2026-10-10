@@ -1,5 +1,8 @@
 """The `convy` command, run in a fresh project from the template. No network: agents are fakes."""
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import msgspec
@@ -353,3 +356,18 @@ def test_resume_keeps_the_trust_of_the_run(project: Path, monkeypatch: pytest.Mo
     assert capsys.readouterr().out.count("not trusted") == 3 - before
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     assert file.spec.trust == 0.8
+
+
+def test_a_run_prints_through_a_pipe(project: Path):
+    """convy's output read through a pipe, as `convy run … | tee log` does: on Windows a pipe is
+    not UTF-8 unless convy makes it so."""
+    (project / "models.py").write_text(FAKE_MODELS)
+    command = [sys.executable, "-c", "from convy.cli import main; main()"]
+    done = subprocess.run(
+        [*command, "run", "echo", "--scenarios", "clarify-*"],
+        cwd=project,
+        capture_output=True,
+        env={key: value for key, value in os.environ.items() if not key.startswith("PYTHONIO")},
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    assert "✓ clarify-backup #1" in done.stdout.decode("utf-8")
