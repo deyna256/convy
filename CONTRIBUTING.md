@@ -141,8 +141,9 @@ entry will look like.
 
 Releases are made by hand, from the Actions tab:
 
-1. Raise the version with `uv version X.Y.Z` (it updates `pyproject.toml` and `uv.lock`) and merge
-   that change to `main`.
+1. Raise the version with `uv version X.Y.Z` (it updates `pyproject.toml` and `uv.lock`), set the
+   same version in `src/convy/template/pyproject.toml`, so that new projects install it, and merge
+   that change to `main`. A test fails if the two differ.
 2. Run the **Release** workflow on `main`. It runs the CI checks, moves the fragments from
    `changelog.d/` into [CHANGELOG.md](CHANGELOG.md) with `just release-notes` and commits that to
    `main`, then builds the packages from that commit, signs where they came from and creates a GitHub

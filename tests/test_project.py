@@ -1,4 +1,6 @@
 import sys
+import tomllib
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,13 @@ def test_init_copies_the_template_once(tmp_path: Path):
     assert tmp_path / "models.py" not in created
     assert (tmp_path / "models.py").read_text() == "# mine\n"
     assert Project(tmp_path).init() == ()
+
+
+def test_init_uses_the_version_of_convy_that_created_it(tmp_path: Path):
+    Project(tmp_path).init()
+    with (tmp_path / "pyproject.toml").open("rb") as file:
+        project = tomllib.load(file)
+    assert project["project"]["dependencies"] == [f"convy=={version('convy')}"]
 
 
 def test_init_skips_compiled_files(tmp_path: Path):
