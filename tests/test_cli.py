@@ -192,7 +192,7 @@ agent = Stopping()
 version = "1"
 """
 
-# The user talks until the turns run out: every attempt takes the agent's delay six times.
+# The user talks until the turns run out, so every attempt reaches the agent, even after a stop.
 TALKATIVE = FAKE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
 
 
@@ -367,7 +367,7 @@ def test_a_run_prints_through_a_pipe(project: Path):
         [*command, "run", "echo", "--scenarios", "clarify-*"],
         cwd=project,
         capture_output=True,
-        env={key: value for key, value in os.environ.items() if not key.startswith("PYTHONIO")},
+        env={k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")},
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
     assert "✓ clarify-backup #1" in done.stdout.decode("utf-8")
