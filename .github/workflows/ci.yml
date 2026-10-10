@@ -45,12 +45,18 @@ jobs:
         run: just type
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-24.04]
         python-version: ['3.12', '3.13', '3.14']
+        include:
+          - os: windows-2025
+            python-version: '3.14'
+          - os: macos-15
+            python-version: '3.14'
     steps:
       - name: Check out code
         uses: actions/checkout@v7
