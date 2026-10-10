@@ -584,11 +584,11 @@ class Comparison(Struct, frozen=True):
         for old, new in zip(was.claims, now.claims, strict=True):
             before = Tally(old.held, old.judged).rate()
             after = Tally(new.held, new.judged).rate()
-            levels = [grade for grade, _ in new.grades]  # the same in both: the claim is not edited
             change: Literal["unchanged", "worse", "better"] = "unchanged"
             if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
             elif old.typical and new.typical and old.typical != new.typical:
+                levels = [grade for grade, _ in new.grades]  # the same before: not edited
                 better = levels.index(new.typical) > levels.index(old.typical)
                 change = "better" if better else "worse"
             changes.append(
