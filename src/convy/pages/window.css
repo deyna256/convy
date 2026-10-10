@@ -44,6 +44,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .bhead svg { color: var(--muted); }
 .bubble p { margin: 0 0 10px; } .bubble p:last-child { margin-bottom: 0; }
 .bubble ul, .bubble ol { margin: 8px 0; padding-left: 22px; } .bubble li { margin: 4px 0; }
+.bubble ol { list-style-position: inside; padding-left: 0; }
 .bubble .h { font-weight: 700; }
 .bubble code { font-family: var(--mono); font-size: 13.5px; background: var(--side); border-radius: 4px; padding: 1px 4px; }
 @media (max-width: 860px) {
