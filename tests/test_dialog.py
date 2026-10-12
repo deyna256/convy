@@ -163,8 +163,8 @@ class Answers:
         ((Claim(True, Reason("ok")), Claim(True, Reason("ok"))), "answers: decided 2 claims of 1"),
         ((), "answers: decided 0 claims of 1"),
         (
-            ({"pass": True, "reason": "", "confidence": {"type": "confidence", "value": 1.5}},),
-            "answers: the decisions are not claims",
+            ({"pass": True, "confidence": {"type": "confidence", "value": 1.5}},),
+            "answers: the decisions are not claims: confidence must be from 0 to 1",
         ),
     ],
 )

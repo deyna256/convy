@@ -1,5 +1,6 @@
 """The `convy` command, run in a fresh project from the template. No network: agents are fakes."""
 
+import json
 import os
 import subprocess
 import sys
@@ -310,6 +311,23 @@ def test_a_run_whose_agent_is_gone_is_not_resumed(
         f"error: no agent 'slow': there is no {Path('agents', 'slow.py')}\n"
     )
     assert isinstance(status(folder), Interrupted)
+
+
+def test_a_run_of_an_older_format_is_not_resumed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    """Resuming would write the new format over a folder whose lines are in the old one."""
+    folder = started_run(project, monkeypatch)
+    before = recorded(folder)
+    capsys.readouterr()
+    data = json.loads((folder / "run.json").read_text())
+    (folder / "run.json").write_text(json.dumps({**data, "format": 2}))
+    assert convy("resume", folder.name) == 2
+    assert capsys.readouterr().err == (
+        f"error: run {folder.name} was written by an older convy; start a new run\n"
+    )
+    assert recorded(folder) == before
+    assert json.loads((folder / "run.json").read_text())["format"] == 2
 
 
 def test_after_an_upgrade_resume_says_so_without_running_the_project(

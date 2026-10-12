@@ -183,7 +183,7 @@ in a field of its own:
     async def answer(self, message: Message) -> Answer:
         response = await self.http.post("/chat", json={"text": message.text})
         data = response.raise_for_status().json()["message"]
-        thought = data.get("reasoning_content")
+        thought = (data.get("reasoning_content") or "").strip()
         return Answer(data["content"], thinking=Thinking(thought) if thought else NoThinking())
 ```
 

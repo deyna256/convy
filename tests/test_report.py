@@ -332,8 +332,9 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
         ("greets", 2, 2, "passing"),
         ("is brief", 1, 2, "flaky"),
     ]
-    first, _, failed = scenario.attempts
+    first, held, failed = scenario.attempts
     assert [(c.passed, c.reason) for c in first.claims] == [(True, "said hi"), (False, "too long")]
+    assert [c.reason for c in held.claims] == ["", ""]  # no reason, never "None"
     assert (failed.passed, failed.error, [c.passed for c in failed.claims]) == (
         False,
         "down",

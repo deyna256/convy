@@ -55,13 +55,15 @@ class FormatTwo(Struct, frozen=True):
 
 class Run(Struct, frozen=True):
     """A run's folder read back: where it is under the results directory, its specification and
-    status, the outcomes it could read, and how many lines it could not."""
+    status, the outcomes it could read, how many lines it could not, and the format it was written
+    in."""
 
     path: Path
     spec: RunSpec
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
+    format: Literal[2, 3] = 3
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -135,6 +137,7 @@ class Runs(Struct, frozen=True):
             file.status,
             tuple(outcomes.values()),
             unreadable,
+            file.format,
         )
 
 
