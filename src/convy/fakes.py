@@ -54,9 +54,13 @@ class FakeConversation:
         step = self.steps[min(self.turns, len(self.steps) - 1)]
         self.turns += 1
         await asyncio.sleep(self.delay)  # even at 0, other conversations get to run
-        if isinstance(step, BaseException):
-            raise step
-        return Answer(step) if isinstance(step, str) else step
+        match step:
+            case BaseException():
+                raise step
+            case str():
+                return Answer(step)
+            case Answer():
+                return step
 
 
 class Echo(Struct, frozen=True):
@@ -92,9 +96,11 @@ class FakeModel:
     async def reply(self, messages: list[dict[str, str]]) -> str:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append(list(messages))
-        if isinstance(step, ModelFailure):
-            raise step
-        return step
+        match step:
+            case ModelFailure():
+                raise step
+            case str():
+                return step
 
 
 class FakeJudge:
@@ -120,9 +126,11 @@ class FakeJudge:
     ) -> tuple[Claim, ...]:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append((transcript, claims))
-        if isinstance(step, ModelFailure):
-            raise step
-        return step
+        match step:
+            case ModelFailure():
+                raise step
+            case tuple():
+                return step
 
 
 class MemoryJournal:

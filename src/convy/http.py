@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import httpx2
+import msgspec
 from msgspec import Struct
 
 from convy.agent import AgentFailure, Answer, Conversation, Message, NoUsage, Usage
@@ -189,22 +190,27 @@ class JsonConversation:
         body = Placeholders(values, history).fill(self.agent.body)
         try:
             data = await self.connection.post(body)
-            text = JsonPath(self.agent.reply).find(data)
+            text = self.text(JsonPath(self.agent.reply).find(data))
             usage = self.usage(data)
         except (HttpFailure, LookupError) as failure:
             raise AgentFailure(str(failure)) from failure
-        if not isinstance(text, str):
-            raise AgentFailure(f"{self.agent.reply}: expected text, got {text!r:.100}")
         self.history = [*history, {"role": "assistant", "content": text}]
         return Answer(text, usage)
+
+    def text(self, found: object) -> str:
+        try:
+            return msgspec.convert(found, str)
+        except msgspec.ValidationError as error:
+            raise AgentFailure(f"{self.agent.reply}: expected text: {error}") from None
 
     def usage(self, data: object) -> Usage | NoUsage:
         if self.agent.tokens is None:
             return NoUsage()
-        spent, produced = (JsonPath(path).find(data) for path in self.agent.tokens)
-        if type(spent) is not int or type(produced) is not int:  # bool is an int too
-            found = f"got {spent!r} and {produced!r}"
-            raise AgentFailure(f"{self.agent.tokens}: expected token counts, {found}")
+        found = tuple(JsonPath(path).find(data) for path in self.agent.tokens)
+        try:
+            spent, produced = msgspec.convert(found, tuple[int, int])  # a bool is not a count
+        except msgspec.ValidationError as error:
+            raise AgentFailure(f"{self.agent.tokens}: expected token counts: {error}") from None
         return Usage(spent, produced)
 
 
@@ -215,15 +221,17 @@ class Placeholders(Struct, frozen=True):
     history: list[dict[str, str]]
 
     def fill(self, template: object) -> object:
-        if template == "{history}":
-            return self.history
-        if isinstance(template, str):  # one pass, so a message containing "{session}" stays as is
-            return PLACEHOLDER.sub(lambda match: self.values[match[1]], template)
-        if isinstance(template, dict):
-            return {key: self.fill(item) for key, item in template.items()}
-        if isinstance(template, list):
-            return [self.fill(item) for item in template]
-        return template
+        match template:
+            case "{history}":
+                return self.history
+            case str():  # one pass, so a message containing "{session}" stays as is
+                return PLACEHOLDER.sub(lambda match: self.values[match[1]], template)
+            case dict():
+                return {key: self.fill(item) for key, item in template.items()}
+            case list():
+                return [self.fill(item) for item in template]
+            case _:
+                return template
 
 
 class JsonPath(Struct, frozen=True):
@@ -233,10 +241,11 @@ class JsonPath(Struct, frozen=True):
 
     def find(self, data: object) -> object:
         for key in self.path.split("."):
-            if isinstance(data, dict) and key in data:
-                data = data[key]
-            elif isinstance(data, list) and key.isdigit() and int(key) < len(data):
-                data = data[int(key)]
-            else:
-                raise LookupError(f"{self.path}: no {key!r} in the answer")
+            match data:
+                case dict() if key in data:
+                    data = data[key]
+                case list() if key.isdigit() and int(key) < len(data):
+                    data = data[int(key)]
+                case _:
+                    raise LookupError(f"{self.path}: no {key!r} in the answer")
         return data

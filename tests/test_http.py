@@ -221,8 +221,9 @@ async def test_json_agent_reads_reply_and_tokens_by_paths():
         assert await conversation.answer(Message("?")) == Answer("hi", Usage(3, 4))
 
 
-async def test_json_agent_rejects_tokens_that_are_not_counts():
-    service = Service(httpx2.Response(200, json={"a": "hi", "in": True, "out": 1}))
+@pytest.mark.parametrize("spent", [True, "3", None])
+async def test_json_agent_rejects_tokens_that_are_not_counts(spent: object):
+    service = Service(httpx2.Response(200, json={"a": "hi", "in": spent, "out": 1}))
     async with json_agent(service, tokens=("in", "out")).conversation() as conversation:
         with pytest.raises(AgentFailure, match="expected token counts"):
             await conversation.answer(Message("?"))

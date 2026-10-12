@@ -24,11 +24,21 @@ async def test_open_ai_model_sends_its_name_and_the_messages():
     }
 
 
-async def test_open_ai_model_fails_on_an_answer_without_text():
-    service = httpx2.MockTransport(lambda request: httpx2.Response(200, json={"choices": []}))
+@pytest.mark.parametrize(
+    ("reply", "where"),
+    [
+        ({"choices": []}, "$.choices"),
+        ({"choices": [{"message": {"content": None}}]}, "$.choices[0].message.content"),
+        ({"choices": [{"message": {"content": 5}}]}, "$.choices[0].message.content"),
+        ({"error": "busy"}, "choices"),
+    ],
+)
+async def test_open_ai_model_fails_on_an_answer_without_text(reply: object, where: str):
+    service = httpx2.MockTransport(lambda request: httpx2.Response(200, json=reply))
     model = OpenAiModel(JsonEndpoint("https://llm.test", transport=service), "gpt")
-    with pytest.raises(ModelFailure, match=r"gpt: choices\.0\.message\.content"):
+    with pytest.raises(ModelFailure, match="gpt: the reply is not a chat completion") as failure:
         await model.reply([])
+    assert where in str(failure.value)
 
 
 LONE_SURROGATE = b'{"choices": [{"message": {"content": "\\ud83d"}}]}'  # half an emoji

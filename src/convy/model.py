@@ -1,10 +1,11 @@
 """The models convy itself uses: the simulated user's and the judge's."""
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Annotated, Protocol
 
-from msgspec import Struct
+import msgspec
+from msgspec import Meta, Struct
 
-from convy.http import HttpFailure, JsonEndpoint, JsonPath
+from convy.http import HttpFailure, JsonEndpoint
 
 if TYPE_CHECKING:  # dialog.py imports this module
     from convy.dialog import Judge
@@ -27,6 +28,20 @@ class Model(Protocol):
         ...
 
 
+class ChatMessage(Struct, frozen=True):
+    content: str
+
+
+class Choice(Struct, frozen=True):
+    message: ChatMessage
+
+
+class Completion(Struct, frozen=True):
+    """The part of an OpenAI chat completion convy reads."""
+
+    choices: Annotated[tuple[Choice, ...], Meta(min_length=1)]
+
+
 class OpenAiModel(Struct, frozen=True):
     """A model behind an OpenAI Chat Completions API; `endpoint` points to `…/chat/completions`."""
 
@@ -36,11 +51,14 @@ class OpenAiModel(Struct, frozen=True):
     async def reply(self, messages: list[dict[str, str]]) -> str:
         try:
             data = await self.endpoint.post({"model": self.name, "messages": messages})
-            text = JsonPath("choices.0.message.content").find(data)
-        except (HttpFailure, LookupError) as failure:
+        except HttpFailure as failure:
             raise ModelFailure(f"{self.name}: {failure}") from failure
-        if not isinstance(text, str):
-            raise ModelFailure(f"{self.name}: expected text, got {text!r:.100}")
+        try:
+            text = msgspec.convert(data, Completion).choices[0].message.content
+        except msgspec.ValidationError as error:
+            raise ModelFailure(
+                f"{self.name}: the reply is not a chat completion: {error}"
+            ) from None
         try:
             text.encode()  # a lone surrogate, half an emoji, would break the journal
         except UnicodeEncodeError:
