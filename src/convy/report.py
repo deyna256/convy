@@ -3,9 +3,9 @@
 import re
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
-from math import sqrt
+from math import comb
 from pathlib import Path
-from statistics import mean, stdev
+from statistics import mean
 from typing import Literal
 
 import msgspec
@@ -331,18 +331,59 @@ class IndexPage(Struct, frozen=True):
     runs: tuple[IndexRow, ...]  # newest first
 
 
-class Sample(Struct, frozen=True):
-    """Values, one per scenario: their mean, and its 95% margin from three values on."""
+class Evidence(Struct, frozen=True):
+    """What the scenarios both runs played unchanged say about a change: each scenario's tally
+    before and after."""
 
-    values: tuple[float, ...]
+    scenarios: tuple[tuple[Tally, Tally], ...]
 
-    def mean(self) -> float | None:
-        return mean(self.values) if self.values else None
-
-    def margin(self) -> float | None:
-        if len(self.values) < 3:
+    def shows(self) -> Literal["better", "worse"] | None:
+        """The change the evidence shows: where the passes moved against what chance expects;
+        None when `chance()` is 5% or more."""
+        if self.chance() >= 0.05:
             return None
-        return 1.96 * stdev(self.values) / sqrt(len(self.values))
+        return "better" if self.seen() > self.expected() else "worse"
+
+    def chance(self) -> float:
+        """How often chance alone — the same agent on the same scenarios — gives a result as
+        unlikely as this one or more: the exact two-sided test over the scenarios' attempts."""
+        totals = self.totals()
+        limit = totals[self.seen()] * (1 + 1e-7)  # floats that should be equal, as R allows
+        return min(1.0, sum(p for p in totals.values() if p <= limit))
+
+    def totals(self) -> dict[int, float]:
+        """How the after run's passes add up over the scenarios, if nothing changed."""
+        # ponytail: the work grows with scenarios times attempts (200 scenarios of 50 attempts
+        # take ~18 s); use the CMH chi-square past that size
+        totals = {0: 1.0}
+        for before, after in self.scenarios:
+            law = self.law(before, after)
+            sums: dict[int, float] = {}
+            for total, p in totals.items():
+                for passes, q in law.items():
+                    sums[total + passes] = sums.get(total + passes, 0.0) + p * q
+            totals = sums
+        return totals
+
+    def law(self, before: Tally, after: Tally) -> dict[int, float]:
+        """How the after run's passes of one scenario fall if nothing changed: drawn from the
+        scenario's attempts and passes, a hypergeometric law."""
+        attempts, passes = before.judged + after.judged, before.held + after.held
+        drawn = after.judged
+        ways = comb(attempts, drawn)
+        return {
+            x: comb(passes, x) * comb(attempts - passes, drawn - x) / ways
+            for x in range(max(0, drawn - (attempts - passes)), min(passes, drawn) + 1)
+        }
+
+    def seen(self) -> int:
+        return sum(after.held for _, after in self.scenarios)
+
+    def expected(self) -> float:
+        return sum(
+            after.judged * (before.held + after.held) / (before.judged + after.judged)
+            for before, after in self.scenarios
+        )
 
 
 class Template(Struct, frozen=True):
@@ -588,7 +629,7 @@ class Comparison(Struct, frozen=True):
             after=now.head(),
             was=old,
             now=new,
-            deltas=self.deltas(old, new, self.significant(before, after, unchanged)),
+            deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
             differences=self.differences(),
             rows=tuple(rows),
         )
@@ -652,13 +693,13 @@ class Comparison(Struct, frozen=True):
         return "better" if levels.index(new.typical) > levels.index(old.typical) else "worse"
 
     def deltas(
-        self, was: Metrics, now: Metrics, significant: Literal["good", "bad"] | None
+        self, was: Metrics, now: Metrics, shown: Literal["better", "worse"] | None
     ) -> Deltas:
         if was.rate is None or now.rate is None:
             rate = Delta(None, "none")
         else:
             points = round((now.rate - was.rate) * 100, 6)
-            agrees = significant == ("good" if points > 0 else "bad")
+            agrees = shown == ("better" if points > 0 else "worse")
             rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
         return Deltas(
             rate=rate,
@@ -680,21 +721,21 @@ class Comparison(Struct, frozen=True):
             return "noise"
         return "good" if (change > 0) == more_is_better else "bad"
 
-    def significant(
+    def evidence(
         self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
-    ) -> Literal["good", "bad"] | None:
-        """The pass rate's tone when the paired change over the scenarios both runs played
-        unchanged is beyond its 95% margin; None when it is not."""
-        differences = []
-        for id in unchanged:
-            new, old = after[id].rate, before[id].rate
-            if new is not None and old is not None:
-                differences.append(new - old)
-        sample = Sample(tuple(differences))
-        change, margin = sample.mean(), sample.margin()
-        if change is None or margin is None or abs(change) <= margin:
-            return None
-        return "good" if change > 0 else "bad"
+    ) -> Evidence:
+        """The tallies of the scenarios both runs played unchanged and judged."""
+        return Evidence(
+            tuple(
+                (self.tally(before[id]), self.tally(after[id]))
+                for id in sorted(unchanged)
+                if before[id].rate is not None and after[id].rate is not None
+            )
+        )
+
+    def tally(self, view: ScenarioView) -> Tally:
+        judged = [attempt.passed for attempt in view.attempts if attempt.passed is not None]
+        return Tally(sum(judged), len(judged))
 
 
 class Index(Struct, frozen=True):
