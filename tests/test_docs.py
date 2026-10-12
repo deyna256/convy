@@ -1,11 +1,14 @@
 """The docs' examples run as written."""
 
 import re
+from importlib.metadata import version
 from pathlib import Path
 
+import msgspec
 import pytest
 
 import convy
+from convy.bench import RunFile
 
 PYTHON = (Path(__file__).parents[1] / "docs" / "python.md").read_text(encoding="utf-8")
 
@@ -17,7 +20,8 @@ def test_run_from_python_example_runs(tmp_path: Path, monkeypatch: pytest.Monkey
     exec(found[1], {})
     page = (tmp_path / "results" / "echo" / "first" / "report.html").read_text(encoding="utf-8")
     assert '"agent":"echo"' in page
-    assert (tmp_path / "results" / "echo" / "first" / "run.json").is_file()
+    written = (tmp_path / "results" / "echo" / "first" / "run.json").read_bytes()
+    assert msgspec.json.decode(written, type=RunFile).spec.convy == version("convy")
 
 
 def test_running_from_python_is_public_api():

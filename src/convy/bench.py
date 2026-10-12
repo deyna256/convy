@@ -6,6 +6,7 @@ import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
+from importlib import metadata
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -22,6 +23,8 @@ else:
     import fcntl
 
 type Pair = tuple[str, int]  # a scenario's id and an attempt's number
+
+CONVY = metadata.version("convy")  # the installed convy, which a new run records
 
 
 class Files(Struct, frozen=True):
@@ -44,7 +47,7 @@ class RunSpec(Struct, frozen=True):
     turn_timeout: float
     scenarios: tuple[Scenario, ...]
     started: datetime
-    convy: str = ""
+    convy: str = CONVY
     files: Files = Files()
     trust: float = 0.0  # decisions the judge is less sure of are cut out; 0 cuts nothing
 

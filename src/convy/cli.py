@@ -6,7 +6,6 @@ import io
 import secrets
 import sys
 from datetime import datetime
-from importlib.metadata import version
 from pathlib import Path
 
 from msgspec import Struct
@@ -207,7 +206,6 @@ class RunCommand(BaseModel):
             trust=self.trust,
             scenarios=bench.scenarios,
             started=started,
-            convy=version("convy"),
             files=files,
         )
         journal = RunJournal(project.results(), spec)
