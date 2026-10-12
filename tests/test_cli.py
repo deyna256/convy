@@ -452,7 +452,7 @@ FAILING_MODELS = FAKE_MODELS.replace('"pass": true', '"pass": false')
         (FAILING_MODELS, "0.9", 3, "echo: pass rate 0 of 1 (0.0%), below 90%\n"),
     ],
 )
-def test_a_run_below_its_pass_rate_bar_exits_with_3(
+def test_a_run_exits_by_its_pass_rate_bar(
     project: Path, capsys, models: str, bar: str, code: int, line: str
 ):
     (project / "models.py").write_text(models)
@@ -495,7 +495,8 @@ def test_each_agent_is_checked_against_the_bar(project: Path, capsys):
     (project / "agents" / "good.py").write_text(
         'from convy.fakes import FakeAgent\n\nagent = FakeAgent("good")\n'
     )
-    assert convy("run", "good", "echo", "--scenarios", "clarify-*", "--fail-under", "0.9") == 3
+    # the first agent is below: the second must still say where it stands
+    assert convy("run", "echo", "good", "--scenarios", "clarify-*", "--fail-under", "0.9") == 3
     out = capsys.readouterr().out
     assert "good: pass rate 1 of 1 (100.0%), at least 90%\n" in out
     assert "echo: pass rate 0 of 1 (0.0%), below 90%\n" in out
@@ -505,6 +506,7 @@ def test_each_agent_is_checked_against_the_bar(project: Path, capsys):
     ("argv", "error"),
     [
         (("--fail-under", "90"), "less than or equal to 1"),
+        (("--fail-under", "-0.1"), "greater than or equal to 0"),
         (("--fail-under", "0.9", "--smoke"), "--fail-under needs a run; --smoke plays none"),
     ],
 )

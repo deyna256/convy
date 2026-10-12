@@ -67,11 +67,11 @@ Delete its folder and run `convy report`.
   attempt it played. This wins over `3`: a run with errors does not measure quality.
 - `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
   resumed, also when another process is playing it.
-- `3`: a pass rate is below `--fail-under`, or no attempt was judged.
+- `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged.
 - `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
 
-Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` always
-exits with `0`.
+Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
+with `2` when it cannot find a run it names, else with `0`.
 
 In CI, fail the build when the pass rate is below 90%:
 
