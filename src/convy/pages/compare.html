@@ -48,7 +48,7 @@ function header() {
       el("div", {className: "eyebrow"}, el("a", {href: "../index.html"}, "CONVY"), " / compare"),
       el("h1", {}, title),
       el("p", {className: "meta", style: "display:flex;flex-wrap:wrap;align-items:center;gap:8px"}, tag("Before", BEFORE), el("span", {className: "arrow"}, "→"), tag("After", AFTER),
-        DATA.models.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `models differ: ${DATA.models.join(", ")}`) : el("span", {}, "same user and judge models"))),
+        DATA.differences.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `differences: ${DATA.differences.join(", ")}`) : el("span", {}, "same models and convy"))),
     themeButton());
 }
 

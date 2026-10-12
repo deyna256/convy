@@ -55,7 +55,9 @@ class RunSpec(Struct, frozen=True):
         if not 0 <= self.trust <= 1:
             raise ValueError(f"trust must be from 0 to 1, got {self.trust}")
 
-    def changes(self, version: str, user: str, judge: str, files: Files) -> tuple[str, ...]:
+    def changes(
+        self, version: str, user: str, judge: str, files: Files, convy: str
+    ) -> tuple[str, ...]:
         """What differs now from what the run started with: each a reason it cannot continue
         unchanged. A change in a module the agent imports, or in the service behind it, does not
         show here."""
@@ -70,6 +72,11 @@ class RunSpec(Struct, frozen=True):
             found.append(f"the user model is {user!r}, the run has {self.user!r}")
         if judge != self.judge:
             found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
+        if convy != self.convy:
+            started = (
+                f"started on {self.convy}" if self.convy else "does not say which convy started it"
+            )
+            found.append(f"convy is {convy}, the run {started}")
         return tuple(found)
 
     def short(self) -> str:

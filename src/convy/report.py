@@ -280,7 +280,7 @@ class ComparePage(Struct, frozen=True):
     was: Metrics
     now: Metrics
     deltas: Deltas
-    models: tuple[str, ...]  # the models that differ, as "judge: a → b"
+    differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
     rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
 
 
@@ -542,18 +542,23 @@ class Comparison(Struct, frozen=True):
             was=old,
             now=new,
             deltas=self.deltas(old, new, self.significant(before, after, unchanged)),
-            models=self.models(),
+            differences=self.differences(),
             rows=tuple(rows),
         )
 
     def html(self) -> str:
         return Template("compare.html").html(self.page())
 
-    def models(self) -> tuple[str, ...]:
-        """The convy models that differ between the runs, as `judge: a → b`."""
+    def differences(self) -> tuple[str, ...]:
+        """What differs between the runs besides the agent, as `judge: a → b`: the models, then
+        the convy that made them; a run that does not say which convy made it shows `unknown`."""
         before, after = self.before.spec, self.after.spec
-        pairs = (("user", before.user, after.user), ("judge", before.judge, after.judge))
-        return tuple(f"{role}: {was} → {now}" for role, was, now in pairs if was != now)
+        pairs = (
+            ("user", before.user, after.user),
+            ("judge", before.judge, after.judge),
+            ("convy", before.convy or "unknown", after.convy or "unknown"),
+        )
+        return tuple(f"{name}: {was} → {now}" for name, was, now in pairs if was != now)
 
     def unchanged(self) -> set[str]:
         """The scenarios both runs have, not edited between them."""

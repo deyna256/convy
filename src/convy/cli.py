@@ -19,7 +19,17 @@ from pydantic_settings import (
 )
 
 from convy.agent import Agent, NoUsage, TimeLimited, Usage
-from convy.bench import Bench, Files, Finished, Journal, Pair, RunInUse, RunJournal, RunSpec
+from convy.bench import (
+    CONVY,
+    Bench,
+    Files,
+    Finished,
+    Journal,
+    Pair,
+    RunInUse,
+    RunJournal,
+    RunSpec,
+)
 from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
@@ -248,7 +258,9 @@ class ResumeCommand(BaseModel):
             loaded = project.agent(spec.agent)
             models = project.models()
             files = project.files(spec.agent)
-            changes = spec.changes(loaded.version, models.user.name, models.judge.name, files)
+            changes = spec.changes(
+                loaded.version, models.user.name, models.judge.name, files, CONVY
+            )
             if changes:
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
         except ValidationError as error:  # settings in the project's files

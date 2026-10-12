@@ -9,7 +9,7 @@ import msgspec
 import pytest
 import time_machine
 
-from convy.bench import Finished, Interrupted, RunFile, RunJournal, Running
+from convy.bench import CONVY, Finished, Interrupted, RunFile, RunJournal, Running
 from convy.cli import main
 from convy.project import Project
 from convy.scenario import Outcome
@@ -308,6 +308,22 @@ def test_a_run_whose_agent_is_gone_is_not_resumed(
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err.startswith("error: ")
     assert isinstance(status(folder), Interrupted)
+
+
+def test_a_run_another_convy_started_is_not_resumed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    folder = started_run(project, monkeypatch)
+    before = recorded(folder)
+    capsys.readouterr()
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    older = msgspec.structs.replace(file, spec=msgspec.structs.replace(file.spec, convy="0.1.0"))
+    (folder / "run.json").write_bytes(msgspec.json.encode(older))
+    assert convy("resume", folder.name) == 2
+    assert capsys.readouterr().err == (
+        f"error: run {folder.name} cannot resume: convy is {CONVY}, the run started on 0.1.0\n"
+    )
+    assert recorded(folder) == before
 
 
 def test_resume_keeps_the_turn_timeout_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch):

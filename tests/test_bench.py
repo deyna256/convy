@@ -10,6 +10,7 @@ import pytest
 
 from convy.agent import AgentFailure
 from convy.bench import (
+    CONVY,
     Bench,
     Files,
     Finished,
@@ -233,7 +234,7 @@ async def test_a_file_system_without_locks_plays_as_before(tmp_path, monkeypatch
 
 
 def test_a_run_unchanged_has_no_reasons_to_stop():
-    assert SPEC.changes("1", "fake", "fake", Files()) == ()
+    assert SPEC.changes("1", "fake", "fake", Files(), CONVY) == ()
 
 
 @pytest.mark.parametrize(
@@ -245,7 +246,19 @@ def test_a_run_unchanged_has_no_reasons_to_stop():
     ],
 )
 def test_a_changed_version_or_model_is_a_reason_not_to_resume(now: tuple[str, str, str], reason):
-    assert SPEC.changes(*now, Files()) == (reason,)
+    assert SPEC.changes(*now, Files(), CONVY) == (reason,)
+
+
+@pytest.mark.parametrize(
+    ("then", "reason"),
+    [
+        ("0.1.0", f"convy is {CONVY}, the run started on 0.1.0"),
+        ("", f"convy is {CONVY}, the run does not say which convy started it"),
+    ],
+)
+def test_another_convy_is_a_reason_not_to_resume(then: str, reason: str):
+    spec = msgspec.structs.replace(SPEC, convy=then)
+    assert spec.changes("1", "fake", "fake", Files(), CONVY) == (reason,)
 
 
 @pytest.mark.parametrize("trust", [-0.5, 1.5])

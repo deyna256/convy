@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from convy.agent import Answer, Message, NoUsage, Usage
-from convy.bench import Finished, Interrupted, RunJournal, RunSpec
+from convy.bench import CONVY, Finished, Interrupted, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
     Confidence,
@@ -61,6 +61,7 @@ def journal(
     asks: str = "Say hi.",
     claims: tuple[str | Graded, ...] = ("greets",),
     trust: float = 0.0,
+    convy: str = CONVY,
 ) -> RunJournal:
     """A run of `scenarios` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
     started = started or datetime.now(UTC)
@@ -76,6 +77,7 @@ def journal(
         played,
         started,
         trust=trust,
+        convy=convy,
     )
     written = RunJournal(directory, spec)
     written.create()
@@ -464,7 +466,14 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
 def test_a_comparison_names_the_models_that_differ(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), models=("u", "j2"))
-    assert Comparison(*both(tmp_path)).page().models == ("judge: j → j2",)
+    assert Comparison(*both(tmp_path)).page().differences == ("judge: j → j2",)
+
+
+@pytest.mark.parametrize(("then", "shown"), [("0.1.0", "0.1.0"), ("", "unknown")])
+def test_a_comparison_names_another_convy(tmp_path, then: str, shown: str):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), convy=then)
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    assert Comparison(*both(tmp_path)).page().differences == (f"convy: {shown} → {CONVY}",)
 
 
 def test_the_index_lists_runs_newest_first_with_their_reports(tmp_path):
@@ -577,7 +586,7 @@ def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
     page = Comparison(*both(tmp_path)).page()
     assert (page.before.trust, page.after.trust) == (0, 0.8)
     assert (page.was.judged, page.now.judged, page.now.cut) == (1, 0, 1)
-    assert page.models == ()  # trust is not a warning
+    assert page.differences == ()  # trust is not a warning
     assert [(row.run.trust, row.cut) for row in Index(Runs(tmp_path)).page().runs] == [
         (0.8, 1),
         (0, 0),
