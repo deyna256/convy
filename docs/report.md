@@ -52,8 +52,11 @@ The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old v
 [See a real one.](https://deyna256.github.io/convy/compare.html)
 
 - Green means better, red means worse.
-- Grey with `~` means the pass rate moved within noise. With few scenarios and attempts, a change
-  that size can happen by chance.
+- Grey with `~` means the change may be chance. convy asks how often the same agent on the same
+  scenarios would give a result this unlikely by chance alone. At 5% or more, the change is grey.
+  Each scenario counts by its attempts: a fall from 20 of 20 to 10 of 20 weighs more than a fall
+  from 1 of 1 to 0 of 1. With few scenarios or attempts, even a large change can be grey. Scenarios
+  that got better and scenarios that got worse weigh against each other.
 
 Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for

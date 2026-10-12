@@ -120,7 +120,7 @@ in all of `src/convy/`.
 ## The report
 
 `report.py` makes every number and decision on the pages: the tiles, a scenario's result, a claim's
-count, the change between two runs and its colour, whether a change of pass rate is significant, the
+count, the change between two runs and its colour, whether a change of pass rate is real, the
 groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
 the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
 through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the
