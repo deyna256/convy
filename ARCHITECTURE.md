@@ -32,7 +32,7 @@ All code is in `src/convy/`.
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge` and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure`; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
-| `bench.py` | `Bench`, which runs scenarios against an agent; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder |
+| `bench.py` | `Bench`, which runs scenarios against an agent; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
 | `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent` |
@@ -127,9 +127,10 @@ run's folder; see [decision 5](docs/decisions/0005-runs.md).
 **Concurrency.** Conversations run at the same time, so the whole path is `async`: `asyncio.timeout` for
 limits, `asyncio.TaskGroup` for concurrent work, `asyncio.Semaphore` for `--parallel`. Nothing blocks
 the event loop except the run's append of one short line per attempt and the rewrite of its small
-`run.json`. Durations are measured with `time.monotonic`. Ctrl+C makes `asyncio.run` cancel the
-bench; `RunJournal.play` marks the run `interrupted` on that, or on any other error, and re-raises
-it.
+`run.json`. Durations are measured with `time.monotonic`. One process plays a run's folder at a
+time: `RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it
+ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the
+run `interrupted` on that, or on any other error, and re-raises it.
 
 **Failure.** Three kinds, one rule each:
 
@@ -142,8 +143,9 @@ it.
   error, or gave an answer that is not one `Claim` per claim with the grades the scenario allows,
   which `Checked` turns into `ModelFailure`. The attempt has `NoVerdict` and is left out of the pass
   rate.
-- Configuration errors — raised while loading the project, or a run that cannot be resumed, before any
-  request: the command prints them and exits with code 2.
+- Configuration errors — raised while loading the project, or a run that cannot be resumed or that
+  another process is playing (`RunInUse`), before any request: the command prints them and exits
+  with code 2.
 
 `except Exception` appears in four places: in `scenario.py` around the agent's code — opening a
 conversation, a turn, closing it — because a bug there must not stop a run; in `Contained`
