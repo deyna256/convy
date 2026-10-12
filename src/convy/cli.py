@@ -34,7 +34,7 @@ from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
-from convy.report import Runs
+from convy.report import Runs, Summary
 from convy.scenario import Matching, Outcome, Scenario
 
 SMOKE = Scenario(
@@ -158,9 +158,15 @@ class RunCommand(BaseModel):
         le=1,
         description="cut out the judge's decisions it is less sure of than this, from 0 to 1",
     )
+    fail_under: float | None = Field(
+        None, ge=0, le=1, description="exit with 3 when a pass rate is below this, from 0 to 1"
+    )
     smoke: bool = Field(False, description="check the connection to the agent; no models called")
 
     def cli_cmd(self) -> None:
+        if self.smoke and self.fail_under is not None:
+            print("error: --fail-under needs a run; --smoke plays none", file=sys.stderr)
+            raise SystemExit(2)
         project = Project(Path())
         try:
             agents = [project.agent(name) for name in self.agents]
@@ -183,11 +189,31 @@ class RunCommand(BaseModel):
                 outcomes = Recorded(project, journal).outcomes(bench, agent)
                 played.append(journal.spec)
             failed |= any(outcome.failed() for outcome in outcomes)
+        below = False
         if not self.smoke:
             Rebuilt(project).show()
             for spec in played:
                 print(f"report: {project.report_page(spec)}")
-        raise SystemExit(int(failed))
+            if self.fail_under is not None:
+                checked = [self.below(self.fail_under, project, spec) for spec in played]
+                below = any(checked)  # every agent says where it stands, not only the first
+        raise SystemExit(1 if failed else 3 if below else 0)
+
+    def below(self, bar: float, project: Project, spec: RunSpec) -> bool:
+        """Whether the run's pass rate is below the bar, saying so; no judged attempt is below."""
+        run = Runs(project.results()).read(RunJournal(project.results(), spec).folder())
+        summary = Summary(run)
+        metrics = summary.metrics(summary.scenarios().values())
+        shown = f"{bar * 100:g}%"
+        if metrics.rate is None:
+            print(f"{spec.agent}: no attempt judged, below {shown}")
+            return True
+        verdict = "below" if metrics.rate < bar else "at least"
+        print(
+            f"{spec.agent}: pass rate {metrics.passed} of {metrics.judged} "
+            f"({metrics.rate:.1%}), {verdict} {shown}"
+        )
+        return metrics.rate < bar
 
     def bench(self, project: Project) -> Bench:
         """A bench for one agent, with models of its own: a fake model's replies run on across its

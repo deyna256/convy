@@ -439,3 +439,77 @@ def test_a_run_prints_through_a_pipe(project: Path):
     )
     assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
     assert "✓ clarify-backup #1" in done.stdout.decode("utf-8")
+
+
+FAILING_MODELS = FAKE_MODELS.replace('"pass": true', '"pass": false')
+
+
+@pytest.mark.parametrize(
+    ("models", "bar", "code", "line"),
+    [
+        (FAKE_MODELS, "0.9", 0, "echo: pass rate 1 of 1 (100.0%), at least 90%\n"),
+        (FAKE_MODELS, "1", 0, "echo: pass rate 1 of 1 (100.0%), at least 100%\n"),  # at the bar
+        (FAILING_MODELS, "0.9", 3, "echo: pass rate 0 of 1 (0.0%), below 90%\n"),
+    ],
+)
+def test_a_run_below_its_pass_rate_bar_exits_with_3(
+    project: Path, capsys, models: str, bar: str, code: int, line: str
+):
+    (project / "models.py").write_text(models)
+    assert convy("run", "echo", "--scenarios", "clarify-*", "--fail-under", bar) == code
+    assert line in capsys.readouterr().out
+
+
+def test_a_run_with_no_judged_attempt_is_below_the_bar(project: Path, capsys):
+    (project / "models.py").write_text(UNSURE_MODELS)  # every decision is cut by --trust 0.8
+    argv = ("run", "echo", "--scenarios", "clarify-*", "--trust", "0.8", "--fail-under", "0.5")
+    assert convy(*argv) == 3
+    assert "echo: no attempt judged, below 50%\n" in capsys.readouterr().out
+
+
+def test_an_agent_error_wins_over_the_bar(project: Path):
+    (project / "models.py").write_text(FAKE_MODELS)
+    (project / "agents" / "locked.py").write_text(UNAUTHORIZED)
+    assert convy("run", "locked", "--scenarios", "clarify-*", "--fail-under", "0.9") == 1
+
+
+BY_ANSWER_MODELS = """
+from convy import Claim, Models
+from convy.fakes import FakeModel
+
+
+class ByAnswer:
+    name = "by-answer"
+    reviews_agent_thinking = False
+
+    async def decide(self, transcript, claims):
+        return tuple(Claim("good" in transcript.as_text()) for _ in claims)
+
+
+models = Models(user=FakeModel("Hello!", "###STOP###"), judge=ByAnswer())
+"""
+
+
+def test_each_agent_is_checked_against_the_bar(project: Path, capsys):
+    (project / "models.py").write_text(BY_ANSWER_MODELS)  # passes an answer saying "good"
+    (project / "agents" / "good.py").write_text(
+        'from convy.fakes import FakeAgent\n\nagent = FakeAgent("good")\n'
+    )
+    assert convy("run", "good", "echo", "--scenarios", "clarify-*", "--fail-under", "0.9") == 3
+    out = capsys.readouterr().out
+    assert "good: pass rate 1 of 1 (100.0%), at least 90%\n" in out
+    assert "echo: pass rate 0 of 1 (0.0%), below 90%\n" in out
+
+
+@pytest.mark.parametrize(
+    ("argv", "error"),
+    [
+        (("--fail-under", "90"), "less than or equal to 1"),
+        (("--fail-under", "0.9", "--smoke"), "--fail-under needs a run; --smoke plays none"),
+    ],
+)
+def test_a_wrong_bar_runs_nothing(project: Path, capsys, argv: tuple[str, ...], error: str):
+    (project / "models.py").write_text(FAKE_MODELS)
+    assert convy("run", "echo", *argv) == 2
+    assert error in capsys.readouterr().err
+    assert not (project / "results" / "echo").exists()
