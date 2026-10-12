@@ -1,3 +1,4 @@
+import re
 import sys
 import tomllib
 from importlib.metadata import version
@@ -97,6 +98,20 @@ def test_a_wrong_agent_file_is_named(tmp_path: Path, text: str, error: str):
 def test_a_missing_agent_is_named(tmp_path: Path):
     with pytest.raises(FileNotFoundError, match="no agent 'nobody'"):
         Project(tmp_path).agent("nobody")
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["team/bot", "../bot", ".."],
+)
+def test_an_agent_name_outside_agents_is_refused(tmp_path: Path, name: str):
+    with pytest.raises(ValueError, match=re.escape(f"agent {name!r}:")):
+        Project(tmp_path).agent(name)
+
+
+def test_a_name_with_dot_dot_inside_still_loads(tmp_path: Path):
+    write(tmp_path / "agents" / "my..bot.py", "agent = 1\n")
+    assert Project(tmp_path).agent_file("my..bot") == tmp_path / "agents" / "my..bot.py"
 
 
 def test_models_come_from_models_py(tmp_path: Path):
