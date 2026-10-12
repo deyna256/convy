@@ -59,7 +59,7 @@ that scores how likely a statement is true of a text:
 ```python
 import httpx2
 
-from convy import Claim, Confidence, Graded, ModelFailure, Transcript
+from convy import Claim, Confidence, Graded, ModelFailure, Reason, Transcript
 
 
 class Classifier:
@@ -80,15 +80,17 @@ class Classifier:
                 if response.is_error:
                     raise ModelFailure(f"the classifier answered {response.status_code}")
                 p = response.json()["probability"]  # how likely the claim holds
-                decided.append(Claim(p >= 0.5, f"p = {p:.2f}", Confidence(max(p, 1 - p))))
+                decided.append(Claim(p >= 0.5, Reason(f"p = {p:.2f}"), Confidence(max(p, 1 - p))))
             return tuple(decided)
 ```
 
 Put it in `models.py`, or in a module `models.py` imports, and set `judge=Classifier()`.
 
 - A claim is a `str`, or a `Graded` claim with its own grades. A graded claim needs a grade too:
-  `Claim(claim.passes(grade), reason, grade=Grade(grade))`, where `grade` is one of
+  `Claim(claim.passes(grade), Reason(why), grade=Grade(grade))`, where `grade` is one of
   `claim.levels`, its grades as text from worst to best.
+- A reason is `Reason(text)`. When there is none, leave it out or give `NoReason()`; an empty
+  `Reason("")` is refused.
 - Raise `ModelFailure` when the judge cannot decide. Any other error counts the same way: the
   attempt gets no verdict, and the agent is not blamed. The text of the error goes into the run's
   folder and the report, so keep keys out of it.

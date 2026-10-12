@@ -183,7 +183,8 @@ in a field of its own:
     async def answer(self, message: Message) -> Answer:
         response = await self.http.post("/chat", json={"text": message.text})
         data = response.raise_for_status().json()["message"]
-        return Answer(data["content"], thinking=Thinking(data.get("reasoning_content") or ""))
+        thought = data.get("reasoning_content")
+        return Answer(data["content"], thinking=Thinking(thought) if thought else NoThinking())
 ```
 
 An agent that puts it inside the text, as some open models do with `<think>…</think>`:
@@ -195,7 +196,8 @@ An agent that puts it inside the text, as some open models do with `<think>…</
         thought, mark, said = text.partition("</think>")  # some models leave out the opening tag
         if not mark:  # cut off while thinking, or no thinking at all
             thought, said = (text, "") if text.startswith("<think>") else ("", text)
-        return Answer(said.strip(), thinking=Thinking(thought.removeprefix("<think>").strip()))
+        thought = thought.removeprefix("<think>").strip()
+        return Answer(said.strip(), thinking=Thinking(thought) if thought else NoThinking())
 ```
 
 The simulated user never sees the thinking. A judge sees it only if it reviews it; see

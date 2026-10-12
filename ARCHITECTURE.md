@@ -68,33 +68,40 @@ in all of `src/convy/`.
    are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
 4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
    with a time limit on each step: opening a conversation, a turn, closing. Only exceptions inherit, from `Exception`.
-5. **"No value" is an empty object, not `None`:** `NoUsage`, `NoThinking`, `NoVerdict`. It is stored
-   and read like the real value, with no type checks: msgspec tags it (`{"type": "no_usage"}`) and
-   restores the right class. `None` is allowed only for an optional constructor argument that was
-   not given.
+5. **"No value" is an empty object, not `None`:** `NoUsage`, `NoThinking`, `NoReason`, `NoVerdict`.
+   It is stored and read like the real value, with no type checks: msgspec tags it
+   (`{"type": "no_usage"}`) and restores the right class. `None` is allowed only for an optional
+   constructor argument that was not given, and for `null` in a type that mirrors outside JSON
+   (rule 7).
 6. **Domain objects become JSON in one place, the run's folder.** Objects have no `json()` or
    `to_dict()` methods. `RunJournal` writes with `msgspec.json.encode`; `Runs` reads back with
    `msgspec.json.decode`. The report's pages embed data of their own: `Summary` builds the view records
    for the browser from the runs; `Template` encodes them.
-7. **Outside data is checked where it enters and is typed after that.** Scenarios:
-   `yamlrocks.loads`, then `msgspec.convert` into `Scenario`. An agent's answer: encoded and decoded
-   with `msgspec.json` as the run's folder will do it, so a wrong one fails its turn instead of the
-   run. Runs: `msgspec.json.decode` of `run.json`, whose `format` must be 2, and of `attempts.jsonl`
-   line by line. The judge's answer: `Checked` encodes and decodes it with `msgspec.json` as the
-   run's folder will, and wants one `Claim` per claim, a graded claim with one of its grades and the
-   `pass` the scenario gives that grade; `ChatJudge` first wants `"claims"`, one object per claim,
-   each with a `"pass"` of `true` or `false`, or a `"grade"` of the claim's own. A judge gets the
-   agent's thinking only if its `reviews_agent_thinking` is true. The environment and the command
-   line: pydantic-settings. Pydantic is used only there; every other class is msgspec.
+7. **Outside data becomes the domain's types where it enters; only those types travel inside.**
+   Each entry turns what comes in into convy's own types at once. Scenarios: `yamlrocks`, then
+   `msgspec.convert` into `Scenario`. The run's folder: `msgspec.json.decode` into `RunFile` and
+   `Outcome`, an older format converted right there. An agent's answer: encoded and decoded with
+   `msgspec.json` as the run's folder will, so a wrong one fails its turn instead of the run. A
+   model's reply: read into the shape of an OpenAI chat completion. The judge model's reply: each
+   decision read into the type its claim needs. A judge's own answer: `Checked` encodes and
+   decodes it as the run's folder will, and wants one `Claim` per claim, a graded claim with one
+   of its grades and the `pass` the scenario gives that grade; a judge gets the agent's thinking
+   only if its `reviews_agent_thinking` is true. The environment and the command line:
+   pydantic-settings. Past the entry nothing checks a type by hand: no raw dicts and no
+   `isinstance` on what came in. A type that mirrors outside JSON may hold `None` for its `null`,
+   and is turned into domain types at once. JSON of no fixed shape, a `JsonAgent`'s body template
+   and paths, which the user sets, is walked with `match`, and what is taken from it is converted
+   on the spot. Pydantic is used only for settings; every other class is msgspec.
 8. **Every interface has a fake** in `fakes.py`, part of the public API. A fake is a simple working
    object, not a mock. Fakes get no methods that exist only for tests; a fake may keep what it collected
    in public fields (`outcomes`, `peak`).
 9. **The library does not print or log.** It returns what the command needs to show, such as
    `Runs.broken()`. Only `cli.py` prints and picks the exit code.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
-    `Message | Finished`, `Usage | NoUsage`, `Thinking | NoThinking`,
+    `Message | Finished`, `Usage | NoUsage`, `Thinking | NoThinking`, `Reason | NoReason`,
     `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status — and records such as
-    `Outcome`.
+    `Outcome`. Data from outside is read into such types where it enters (rule 7), so this holds
+    for it too.
     Objects with behaviour are called through their interface, not checked for type. There are two
     exceptions, both where convy meets the outside: `Project` checks the type of what a project file
     defines (`isinstance(models, Models)`), as outside data is checked where it enters; and `main`
