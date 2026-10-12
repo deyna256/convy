@@ -88,7 +88,7 @@ def test_a_run_writes_its_folder_and_the_report(project: Path, capsys):
     assert file.spec.id == folder.name
     assert (file.spec.agent, file.spec.k, len(file.spec.pairs())) == ("echo", 2, 6)
     assert file.spec.files == Project(project).files("echo")
-    assert file.spec.convy
+    assert file.spec.convy == CONVY
     assert isinstance(file.status, Finished)
     assert len((folder / "attempts.jsonl").read_bytes().splitlines()) == 6
     assert folder.name in (project / "results" / "index.html").read_text(encoding="utf-8")

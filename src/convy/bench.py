@@ -73,10 +73,11 @@ class RunSpec(Struct, frozen=True):
         if judge != self.judge:
             found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
         if convy != self.convy:
-            started = (
-                f"started on {self.convy}" if self.convy else "does not say which convy started it"
+            found.append(
+                f"convy is {convy}, the run started on {self.convy}"
+                if self.convy
+                else f"convy is {convy}, the run does not say which convy started it"
             )
-            found.append(f"convy is {convy}, the run {started}")
         return tuple(found)
 
     def short(self) -> str:
