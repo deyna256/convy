@@ -234,7 +234,26 @@ async def test_a_file_system_without_locks_plays_as_before(tmp_path, monkeypatch
 
 
 def test_a_run_unchanged_has_no_reasons_to_stop():
-    assert SPEC.changes("1", "fake", "fake", Files(), CONVY) == ()
+    assert SPEC.code_changes(Files(), CONVY) == ()
+    assert SPEC.label_changes("1", "fake", "fake") == ()
+
+
+@pytest.mark.parametrize(
+    ("files", "convy", "reason"),
+    [
+        (Files(agent="new"), CONVY, "agents/bot.py changed since the run started"),
+        (Files(models="new"), CONVY, "models.py changed since the run started"),
+        (Files(), "9.9.9", f"convy is 9.9.9, the run started on {CONVY}"),
+    ],
+)
+def test_changed_code_is_a_reason_not_to_resume(files: Files, convy: str, reason: str):
+    assert SPEC.code_changes(files, convy) == (reason,)
+
+
+def test_a_run_that_does_not_say_its_convy_is_not_resumed():
+    spec = msgspec.structs.replace(SPEC, convy="")
+    reason = f"convy is {CONVY}, the run does not say which convy started it"
+    assert spec.code_changes(Files(), CONVY) == (reason,)
 
 
 @pytest.mark.parametrize(
@@ -245,20 +264,8 @@ def test_a_run_unchanged_has_no_reasons_to_stop():
         (("1", "fake", "gpt"), "the judge model is 'gpt', the run has 'fake'"),
     ],
 )
-def test_a_changed_version_or_model_is_a_reason_not_to_resume(now: tuple[str, str, str], reason):
-    assert SPEC.changes(*now, Files(), CONVY) == (reason,)
-
-
-@pytest.mark.parametrize(
-    ("then", "reason"),
-    [
-        ("0.1.0", f"convy is {CONVY}, the run started on 0.1.0"),
-        ("", f"convy is {CONVY}, the run does not say which convy started it"),
-    ],
-)
-def test_another_convy_is_a_reason_not_to_resume(then: str, reason: str):
-    spec = msgspec.structs.replace(SPEC, convy=then)
-    assert spec.changes("1", "fake", "fake", Files(), CONVY) == (reason,)
+def test_a_changed_label_is_a_reason_not_to_resume(now: tuple[str, str, str], reason: str):
+    assert SPEC.label_changes(*now) == (reason,)
 
 
 @pytest.mark.parametrize("trust", [-0.5, 1.5])

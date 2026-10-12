@@ -49,9 +49,7 @@ class Project(Struct, frozen=True):
         return found
 
     def agent(self, name: str) -> ProjectAgent:
-        path = self.directory / "agents" / f"{name}.py"
-        if not path.is_file():
-            raise FileNotFoundError(f"no agent {name!r}: there is no {path}")
+        path = self.agent_file(name)
         module = self.module(path)
         expected = f"{path}: expected an object `agent` with a `conversation` method"
         try:
@@ -64,6 +62,12 @@ class Project(Struct, frozen=True):
         if not isinstance(version, str):
             raise ValueError(f"{path}: `version` must be a string")
         return ProjectAgent(name, agent, version)
+
+    def agent_file(self, name: str) -> Path:
+        path = self.directory / "agents" / f"{name}.py"
+        if not path.is_file():
+            raise FileNotFoundError(f"no agent {name!r}: there is no {path}")
+        return path
 
     def scenarios(self) -> Scenarios:
         return Scenarios(self.directory / "scenarios")
@@ -106,7 +110,7 @@ class Project(Struct, frozen=True):
     def files(self, agent: str) -> Files:
         """The sha256 of the agent's file and `models.py`, to tell whether they changed."""
         return Files(
-            agent=self.fingerprint(self.directory / "agents" / f"{agent}.py"),
+            agent=self.fingerprint(self.agent_file(agent)),
             models=self.fingerprint(self.directory / "models.py"),
         )
 

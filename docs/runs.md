@@ -37,8 +37,10 @@ resume with: convy resume a3f9
 run's settings: the same scenarios, `k`, `--parallel`, `--turn-timeout` and `--trust`.
 
 It refuses, and says why, if the agent's file, `models.py`, the agent's `version`, a model name or
-the convy version has changed. The run would no longer measure one thing. It cannot see a change in
-a module the agent imports, or in the service behind the agent.
+the convy version has changed. The run would no longer measure one thing. It checks the files and
+the convy version first, before it runs any of your code, so a `models.py` that no longer loads does
+not hide the reason. It cannot see a change in a module the agent imports, or in the service behind
+the agent.
 
 The simulated user's and the judge's instructions are part of convy, so a new version of convy may
 play or judge differently. After an upgrade an unfinished run cannot be resumed: finish it with the

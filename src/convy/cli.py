@@ -255,13 +255,11 @@ class ResumeCommand(BaseModel):
             match run.status:
                 case Finished():
                     raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
-            loaded = project.agent(spec.agent)
+            if changes := spec.code_changes(project.files(spec.agent), CONVY):
+                raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
+            loaded = project.agent(spec.agent)  # the project's code runs only once it is unchanged
             models = project.models()
-            files = project.files(spec.agent)
-            changes = spec.changes(
-                loaded.version, models.user.name, models.judge.name, files, CONVY
-            )
-            if changes:
+            if changes := spec.label_changes(loaded.version, models.user.name, models.judge.name):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()

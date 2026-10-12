@@ -55,29 +55,34 @@ class RunSpec(Struct, frozen=True):
         if not 0 <= self.trust <= 1:
             raise ValueError(f"trust must be from 0 to 1, got {self.trust}")
 
-    def changes(
-        self, version: str, user: str, judge: str, files: Files, convy: str
-    ) -> tuple[str, ...]:
-        """What differs now from what the run started with: each a reason it cannot continue
-        unchanged. A change in a module the agent imports, or in the service behind it, does not
-        show here."""
+    def code_changes(self, files: Files, convy: str) -> tuple[str, ...]:
+        """How the code that plays the run differs from the code it started with: the agent's
+        file, `models.py` and convy itself, each a reason the run cannot continue unchanged. Seen
+        without running any of it. A change in a module the agent imports, or in the service
+        behind it, does not show here."""
         found = []
         if files.agent != self.files.agent:
             found.append(f"agents/{self.agent}.py changed since the run started")
         if files.models != self.files.models:
             found.append("models.py changed since the run started")
-        if version != self.version:
-            found.append(f"the agent's version is {version!r}, the run has {self.version!r}")
-        if user != self.user:
-            found.append(f"the user model is {user!r}, the run has {self.user!r}")
-        if judge != self.judge:
-            found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
         if convy != self.convy:
             found.append(
                 f"convy is {convy}, the run started on {self.convy}"
                 if self.convy
                 else f"convy is {convy}, the run does not say which convy started it"
             )
+        return tuple(found)
+
+    def label_changes(self, version: str, user: str, judge: str) -> tuple[str, ...]:
+        """How the names the loaded project gives differ from the run's: the agent's version and
+        the models' names, each a reason the run cannot continue unchanged."""
+        found = []
+        if version != self.version:
+            found.append(f"the agent's version is {version!r}, the run has {self.version!r}")
+        if user != self.user:
+            found.append(f"the user model is {user!r}, the run has {self.user!r}")
+        if judge != self.judge:
+            found.append(f"the judge model is {judge!r}, the run has {self.judge!r}")
         return tuple(found)
 
     def short(self) -> str:
