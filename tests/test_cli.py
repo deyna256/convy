@@ -373,10 +373,10 @@ def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
 
 
 UNSURE_MODELS = """
-from convy import Claim, Confidence, Models
+from convy import Claim, Confidence, Models, Reason
 from convy.fakes import FakeJudge, FakeModel
 
-unsure = Claim(True, "ok", Confidence(0.5))
+unsure = Claim(True, Reason("ok"), Confidence(0.5))
 models = Models(user=FakeModel("Hello!", "###STOP###"), judge=FakeJudge((unsure, unsure)))
 """
 

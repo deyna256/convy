@@ -10,6 +10,7 @@ from convy.agent import (
     Conversation,
     Message,
     NoUsage,
+    Thinking,
     TimeLimited,
     Usage,
 )
@@ -111,3 +112,9 @@ def test_fake_agent_needs_a_step():
 def test_thinking_tokens_are_part_of_the_output(thinking: int):
     with pytest.raises(ValueError, match="thinking tokens must be from 0 to the output's 30"):
         Usage(10, 30, thinking)
+
+
+@pytest.mark.parametrize("text", ["", "  "])
+def test_thinking_needs_text(text: str):
+    with pytest.raises(ValueError, match=r"thinking needs text; give NoThinking\(\) instead"):
+        Thinking(text)

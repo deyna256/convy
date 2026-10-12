@@ -11,7 +11,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, NoThinking, Usage
 from convy.bench import RunJournal, RunSpec
-from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Verdict
+from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Reason, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
 from convy.http import JsonEndpoint, Tls
@@ -32,7 +32,7 @@ async def test_turns_run_out():
         FakeAgent(Answer("hello", Usage(3, 4))), models("hi"), attempt=1
     )
     assert outcome.stop == "max_turns"
-    assert outcome.verdict == Verdict((Claim(True, "fine"),))
+    assert outcome.verdict == Verdict((Claim(True, Reason("fine")),))
     assert [t.answer.usage for t in outcome.transcript.turns] == [Usage(3, 4)] * 2
     assert all(t.seconds >= 0 for t in outcome.transcript.turns)
     assert (outcome.scenario, outcome.attempt) == ("greet", 1)

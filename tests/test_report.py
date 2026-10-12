@@ -13,7 +13,9 @@ from convy.dialog import (
     Failed,
     Grade,
     Graded,
+    NoReason,
     NoVerdict,
+    Reason,
     Transcript,
     Turn,
     Verdict,
@@ -22,12 +24,12 @@ from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
-PASSED = Verdict((Claim(True, ""),))
-FAILED = Verdict((Claim(False, ""),))
+PASSED = Verdict((Claim(True),))
+FAILED = Verdict((Claim(False),))
 
 
 def unsure(passed: bool, value: float) -> Verdict:
-    return Verdict((Claim(passed, "", Confidence(value)),))
+    return Verdict((Claim(passed, confidence=Confidence(value)),))
 
 
 def outcome(
@@ -86,6 +88,34 @@ def journal(
     return written
 
 
+def test_a_run_of_format_2_reads_its_reasons(tmp_path):
+    """Format 2 kept a claim's reason as a string; it is read as a reason, or none if empty."""
+    written = journal(tmp_path, "bot", "1", 2)
+    folder = written.folder()
+    data = json.loads((folder / "run.json").read_text())
+    assert data["format"] == 3
+    (folder / "run.json").write_text(json.dumps({**data, "format": 2}))
+    line = {
+        "scenario": "a",
+        "attempt": 1,
+        "transcript": {"turns": []},
+        "verdict": {"type": "verdict", "claims": [{"pass": True, "reason": "said hi"}]},
+        "stop": "max_turns",
+    }
+    empty = {
+        **line,
+        "scenario": "b",
+        "verdict": {"type": "verdict", "claims": [{"pass": True, "reason": ""}]},
+    }
+    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n" + json.dumps(empty) + "\n")
+    (run,) = Runs(tmp_path)
+    assert [outcome.verdict for outcome in run.outcomes] == [
+        Verdict((Claim(True, Reason("said hi")),)),
+        Verdict((Claim(True, NoReason()),)),
+    ]
+    assert run.unreadable == 0
+
+
 def test_runs_read_back_what_journals_wrote(tmp_path):
     written = outcome("a", NoVerdict("judge down"))
     run_journal = journal(tmp_path, "bot", "1", 1, written)
@@ -122,7 +152,7 @@ def test_runs_keep_the_lines_they_can_read(tmp_path):
 
 def test_runs_count_a_line_the_scenarios_cannot_explain_as_unreadable(tmp_path):
     good = outcome("a", PASSED)
-    two = Verdict((Claim(True, ""), Claim(True, "")))  # scenario a has one claim
+    two = Verdict((Claim(True), Claim(True)))  # scenario a has one claim
     written = journal(
         tmp_path, "bot", "1", 1, good, outcome("zzz", PASSED), outcome("a", two, attempt=2), k=2
     )
@@ -277,7 +307,7 @@ def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
 def test_a_turn_shows_the_agent_thinking_and_its_tokens(tmp_path):
     turns = (
         Turn(Message("hi"), Answer("a", Usage(10, 30, 20), Thinking("plan")), 1.0),
-        Turn(Message("and?"), Answer("b", Usage(5, 10), Thinking("")), 1.0),  # empty: shows nothing
+        Turn(Message("and?"), Answer("b", Usage(5, 10)), 1.0),  # no thinking
         Turn(Message("ok"), Answer("c", thinking=Thinking("only text")), 1.0),  # no usage
     )
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
@@ -293,8 +323,8 @@ def test_a_turn_shows_the_agent_thinking_and_its_tokens(tmp_path):
 
 
 def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
-    decided = Verdict((Claim(True, "said hi"), Claim(False, "too long")))
-    held = Verdict((Claim(True, ""), Claim(True, "")))
+    decided = Verdict((Claim(True, Reason("said hi")), Claim(False, Reason("too long"))))
+    held = Verdict((Claim(True), Claim(True)))
     played = (outcome("a", v, attempt=n) for n, v in enumerate((decided, held, Failed("down")), 1))
     journal(tmp_path, "bot", "1", 1, *played, k=3, claims=("greets", "is brief"))
     (scenario,) = Report(only(tmp_path)).page().scenarios
@@ -317,7 +347,7 @@ STEPS = Graded("covers every step", ("none", "partial", "full"), "partial")
 def graded(*grades: str) -> list[Outcome]:
     """An attempt per grade of `STEPS`, numbered from 1."""
     return [
-        outcome("a", Verdict((Claim(STEPS.passes(g), "", grade=Grade(g)),)), attempt=n)
+        outcome("a", Verdict((Claim(STEPS.passes(g), grade=Grade(g)),)), attempt=n)
         for n, g in enumerate(grades, 1)
     ]
 

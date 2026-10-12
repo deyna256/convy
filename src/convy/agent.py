@@ -38,6 +38,10 @@ class Thinking(Struct, frozen=True, tag="thinking"):
 
     text: str
 
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("thinking needs text; give NoThinking() instead")
+
 
 class NoThinking(Struct, frozen=True, tag="no_thinking"):
     """The agent did not give its thinking."""

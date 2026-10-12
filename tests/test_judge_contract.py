@@ -2,13 +2,13 @@
 
 import pytest
 
-from convy.dialog import ChatJudge, Claim, Grade, Graded, Judge, Transcript
+from convy.dialog import ChatJudge, Claim, Grade, Graded, Judge, Reason, Transcript
 from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
 DECIDED = '{"claims": [{"pass": true, "reason": "ok"}, {"grade": "most", "reason": "no"}]}'
 CLAIMS = ("greets", Graded("is brief", ("long", "most", "brief"), "brief"))
-CLAIMED = (Claim(True, "ok"), Claim(False, "no", grade=Grade("most")))
+CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no"), grade=Grade("most")))
 
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),

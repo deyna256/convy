@@ -55,9 +55,9 @@ class Turn(Struct, frozen=True):
         """The turn as text, for the judge: the agent's thinking, if the turn has it, on a line
         before what it said."""
         match self.answer.thinking:
-            case Thinking(text=text) if text:
+            case Thinking(text=text):
                 thought = f"Agent (thinking): {text}\n"
-            case Thinking() | NoThinking():
+            case NoThinking():
                 thought = ""
         return f"User: {self.message.text}\n{thought}Agent: {self.answer.text}"
 
@@ -143,6 +143,34 @@ class NoGrade(Struct, frozen=True, tag="no_grade"):
     """The claim is not graded: it only passes or fails."""
 
 
+class Reason(Struct, frozen=True, tag="reason"):
+    """Why the judge decided as it did."""
+
+    text: str
+
+    def __post_init__(self) -> None:
+        if not self.text.strip():
+            raise ValueError("a reason needs text; give NoReason() instead")
+
+
+class NoReason(Struct, frozen=True, tag="no_reason"):
+    """The judge gave no reason."""
+
+
+class PassDecision(Struct, frozen=True):
+    """The judge model's decision on a plain claim, as it writes it."""
+
+    passed: bool = field(name="pass")
+    reason: str | None = None
+
+
+class GradeDecision(Struct, frozen=True):
+    """The judge model's decision on a graded claim, as it writes it: a scale's 4 may come as 4."""
+
+    grade: str | int
+    reason: str | None = None
+
+
 class Graded(Struct, frozen=True, forbid_unknown_fields=True):
     """A claim of a scenario graded on its own grades, from worst to best: `pass` is the worst
     grade that still passes. YAML reads a scale such as `[1, 2, 3]` as numbers."""
@@ -174,7 +202,7 @@ class Claim(Struct, frozen=True):
     has its grade, and passes as the scenario says of that grade."""
 
     passed: bool = field(name="pass")
-    reason: str
+    reason: Reason | NoReason = NoReason()
     confidence: Confidence | NoConfidence = NoConfidence()
     grade: Grade | NoGrade = NoGrade()
 
@@ -287,41 +315,51 @@ class ChatJudge(Struct, frozen=True):
             except json.JSONDecodeError:
                 start = text.find("{", start + 1)
                 continue
-            if isinstance(found, dict) and "claims" in found:
-                return self.claims(found["claims"], claims, text)
+            match found:
+                case {"claims": list() as items}:
+                    return self.claims(items, claims, text)
+                case {"claims": _}:
+                    raise ModelFailure(f'the judge\'s "claims" is not a list: {text[:200]}')
             start = text.find("{", end)  # skip the whole object, nested braces included
         raise ModelFailure(f"the judge did not answer with JSON: {text[:200]}")
 
     def claims(
-        self, found: object, claims: tuple[str | Graded, ...], text: str
+        self, items: list[object], claims: tuple[str | Graded, ...], text: str
     ) -> tuple[Claim, ...]:
-        """The model's "claims", checked: one object per claim, each with a "pass" of true or
-        false, or for a graded claim a "grade" of its own; "true" or 1 is not a decision."""
-        if not isinstance(found, list) or not all(isinstance(item, dict) for item in found):
-            raise ModelFailure(f'the judge\'s "claims" is not a list of objects: {text[:200]}')
-        if len(found) != len(claims):
+        """The model's "claims", one per claim, each read into the decision its claim needs."""
+        if len(items) != len(claims):
             raise ModelFailure(
-                f"the judge decided {len(found)} claims of {len(claims)}: {text[:200]}"
+                f"the judge decided {len(items)} claims of {len(claims)}: {text[:200]}"
             )
         return tuple(
-            self.claim(item, claim, text) for item, claim in zip(found, claims, strict=True)
+            self.claim(number, item, claim, text)
+            for number, (item, claim) in enumerate(zip(items, claims, strict=True), 1)
         )
 
-    def claim(self, item: dict[str, object], claim: str | Graded, text: str) -> Claim:
-        reason = str(item.get("reason", ""))
-        match claim:
-            case str():
-                passed = item.get("pass")
-                if not isinstance(passed, bool):
-                    raise ModelFailure(f'the judge\'s "pass" is not true or false: {text[:200]}')
-                return Claim(passed, reason)
-            case Graded(levels=levels):
-                found = item.get("grade")
-                grade = str(found)  # a scale's 4 is "4"
-                if type(found) not in (str, int) or grade not in levels:
-                    grades = ", ".join(levels)
-                    raise ModelFailure(f'the judge\'s "grade" is not one of {grades}: {text[:200]}')
-                return Claim(claim.passes(grade), reason, grade=Grade(grade))
+    def claim(self, number: int, item: object, claim: str | Graded, text: str) -> Claim:
+        """A plain claim needs a "pass" of true or false, a graded one a "grade" of its own;
+        "true" or 1 is not a decision. A missing, null or blank "reason" is no reason."""
+        try:
+            match claim:
+                case str():
+                    said = msgspec.convert(item, PassDecision)
+                    return Claim(said.passed, self.reason(said.reason))
+                case Graded(levels=levels):
+                    graded = msgspec.convert(item, GradeDecision)
+                    grade = str(graded.grade)  # a scale's 4 is "4"
+                    if grade not in levels:
+                        raise ModelFailure(
+                            f"the judge's claim {number}: the grade {grade!r} is not one of "
+                            f"{', '.join(levels)}: {text[:200]}"
+                        )
+                    return Claim(
+                        claim.passes(grade), self.reason(graded.reason), grade=Grade(grade)
+                    )
+        except msgspec.ValidationError as error:
+            raise ModelFailure(f"the judge's claim {number}: {error}: {text[:200]}") from None
+
+    def reason(self, said: str | None) -> Reason | NoReason:
+        return Reason(said) if said and said.strip() else NoReason()
 
 
 class Checked(Struct, frozen=True):

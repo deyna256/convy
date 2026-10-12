@@ -21,7 +21,7 @@ from convy.bench import (
     Running,
     RunSpec,
 )
-from convy.dialog import ChatJudge, Claim, NoVerdict, Transcript, Verdict
+from convy.dialog import ChatJudge, Claim, NoVerdict, Reason, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
@@ -98,7 +98,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(2, SPEC, Running())
+    assert file == RunFile(3, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()
@@ -107,10 +107,10 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
 def test_attempts_are_appended_a_line_each(tmp_path):
     journal = RunJournal(tmp_path, SPEC)
     journal.create()
-    journal.record(outcome(Verdict((Claim(True, "fine"),))))
+    journal.record(outcome(Verdict((Claim(True, Reason("fine")),))))
     journal.record(outcome(NoVerdict("judge down")))
     assert [msgspec.json.decode(line, type=Outcome).verdict for line in lines(journal)] == [
-        Verdict((Claim(True, "fine"),)),
+        Verdict((Claim(True, Reason("fine")),)),
         NoVerdict("judge down"),
     ]
 

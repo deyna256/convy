@@ -117,7 +117,7 @@ type Status = Running | Finished | Interrupted
 class RunFile(Struct, frozen=True):
     """What `run.json` holds."""
 
-    format: Literal[2]
+    format: Literal[2, 3]
     spec: RunSpec
     status: Status
 
@@ -215,7 +215,7 @@ class RunJournal(Struct, frozen=True):
 
     def write(self, status: Status) -> None:
         temporary = self.folder() / "run.json.tmp"
-        temporary.write_bytes(msgspec.json.encode(RunFile(2, self.spec, status)))
+        temporary.write_bytes(msgspec.json.encode(RunFile(3, self.spec, status)))
         temporary.replace(self.folder() / "run.json")  # never half-written
 
     def record(self, outcome: Outcome) -> None:
