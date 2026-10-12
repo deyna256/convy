@@ -2,6 +2,9 @@
 
 import asyncio
 import os
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
@@ -12,6 +15,11 @@ from msgspec import Struct
 from convy.agent import Agent
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
 
 type Pair = tuple[str, int]  # a scenario's id and an attempt's number
 
@@ -97,6 +105,10 @@ class RunFile(Struct, frozen=True):
     status: Status
 
 
+class RunInUse(Exception):
+    """Another process is playing the run."""
+
+
 class Journal(Protocol):
     """Where outcomes go as soon as they are ready."""
 
@@ -161,6 +173,29 @@ class RunJournal(Struct, frozen=True):
         self.folder().mkdir(parents=True, exist_ok=False)
         self.write(Running())
 
+    @contextmanager
+    def held(self) -> Iterator[None]:
+        """Hold the run's folder for this process through `run.lock`, or raise `RunInUse`. The
+        system lets the lock go when the process ends, however it ends, so the folder of a run
+        whose process died can be held again."""
+        with (self.folder() / "run.lock").open("a+b") as file:  # made when missing, never cut
+            file.seek(0)  # a Windows lock starts where the file is
+            locked = True
+            try:
+                if sys.platform == "win32":
+                    msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except (BlockingIOError, PermissionError):  # taken: EWOULDBLOCK, or EACCES on Windows
+                raise RunInUse(f"run {self.spec.id} is being played by another process") from None
+            except OSError:  # ponytail: a file system without locks plays unguarded, as before
+                locked = False
+            try:
+                yield
+            finally:
+                if sys.platform == "win32" and locked:  # Windows frees a closed file's locks late
+                    msvcrt.locking(file.fileno(), msvcrt.LK_UNLCK, 1)
+
     def write(self, status: Status) -> None:
         temporary = self.folder() / "run.json.tmp"
         temporary.write_bytes(msgspec.json.encode(RunFile(2, self.spec, status)))
@@ -180,12 +215,13 @@ class RunJournal(Struct, frozen=True):
     ) -> tuple[Outcome, ...]:
         """Play the run's attempts not in `done` into `journal` — this one, or one that wraps it —
         and keep the status: running while it plays, then finished, or interrupted when anything
-        stops it."""
-        self.write(Running())
-        try:
-            outcomes = await bench.run(agent, journal, done)
-        except BaseException:  # Ctrl+C cancels the bench; a bug in convy stops it too
-            self.write(Interrupted(datetime.now().astimezone()))
-            raise
-        self.write(Finished(datetime.now().astimezone()))
-        return outcomes
+        stops it. A run another process plays is `RunInUse`, and nothing is played or written."""
+        with self.held():
+            self.write(Running())
+            try:
+                outcomes = await bench.run(agent, journal, done)
+            except BaseException:  # Ctrl+C cancels the bench; a bug in convy stops it too
+                self.write(Interrupted(datetime.now().astimezone()))
+                raise
+            self.write(Finished(datetime.now().astimezone()))
+            return outcomes

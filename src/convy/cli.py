@@ -20,7 +20,7 @@ from pydantic_settings import (
 )
 
 from convy.agent import Agent, NoUsage, TimeLimited, Usage
-from convy.bench import Bench, Files, Finished, Journal, Pair, RunJournal, RunSpec
+from convy.bench import Bench, Files, Finished, Journal, Pair, RunInUse, RunJournal, RunSpec
 from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
@@ -94,7 +94,8 @@ class Rebuilt(Struct, frozen=True):
 
 class Recorded(Struct, frozen=True):
     """A run played into its folder, as the command shows it: on Ctrl+C it says what was
-    recorded and how to continue, rebuilds the report and exits with 130."""
+    recorded and how to continue, rebuilds the report and exits with 130; a run another process
+    plays is an error, exit 2."""
 
     project: Project
     journal: RunJournal
@@ -113,6 +114,9 @@ class Recorded(Struct, frozen=True):
             Rebuilt(self.project).show()
             print(f"report: {self.project.report_page(spec)}")
             raise SystemExit(130) from None
+        except RunInUse as error:
+            print(f"error: {error}", file=sys.stderr)
+            raise SystemExit(2) from None
 
 
 class InitCommand(BaseModel):

@@ -1,11 +1,25 @@
 import asyncio
+import errno
+import subprocess
+import sys
+import time
 from datetime import UTC, datetime
 
 import msgspec
 import pytest
 
 from convy.agent import AgentFailure
-from convy.bench import Bench, Files, Finished, Interrupted, RunFile, RunJournal, Running, RunSpec
+from convy.bench import (
+    Bench,
+    Files,
+    Finished,
+    Interrupted,
+    RunFile,
+    RunInUse,
+    RunJournal,
+    Running,
+    RunSpec,
+)
 from convy.dialog import ChatJudge, Claim, NoVerdict, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeModel, MemoryJournal
 from convy.model import Models
@@ -146,6 +160,77 @@ async def test_a_cancelled_run_is_interrupted(tmp_path):
     with pytest.raises(asyncio.CancelledError):
         await playing
     assert isinstance(status(journal), Interrupted)
+
+
+async def test_a_run_another_process_plays_is_not_played_or_written(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    journal.write(Interrupted(STARTED))
+    journal.record(outcome(NoVerdict("down")))
+    agent = FakeAgent("hello")
+    with journal.held(), pytest.raises(RunInUse, match="is being played by another process"):
+        await journal.play(Bench(SCENARIOS, MODELS), agent, journal)
+    assert agent.opened == 0
+    assert status(journal) == Interrupted(STARTED)
+    assert len(lines(journal)) == 1
+
+
+HOLDER = """
+import sys
+import time
+from pathlib import Path
+
+import msgspec
+
+from convy.bench import RunFile, RunJournal
+
+folder = Path(sys.argv[1])
+file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+with RunJournal(folder.parent.parent, file.spec).held():
+    print("held", flush=True)
+    time.sleep(60)
+"""
+
+
+async def test_a_run_whose_process_died_is_played(tmp_path):
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    holder = subprocess.Popen(
+        [sys.executable, "-c", HOLDER, str(journal.folder())], stdout=subprocess.PIPE, text=True
+    )
+    try:
+        out = holder.stdout
+        assert out is not None
+        assert out.readline() == "held\n"
+        with pytest.raises(RunInUse), journal.held():
+            pass
+    finally:
+        holder.kill()  # as a crash would end it, without a word
+        holder.wait()
+    deadline = time.monotonic() + 5  # Windows frees a dead process's locks soon, not at once
+    while True:
+        try:
+            with journal.held():
+                break
+        except RunInUse:
+            assert time.monotonic() < deadline, "the lock outlived its process"
+            time.sleep(0.05)
+    await journal.play(Bench(SCENARIOS, MODELS, 2), FakeAgent("hello"), journal)
+    assert isinstance(status(journal), Finished)
+
+
+async def test_a_file_system_without_locks_plays_as_before(tmp_path, monkeypatch):
+    def no_locks(*args: object) -> None:
+        raise OSError(errno.ENOLCK, "No locks available")
+
+    monkeypatch.setattr(
+        "convy.bench.msvcrt.locking" if sys.platform == "win32" else "convy.bench.fcntl.flock",
+        no_locks,
+    )
+    journal = RunJournal(tmp_path, SPEC)
+    journal.create()
+    await journal.play(Bench(SCENARIOS, MODELS, 2), FakeAgent("hello"), journal)
+    assert isinstance(status(journal), Finished)
 
 
 def test_a_run_unchanged_has_no_reasons_to_stop():

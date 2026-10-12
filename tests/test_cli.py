@@ -9,7 +9,7 @@ import msgspec
 import pytest
 import time_machine
 
-from convy.bench import Finished, Interrupted, RunFile
+from convy.bench import Finished, Interrupted, RunFile, RunJournal, Running
 from convy.cli import main
 from convy.project import Project
 from convy.scenario import Outcome
@@ -252,6 +252,31 @@ def test_a_finished_run_is_not_resumed(project: Path, capsys):
         capsys.readouterr().err
         == f"error: run {folder.name} is finished; there is nothing to resume\n"
     )
+
+
+def test_a_run_another_process_plays_is_not_resumed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    folder = started_run(project, monkeypatch)
+    before = recorded(folder)
+    capsys.readouterr()
+    spec = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile).spec
+    with RunJournal(project / "results", spec).held():
+        assert convy("resume", folder.name) == 2
+    assert (
+        capsys.readouterr().err == f"error: run {folder.name} is being played by another process\n"
+    )
+    assert recorded(folder) == before
+    assert isinstance(status(folder), Interrupted)
+
+
+def test_a_run_whose_process_died_is_resumed(project: Path, monkeypatch: pytest.MonkeyPatch):
+    folder = started_run(project, monkeypatch)
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    left = msgspec.structs.replace(file, status=Running())  # as `kill -9` leaves it
+    (folder / "run.json").write_bytes(msgspec.json.encode(left))
+    assert convy("resume", folder.name) == 0
+    assert isinstance(status(folder), Finished)
 
 
 @pytest.mark.parametrize(
