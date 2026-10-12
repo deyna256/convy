@@ -62,9 +62,22 @@ Delete its folder and run `convy report`.
 
 ## Exit codes
 
-- `0`: every attempt finished.
+- `0`: every attempt finished, and each pass rate is at least `--fail-under`, if you gave it.
 - `1`: an attempt ended with an agent error or a failure of convy's models. For `convy resume`, an
-  attempt it played.
-- `2`: the project could not be loaded, or the run cannot be resumed, also when another process is
-  playing it. Nothing ran.
+  attempt it played. This wins over `3`: a run with errors does not measure quality.
+- `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
+  resumed, also when another process is playing it.
+- `3`: a pass rate is below `--fail-under`, or no attempt was judged.
 - `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
+
+Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` always
+exits with `0`.
+
+In CI, fail the build when the pass rate is below 90%:
+
+```sh
+uv run convy run support_bot --fail-under 0.9
+```
+
+convy prints each agent's pass rate against the bar, such as
+`support_bot: pass rate 449 of 500 (89.8%), below 90%`.
