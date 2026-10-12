@@ -501,6 +501,26 @@ def test_a_real_change_colours_the_pass_rate_unless_they_disagree(tmp_path):
     assert (mixed.value, mixed.tone) == (10, "noise")  # the rate rises, the evidence says worse
 
 
+def test_a_real_fall_turns_the_pass_rate_red_and_unjudged_attempts_stay_out(tmp_path):
+    def attempts(scenario: str, verdict: Verdict | NoVerdict, count: int, start: int = 1):
+        return [outcome(scenario, verdict, attempt=n) for n in range(start, start + count)]
+
+    # three of six scenarios fall from 3/3 to 0/3: chance gives it about once in a thousand
+    journal(tmp_path, "bot", "1", 6, *[o for s in "abcdef" for o in attempts(s, PASSED, 3)],
+            k=3, started=at(4))  # fmt: skip
+    journal(tmp_path, "bot", "1", 6, *[o for s in "abc" for o in attempts(s, FAILED, 3)],
+            *[o for s in "def" for o in attempts(s, PASSED, 3)], k=3, started=at(5))  # fmt: skip
+    # a falls from 40/40 to 18 of 20 judged: the 20 attempts with no verdict are not failures
+    journal(tmp_path, "other", "1", 1, *attempts("a", PASSED, 40), k=40, started=at(4))
+    journal(tmp_path, "other", "1", 1, *attempts("a", PASSED, 18), *attempts("a", FAILED, 2, 19),
+            *attempts("a", NoVerdict("down"), 20, 21), k=40, started=at(5))  # fmt: skip
+    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
+    real = Comparison(runs[0], runs[1]).page().deltas.rate
+    assert (real.value, real.tone) == (-50, "bad")
+    unjudged = Comparison(runs[2], runs[3]).page().deltas.rate
+    assert (unjudged.value, unjudged.tone) == (-10, "noise")
+
+
 def evidence(*scenarios: tuple[tuple[int, int], tuple[int, int]]) -> Evidence:
     """Evidence from ((held, judged) before, (held, judged) after), one pair per scenario."""
     return Evidence(tuple((Tally(*before), Tally(*after)) for before, after in scenarios))
@@ -513,6 +533,8 @@ def evidence(*scenarios: tuple[tuple[int, int], tuple[int, int]]) -> Evidence:
         ([((3, 3), (0, 3))], 0.1),  # 3/3 to 0/3: 1 in 20 each way
         ([((2, 3), (2, 3))], 1.0),  # no change
         ([], 1.0),  # nothing in common
+        ([((0, 19), (1, 1))], 0.05),  # unequal attempts between the runs: 1 in 20
+        ([((0, 1), (1, 3)), ((0, 1), (2, 4))], 1.0),  # floats that should be equal count as equal
     ],
 )
 def test_evidence_counts_the_chance_of_a_change_by_hand(scenarios: list, chance: float):
@@ -522,8 +544,9 @@ def test_evidence_counts_the_chance_of_a_change_by_hand(scenarios: list, chance:
 @pytest.mark.parametrize(
     ("scenarios", "shows"),
     [
-        ([((0, 1), (1, 1))] * 3, None),  # few scenarios: chance could do it
+        ([((0, 19), (1, 1))], None),  # exactly 5%: not below it
         ([((0, 1), (1, 1))] * 6, "better"),  # the same change over six: 1 in 32
+        ([((10, 40), (8, 10))], "better"),  # fewer attempts after, more of them passed
         ([((20, 20), (10, 20))] + [((20, 20), (20, 20))] * 5, "worse"),  # many attempts
         ([((1, 1), (0, 1))] + [((1, 1), (1, 1))] * 5, None),  # the same fall, one attempt
     ],

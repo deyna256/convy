@@ -222,6 +222,8 @@ class ScenarioView(Struct, frozen=True):
     id: str
     user: str
     max_turns: int
+    held: int  # attempts that passed, of the judged
+    judged: int
     rate: float | None
     result: Result
     claims: tuple[ClaimSummary, ...]
@@ -354,7 +356,7 @@ class Evidence(Struct, frozen=True):
     def totals(self) -> dict[int, float]:
         """How the after run's passes add up over the scenarios, if nothing changed."""
         # ponytail: the work grows with scenarios times attempts (200 scenarios of 50 attempts
-        # take ~18 s); use the CMH chi-square past that size
+        # take up to ~18 s); use the CMH chi-square past that size
         totals = {0: 1.0}
         for before, after in self.scenarios:
             law = self.law(before, after)
@@ -488,6 +490,8 @@ class Summary(Struct, frozen=True):
             id=scenario.id,
             user=scenario.instructions,
             max_turns=scenario.max_turns,
+            held=tally.held,
+            judged=tally.judged,
             rate=tally.rate(),
             result=tally.result(),
             claims=tuple(
@@ -727,15 +731,11 @@ class Comparison(Struct, frozen=True):
         """The tallies of the scenarios both runs played unchanged and judged."""
         return Evidence(
             tuple(
-                (self.tally(before[id]), self.tally(after[id]))
-                for id in sorted(unchanged)
-                if before[id].rate is not None and after[id].rate is not None
+                (Tally(before[id].held, before[id].judged), Tally(after[id].held, after[id].judged))
+                for id in sorted(unchanged)  # in one order, so the float sums never differ
+                if before[id].judged and after[id].judged
             )
         )
-
-    def tally(self, view: ScenarioView) -> Tally:
-        judged = [attempt.passed for attempt in view.attempts if attempt.passed is not None]
-        return Tally(sum(judged), len(judged))
 
 
 class Index(Struct, frozen=True):
