@@ -57,9 +57,9 @@ class RunSpec(Struct, frozen=True):
 
     def code_changes(self, files: Files, convy: str) -> tuple[str, ...]:
         """How the code that plays the run differs from the code it started with: the agent's
-        file, `models.py` and convy itself, each a reason the run cannot continue unchanged. Seen
-        without running any of it. A change in a module the agent imports, or in the service
-        behind it, does not show here."""
+        file, `models.py` and convy itself, each a reason the run cannot continue unchanged. Known
+        without loading the project, so it is checked first. A change in a module these files
+        import, such as `gateway.py`, or in the service behind the agent, does not show here."""
         found = []
         if files.agent != self.files.agent:
             found.append(f"agents/{self.agent}.py changed since the run started")
@@ -74,8 +74,9 @@ class RunSpec(Struct, frozen=True):
         return tuple(found)
 
     def label_changes(self, version: str, user: str, judge: str) -> tuple[str, ...]:
-        """How the names the loaded project gives differ from the run's: the agent's version and
-        the models' names, each a reason the run cannot continue unchanged."""
+        """How the labels the project's code gives itself differ from the run's: the agent's
+        `version` and the models' names, each a reason the run cannot continue unchanged. Known
+        only once the agent and `models.py` are loaded, so `code_changes` comes first."""
         found = []
         if version != self.version:
             found.append(f"the agent's version is {version!r}, the run has {self.version!r}")

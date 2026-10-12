@@ -306,45 +306,33 @@ def test_a_run_whose_agent_is_gone_is_not_resumed(
     capsys.readouterr()
     (project / "agents" / "slow.py").unlink()
     assert convy("resume", folder.name) == 2
-    assert capsys.readouterr().err.startswith("error: ")
+    assert capsys.readouterr().err == (
+        f"error: no agent 'slow': there is no {Path('agents', 'slow.py')}\n"
+    )
     assert isinstance(status(folder), Interrupted)
 
 
-def test_a_run_another_convy_started_is_not_resumed(
+def test_after_an_upgrade_resume_says_so_without_running_the_project(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ):
+    """0.3.0 changes `models.py`, so after an upgrade it may not load: resume must not need it, or
+    the agent's file, to say that the run cannot go on."""
     folder = started_run(project, monkeypatch)
     before = recorded(folder)
     capsys.readouterr()
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     older = msgspec.structs.replace(file, spec=msgspec.structs.replace(file.spec, convy="0.1.0"))
     (folder / "run.json").write_bytes(msgspec.json.encode(older))
+
+    def broken(self: Project, path: Path) -> object:
+        raise AssertionError(f"resume ran {path}")
+
+    monkeypatch.setattr(Project, "module", broken)  # what both the agent and models.py go through
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err == (
         f"error: run {folder.name} cannot resume: convy is {CONVY}, the run started on 0.1.0\n"
     )
     assert recorded(folder) == before
-
-
-def test_after_an_upgrade_resume_says_so_without_running_the_project(
-    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
-):
-    """0.3.0 changes `models.py`, so after an upgrade it may not load: resume must not need it to
-    say that the run cannot go on."""
-    folder = started_run(project, monkeypatch)
-    capsys.readouterr()
-    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
-    older = msgspec.structs.replace(file, spec=msgspec.structs.replace(file.spec, convy="0.1.0"))
-    (folder / "run.json").write_bytes(msgspec.json.encode(older))
-
-    def broken(self: Project) -> object:
-        raise AssertionError("resume ran models.py")
-
-    monkeypatch.setattr(Project, "models", broken)
-    assert convy("resume", folder.name) == 2
-    assert capsys.readouterr().err == (
-        f"error: run {folder.name} cannot resume: convy is {CONVY}, the run started on 0.1.0\n"
-    )
 
 
 def test_resume_keeps_the_turn_timeout_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch):
