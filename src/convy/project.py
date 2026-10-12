@@ -39,17 +39,14 @@ class Project(Struct, frozen=True):
         if not isinstance(found, Models):
             raise ValueError("models.py: expected `models = Models(user=…, judge=…)`")
         judge = found.judge
-        if not isinstance(getattr(judge, "name", None), str) or not callable(
-            getattr(judge, "decide", None)
+        if (
+            not isinstance(getattr(judge, "name", None), str)
+            or not isinstance(getattr(judge, "reviews_agent_thinking", None), bool)
+            or not callable(getattr(judge, "decide", None))
         ):
             raise ValueError(
                 "models.py: expected a judge, such as judge=ChatJudge(model), "
-                "with a `name` and a `decide` method"
-            )
-        if not isinstance(getattr(judge, "reviews_agent_thinking", None), bool):
-            raise ValueError(
-                "models.py: the judge must say whether it reviews the agent's thinking, "
-                "with `reviews_agent_thinking = True` or `False`"
+                "with a `name`, `reviews_agent_thinking` and a `decide` method"
             )
         return found
 

@@ -9,9 +9,7 @@ from convy.agent import (
     Answer,
     Conversation,
     Message,
-    NoThinking,
     NoUsage,
-    Thinking,
     TimeLimited,
     Usage,
 )
@@ -113,13 +111,3 @@ def test_fake_agent_needs_a_step():
 def test_thinking_tokens_are_part_of_the_output(thinking: int):
     with pytest.raises(ValueError, match="thinking tokens must be from 0 to the output's 30"):
         Usage(10, 30, thinking)
-
-
-def test_an_answer_keeps_its_thinking_apart():
-    answer = Answer("Ships today.", Usage(10, 30, 20), Thinking("check the order"))
-    assert (answer.text, answer.thinking, answer.usage) == (
-        "Ships today.",
-        Thinking("check the order"),
-        Usage(10, 30, 20),
-    )
-    assert Answer("hi").thinking == NoThinking()

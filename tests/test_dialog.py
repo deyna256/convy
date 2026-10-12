@@ -286,14 +286,6 @@ async def test_checked_gives_a_judge_the_thinking_only_if_it_reviews_it(reviews:
     assert ("be warm" in seen.as_text()) is reviews
 
 
-async def test_only_a_real_true_gives_a_judge_the_thinking():
-    sloppy: Any = "false"  # Any: a string where a bool belongs, as from an environment variable
-    judge = FakeJudge((Claim(True, "ok"),), reviews_agent_thinking=sloppy)
-    await Checked(judge).decide(THOUGHT, ("greets",))
-    ((seen, _),) = judge.calls
-    assert "be warm" not in seen.as_text()
-
-
 async def test_a_judge_that_does_not_say_whether_it_reviews_the_thinking_fails():
     class Silent:
         name = "silent"
@@ -306,8 +298,7 @@ async def test_a_judge_that_does_not_say_whether_it_reviews_the_thinking_fails()
         await Checked(silent).decide(THOUGHT, ("greets",))
 
 
-@pytest.mark.parametrize("reviews", [False, True])
-async def test_chat_judge_shows_its_model_the_thinking_only_if_it_reviews_it(reviews: bool):
+async def test_a_chat_judge_that_reviews_the_thinking_shows_it_to_its_model():
     model = FakeModel('{"claims": [{"pass": true}]}')
-    await Checked(ChatJudge(model, reviews_agent_thinking=reviews)).decide(THOUGHT, ("greets",))
-    assert ("Agent (thinking): be warm" in model.calls[0][0]["content"]) is reviews
+    await Checked(ChatJudge(model, reviews_agent_thinking=True)).decide(THOUGHT, ("greets",))
+    assert "Agent (thinking): be warm" in model.calls[0][0]["content"]

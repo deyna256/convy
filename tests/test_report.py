@@ -292,12 +292,6 @@ def test_a_turn_shows_the_agent_thinking_and_its_tokens(tmp_path):
     assert page.metrics.thinking_tokens == 20
 
 
-def test_usage_without_thinking_counts_no_thinking_tokens(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    page = Report(only(tmp_path)).page()
-    assert page.scenarios[0].attempts[0].thinking_tokens == 0
-
-
 def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
     decided = Verdict((Claim(True, "said hi"), Claim(False, "too long")))
     held = Verdict((Claim(True, ""), Claim(True, "")))

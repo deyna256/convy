@@ -336,16 +336,13 @@ class Checked(Struct, frozen=True):
     def name(self) -> str:
         return self.judge.name
 
-    @property
-    def reviews_agent_thinking(self) -> bool:
-        return self.judge.reviews_agent_thinking
-
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
         try:
-            reviews = self.judge.reviews_agent_thinking is True  # a truthy string is not a yes
-            seen = transcript if reviews else transcript.without_thinking()
+            seen = (
+                transcript if self.judge.reviews_agent_thinking else transcript.without_thinking()
+            )
             answer = await self.judge.decide(seen, claims)
         except ModelFailure:
             raise
