@@ -44,8 +44,9 @@ Attempts that ended in an error are recorded and are not played again.
 
 While a run is played, its process holds `run.lock`. `convy resume` refuses a run another process
 is still playing, before it plays anything; once that process has ended, however it ended, the run
-resumes. The lock is kept by one machine: a results folder synced between machines, by Dropbox or
-git say, does not carry it, so a run played on another machine is not seen.
+resumes. On Windows the lock can stay a few seconds after a crash; run `convy resume` again. The
+lock is kept by one machine: a results folder synced between machines, for example by Dropbox or
+git, does not carry it, so a run played on another machine is not seen.
 
 ## Forget a run
 

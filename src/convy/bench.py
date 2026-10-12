@@ -175,11 +175,11 @@ class RunJournal(Struct, frozen=True):
 
     @contextmanager
     def held(self) -> Iterator[None]:
-        """Hold the run's folder for this process through `run.lock`, or raise `RunInUse`. The
-        system lets the lock go when the process ends, however it ends, so the folder of a run
-        whose process died can be held again."""
+        """Hold the run's folder for this process through `run.lock`, or raise `RunInUse`; a
+        file system without locks holds nothing. The system lets the lock go when the process
+        ends, however it ends, so the folder of a run whose process died can be held again."""
         with (self.folder() / "run.lock").open("a+b") as file:  # made when missing, never cut
-            file.seek(0)  # a Windows lock starts where the file is
+            file.seek(0)  # a Windows lock starts at the file's position
             locked = True
             try:
                 if sys.platform == "win32":

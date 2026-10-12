@@ -43,5 +43,6 @@ outcomes = asyncio.run(journal.play(bench, Echo(), journal))
 Path("results/echo/first/report.html").write_text(Report(run).html(), encoding="utf-8")
 ```
 
-Put your own agent in place of `Echo()`. The fakes in `convy.fakes` are public too: use them to test
+`play` raises `RunInUse` when another process is playing the run's folder. Put your own agent in
+place of `Echo()`. The fakes in `convy.fakes` are public too: use them to test
 your agent classes without a model.

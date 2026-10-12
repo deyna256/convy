@@ -129,8 +129,8 @@ limits, `asyncio.TaskGroup` for concurrent work, `asyncio.Semaphore` for `--para
 the event loop except the run's append of one short line per attempt and the rewrite of its small
 `run.json`. Durations are measured with `time.monotonic`. One process plays a run's folder at a
 time: `RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it
-ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the
-run `interrupted` on that, or on any other error, and re-raises it.
+ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play`
+marks the run `interrupted` on that, or on any other error, and re-raises it.
 
 **Failure.** Three kinds, one rule each:
 

@@ -195,18 +195,17 @@ with RunJournal(folder.parent.parent, file.spec).held():
 async def test_a_run_whose_process_died_is_played(tmp_path):
     journal = RunJournal(tmp_path, SPEC)
     journal.create()
-    holder = subprocess.Popen(
+    with subprocess.Popen(
         [sys.executable, "-c", HOLDER, str(journal.folder())], stdout=subprocess.PIPE, text=True
-    )
-    try:
-        out = holder.stdout
-        assert out is not None
-        assert out.readline() == "held\n"
-        with pytest.raises(RunInUse), journal.held():
-            pass
-    finally:
-        holder.kill()  # as a crash would end it, without a word
-        holder.wait()
+    ) as holder:
+        try:
+            out = holder.stdout
+            assert out is not None
+            assert out.readline() == "held\n"
+            with pytest.raises(RunInUse), journal.held():
+                pass
+        finally:
+            holder.kill()  # as a crash would end it, without a word
     deadline = time.monotonic() + 5  # Windows frees a dead process's locks soon, not at once
     while True:
         try:
