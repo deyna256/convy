@@ -36,9 +36,15 @@ resume with: convy resume a3f9
 `convy resume` takes the run's id or its random part. It plays the missing attempts with exactly the
 run's settings: the same scenarios, `k`, `--parallel`, `--turn-timeout` and `--trust`.
 
-It refuses, and says why, if the agent's file, `models.py`, the agent's `version` or a model name
-has changed. The run would no longer measure one thing. It cannot see a change in a module the agent
-imports, or in the service behind the agent.
+It refuses, and says why, if the agent's file, `models.py`, the agent's `version`, a model name or
+the convy version has changed. The run would no longer measure one thing. It cannot see a change in
+a module the agent imports, or in the service behind the agent.
+
+The simulated user's and the judge's instructions are part of convy, so a new version of convy may
+play or judge differently. After an upgrade an unfinished run cannot be resumed: finish it with the
+convy it started on (for example `uv add convy==0.2.0`) or start a new run. `convy compare` says
+when two runs were made by different versions of convy; see
+[Compare two runs](report.md#compare-two-runs).
 
 Attempts that ended in an error are recorded and are not played again.
 

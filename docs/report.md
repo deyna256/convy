@@ -63,4 +63,5 @@ attempts; with two in the middle, the worse.
 
 Each run is read with its own `trust`, shown next to it in the page's head.
 
-The runs may be of different agents. The page warns when the user's or the judge's model differs.
+The runs may be of different agents. The page warns when the user's or the judge's model, or the
+convy version, differs.
