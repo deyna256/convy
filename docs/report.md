@@ -11,7 +11,7 @@ Five tiles sum up the run:
 - **Pass rate**: the share of attempts the judge passed, with the count (`67% · 8 of 12 attempts`).
   With `--trust`, it also says how many attempts were left out (`· 4 not trusted`).
 - **Stable scenarios**: those that passed every attempt.
-- **Answer time**: the mean per answer, and the slowest. Only the agent's own time counts, not the
+- **Time per answer**: the mean per answer, and the slowest. Only the agent's own time counts, not the
   simulated user's or the judge's.
 - **Tokens per attempt**: in and out, as the agent reports them.
 - **Errors**: of the agent and of convy's models.
@@ -72,3 +72,7 @@ Each run is read with its own `trust`, shown next to it in the page's head.
 
 The runs may be of different agents. The page warns when the user's or the judge's model, or the
 convy version, differs.
+
+The run and comparison tiles and scenario tables show mean time per answer. In an
+attempt window, **Total answer time** adds the durations of all answers in that
+attempt. Pass-rate changes are shown in **percentage points**, not relative percent.

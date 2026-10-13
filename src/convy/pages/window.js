@@ -62,7 +62,7 @@ function attemptTiles(attempt) {
   const result = kind(attempt.passed);
   return el("div", {className: "mini"},
     el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), attempt.cut ? "Not trusted" : ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
-    el("div", {}, el("span", {className: "l"}, "Answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out${thought(attempt.thinking_tokens)}`)));
 }

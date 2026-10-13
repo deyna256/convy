@@ -703,3 +703,43 @@ def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
     without, with_confidence = both(tmp_path)
     assert Report(without).page().run.confident is False
     assert Report(with_confidence).page().run.confident is True
+
+
+def test_run_html_names_per_answer_and_total_time(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
+    html = Report(only(tmp_path)).html()
+    assert '"Time per answer"' in html
+    assert '"Total answer time"' in html
+    assert '"Answer time"' not in html
+
+
+def test_comparison_html_names_per_answer_time_and_percentage_points(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(7))
+    html = Comparison(*both(tmp_path)).html()
+    assert '"Time per answer"' in html
+    assert '"Total answer time"' in html
+    assert "percentage " in html
+    assert "change(D.rate, percentagePoints)" in html
+    assert '"Answer time"' not in html
+
+
+def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
+    turns = tuple(Turn(Message("hi"), Answer("hello"), seconds) for seconds in (1.0, 2.0, 3.0, 6.0))
+    played = Outcome("a", 1, Transcript(turns), PASSED, "max_turns")
+    journal(tmp_path, "bot", "1", 1, played)
+    page = Report(only(tmp_path)).page()
+    assert page.metrics.seconds == 3.0
+    assert page.scenarios[0].seconds == 3.0
+    assert page.scenarios[0].attempts[0].seconds == 12.0
+
+
+def test_comparison_rate_delta_is_percentage_points(tmp_path):
+    before = tuple(outcome("a", PASSED, attempt=i) for i in range(1, 101))
+    after = (*before[:-1], outcome("a", FAILED, attempt=100))
+    journal(tmp_path, "bot", "1", 1, *before, started=at(6), k=100)
+    journal(tmp_path, "bot", "2", 1, *after, started=at(7), k=100)
+    page = Comparison(*both(tmp_path)).page()
+    assert page.was.rate == 1.0
+    assert page.now.rate == 0.99
+    assert page.deltas.rate.value == pytest.approx(-1.0)
