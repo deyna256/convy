@@ -515,3 +515,58 @@ def test_a_wrong_bar_runs_nothing(project: Path, capsys, argv: tuple[str, ...], 
     assert convy("run", "echo", *argv) == 2
     assert error in capsys.readouterr().err
     assert not (project / "results" / "echo").exists()
+
+
+@pytest.mark.parametrize(
+    ("old_models", "new_models", "code"),
+    [
+        (FAKE_MODELS, FAILING_MODELS, 3),
+        (FAILING_MODELS, FAKE_MODELS, 0),
+        (FAKE_MODELS, FAKE_MODELS, 0),
+    ],
+)
+def test_compare_can_fail_ci_on_a_regression(
+    project: Path, capsys, old_models: str, new_models: str, code: int
+):
+    for i, models in enumerate((old_models, new_models)):
+        (project / "models.py").write_text(models)
+        with time_machine.travel(f"2026-10-13 10:00:0{i}+00:00", tick=False):
+            assert convy("run", "echo", "--scenarios", "clarify-*") == 0
+    before, after = (folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == code
+    out = capsys.readouterr().out
+    assert "comparison:" in out
+    assert ("regressed: clarify-backup" if code == 3 else "no scenario regressed") in out
+    assert (project / "results" / "compare" / f"{before}-vs-{after}.html").is_file()
+
+
+def test_compare_still_succeeds_on_regression_without_the_flag(project: Path, capsys):
+    for i, models in enumerate((FAKE_MODELS, FAILING_MODELS)):
+        (project / "models.py").write_text(models)
+        with time_machine.travel(f"2026-10-13 10:00:0{i}+00:00", tick=False):
+            assert convy("run", "echo", "--scenarios", "clarify-*") == 0
+    before, after = (folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
+    main(["compare", before, after])
+
+
+@pytest.mark.parametrize("new_models", [FAILING_MODELS, UNSURE_MODELS])
+def test_compare_refuses_a_ci_verdict_when_nothing_can_be_compared(
+    project: Path, capsys, new_models: str
+):
+    (project / "models.py").write_text(FAKE_MODELS)
+    with time_machine.travel("2026-10-13 10:00:00+00:00", tick=False):
+        assert convy("run", "echo", "--scenarios", "clarify-*") == 0
+    (project / "models.py").write_text(new_models)
+    if new_models == FAILING_MODELS:
+        scenario = project / "scenarios" / "clarify-backup.yaml"
+        scenario.write_text(scenario.read_text().replace("clarify-backup", "changed-backup"))
+        options = ("--scenarios", "changed-*")
+    else:
+        options = ("--scenarios", "clarify-*", "--trust", "0.8")
+    with time_machine.travel("2026-10-13 10:00:01+00:00", tick=False):
+        assert convy("run", "echo", *options) == 0
+    before, after = (folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == 2
+    assert "no unchanged scenario has a verdict in both runs" in capsys.readouterr().err

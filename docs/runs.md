@@ -71,7 +71,8 @@ Delete its folder and run `convy report`.
 - `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
 
 Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
-with `2` when it cannot find a run it names, else with `0`.
+with `2` when it cannot find a run it names, else with `0` unless you give
+`--fail-on-regression`.
 
 In CI, fail the build when the pass rate is below 90%:
 
@@ -81,3 +82,25 @@ uv run convy run support_bot --fail-under 0.9
 
 convy prints each agent's pass rate against the bar, such as
 `support_bot: pass rate 449 of 500 (89.8%), below 90%`.
+
+## Fail CI when a scenario regresses
+
+Compare a baseline run with the new build:
+
+```sh
+uv run convy compare <before> <after> --fail-on-regression
+```
+
+The page is written before the verdict. The command exits with `3` and lists the
+scenario ids if any unchanged scenario's observed pass rate is lower than before.
+Improvements elsewhere do not cancel a regression. Equal or improved pass rates
+exit with `0`. A scenario added, removed, edited or without a judged attempt in
+either run is not compared; if none can be compared, the command explains why
+and exits with `2` rather than calling the build good.
+
+This uses the same scenario groups as the comparison page. It is a strict check
+of observed rates, not a claim that a difference is statistically significant.
+Use enough attempts and the same models/settings for a meaningful baseline;
+model and convy version differences remain visible on the page.
+
+Without the flag, comparison keeps its existing exit codes.

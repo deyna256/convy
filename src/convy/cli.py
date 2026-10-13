@@ -34,7 +34,7 @@ from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
-from convy.report import Runs, Summary
+from convy.report import Comparison, Runs, Summary
 from convy.scenario import Matching, Outcome, Scenario
 
 SMOKE = Scenario(
@@ -312,6 +312,9 @@ class ReportCommand(BaseModel):
 class CompareCommand(BaseModel):
     before: CliPositionalArg[str] = Field(description="the run to compare with: id or random part")
     after: CliPositionalArg[str] = Field(description="the run that may have changed")
+    fail_on_regression: bool = Field(
+        False, description="exit with 3 when an unchanged scenario has a lower pass rate"
+    )
 
     def cli_cmd(self) -> None:
         project = Project(Path())
@@ -322,6 +325,15 @@ class CompareCommand(BaseModel):
             print(f"error: {error}", file=sys.stderr)
             raise SystemExit(2) from None
         print(f"comparison: {project.compare(before, after)}")
+        if self.fail_on_regression:
+            rows = Comparison(before, after).page().rows
+            compared = [row for row in rows if row.group != "apart"]
+            if not compared:
+                print("error: no unchanged scenario has a verdict in both runs", file=sys.stderr)
+                raise SystemExit(2)
+            worse = [row.id for row in compared if row.group == "worse"]
+            print("regressed: " + ", ".join(worse) if worse else "no scenario regressed")
+            raise SystemExit(3 if worse else 0)
 
 
 class Convy(BaseSettings):
