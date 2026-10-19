@@ -26,9 +26,10 @@ time ([OpenAI, Rate limits](https://developers.openai.com/api/docs/guides/rate-l
 
 - **The caller reports, convy decides.** Only the code that sent a request knows whether the
   service refused it before acting on it. An `Agent`, `Model` or `Judge` raises `Busy`, with the
-  wait the service asked for, exactly then; `JsonConnection` does it for 429, 503 and a connection
-  that could not be made, and retries nothing itself. Anything else is a failure as before, so an
-  agent never gets one message twice.
+  wait the service asked for, exactly then; `JsonConnection` does it for 429 and 503, and retries
+  nothing itself. Anything else is a failure as before, so an agent never gets one message twice.
+  A service that cannot be reached is not busy but gone, often at a wrong address: it fails at
+  once rather than after two minutes of waiting.
 - **One `Patience` for every participant.** It waits for a busy service for up to `seconds` in
   all (120 by default, two windows of a limit per minute): at least the asked wait plus a little
   more, or, without one, a random wait up to a window that doubles from 1 to 30 seconds. When the

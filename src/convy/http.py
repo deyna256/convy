@@ -100,8 +100,8 @@ class JsonConnection(Struct, frozen=True):
             response = await self.http.post(
                 self.endpoint.url, json=body, headers=self.endpoint.headers
             )
-        except (httpx2.ConnectError, httpx2.ConnectTimeout) as error:
-            raise Busy(f"POST {url}: cannot connect: {error}") from error
+        except (httpx2.ConnectError, httpx2.ConnectTimeout) as error:  # gone, not busy: fail now
+            raise HttpFailure(f"POST {url}: cannot connect: {error}") from error
         except UnicodeEncodeError:  # the message would show part of the value, maybe of a key
             names = [name for name, value in self.endpoint.headers.items() if not value.isascii()]
             raise HttpFailure(f"POST {url}: a header value is not ASCII: {names}") from None

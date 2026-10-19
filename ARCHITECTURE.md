@@ -180,9 +180,9 @@ same reason; and in `cli.py` around loading the project, where any error is a co
 
 **Retries** live only in `Patience`, one for each participant of a run. Only a request whose service
 refused it unprocessed is repeated, which its caller reports by raising `Busy`, so an agent never
-gets the same message twice: `JsonConnection` raises it for 429, 503 and a connection that could not
-be made, while a 500, 502, 504 or a read timeout may come after the service acted on the request, so
-it is a failure. Each try of a turn is timed alone, so waiting is not answering.
+gets the same message twice: `JsonConnection` raises it for 429 and 503, while a 500, 502, 504 or a
+read timeout may come after the service acted on the request, and a connection that could not be
+made means no service at all, so each is a failure. Each try of a turn is timed alone, so waiting is not answering.
 
 **Secrets.** Keys are `SecretStr` and never printed. A settings error is shown by field and message
 only, because pydantic's own text includes every value it read; `Env` also sets

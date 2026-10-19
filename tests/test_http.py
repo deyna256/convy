@@ -59,9 +59,13 @@ async def test_a_request_the_service_did_not_process_is_busy_with_the_wait_asked
 
 
 @pytest.mark.parametrize("error", [httpx2.ConnectError("refused"), httpx2.ConnectTimeout("slow")])
-async def test_a_service_that_cannot_be_reached_is_busy(error: Exception):
-    with pytest.raises(Busy, match="cannot connect"):
-        await Service(error).endpoint().post({})
+async def test_a_service_that_cannot_be_reached_fails_at_once(error: Exception):
+    """A wrong address or a service that is down is not busy: waiting for it would only hide the
+    mistake, as in `convy run --smoke`."""
+    service = Service(error)
+    with pytest.raises(HttpFailure, match="cannot connect"):
+        await service.endpoint().post({})
+    assert len(service.requests) == 1
 
 
 @pytest.mark.parametrize(
