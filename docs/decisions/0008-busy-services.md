@@ -27,13 +27,13 @@ time ([OpenAI, Rate limits](https://developers.openai.com/api/docs/guides/rate-l
 - **The caller reports, convy decides.** Only the code that sent a request knows whether the
   service refused it before acting on it. An `Agent`, `Model` or `Judge` raises `Busy`, with the
   wait the service asked for, exactly then; `JsonConnection` does it for 429 and 503, and retries
-  nothing itself. Anything else is a failure as before, so an agent never gets one message twice.
-  A service that cannot be reached is not busy but gone, often at a wrong address: it fails at
-  once rather than after two minutes of waiting.
-- **One `Patience` for every participant.** It waits for a busy service for up to `seconds` in
-  all (120 by default, two windows of a limit per minute): at least the asked wait plus a little
-  more, or, without one, a random wait up to a window that doubles from 1 to 30 seconds. When the
-  asked wait is longer than the time left, it gives up at once.
+  nothing itself. Anything else is a failure as before. A service that cannot be reached is not
+  busy but gone, often at a wrong address: it fails at once rather than after two minutes of
+  waiting.
+- **One `Patience` for every participant.** It tries a busy service again within `seconds` of
+  the first try, 120 by default, so that a limit per minute resets twice: after at least the
+  asked wait plus a little more, or, without one, after a random wait up to a window that doubles
+  from 1 to 30 seconds. When the asked wait is longer than the time left, it gives up at once.
 - **A busy service gets fewer requests at once.** Each time a participant's service says it is
   busy, the participant sends half as many requests at once, down to one, and one more again after
   as many answers, up to its limit: the limit of [0007](0007-participant-limits.md) is a ceiling,
@@ -64,5 +64,5 @@ time ([OpenAI, Rate limits](https://developers.openai.com/api/docs/guides/rate-l
 - An agent, model or judge of one's own gets the same handling by raising `Busy`.
 - `JsonEndpoint` loses `pauses`: a breaking change of the alpha.
 - Opening and closing a conversation are not retried; a busy service there ends the attempt without
-  a verdict.
+  a verdict and leaves the agent fewer places.
 - `seconds` is set only from Python for now.

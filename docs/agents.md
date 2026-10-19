@@ -88,20 +88,21 @@ of it. `Env`'s own errors never show the values they read.
 ## A busy service
 
 When the service refuses a message because it is busy, such as with "429 Too Many Requests", raise
-`Busy` with the wait it asks for, in seconds, or 0 when it does not say:
+`Busy`, and pass the seconds the service asks to wait, if it says:
 
 ```python
 from convy import Busy
 
-        if response.status_code == 429:
-            raise Busy("429", float(response.headers.get("Retry-After", 0)))
+if response.status_code == 429:
+    raise Busy("429")
 ```
 
-convy then waits and sends the message again, for up to 2 minutes, and the wait counts neither in
-the time per answer nor against `--turn-timeout`. If the service is still busy, the attempt has no
-verdict and is left out of the pass rate: convy sent too much, the agent did nothing wrong. Raise
-`Busy` only when the service did not act on the message, or the agent may get it twice. A model or a
-judge of your own raises `Busy` the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
+convy then sends the message again, within 2 minutes of the first try, and the wait counts neither
+in the time per answer nor against `--turn-timeout`. While the service is busy, convy also opens
+fewer conversations at once. If it stays busy, the attempt has no verdict and is left out of the
+pass rate: convy sent too much, the agent did nothing wrong. Raise `Busy` only when the service did
+not act on the message, or the agent may get it twice. A model or a judge of your own raises `Busy`
+the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
 
 ## A client without async
 

@@ -3,12 +3,13 @@ import errno
 import subprocess
 import sys
 import time
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import msgspec
 import pytest
 
-from convy.agent import AgentFailure, TimeLimited
+from convy.agent import AgentFailure, Answer, Message, TimeLimited
 from convy.bench import (
     CONVY,
     Bench,
@@ -114,6 +115,49 @@ async def test_every_participant_waits_for_its_busy_service():
     outcomes = await bench.run(agent, MemoryJournal())
     assert [o.stop for o in outcomes] == ["max_turns"] * 2
     assert all(isinstance(o.verdict, Verdict) for o in outcomes)
+
+
+class Crowded:
+    """An agent whose service refuses the first message of its first four conversations as busy.
+    It keeps how many conversations were open once the fifth opened, the first after them."""
+
+    def __init__(self) -> None:
+        self.opened = 0
+        self.open = 0
+        self.open_with_the_fifth = 0
+
+    @asynccontextmanager
+    async def conversation(self):
+        self.opened += 1
+        self.open += 1
+        if self.opened == 5:
+            self.open_with_the_fifth = self.open
+        try:
+            yield CrowdedConversation(self, refuses=self.opened <= 4)
+        finally:
+            self.open -= 1
+
+
+class CrowdedConversation:
+    def __init__(self, agent: Crowded, refuses: bool):
+        self.agent = agent
+        self.refuses = refuses
+
+    async def answer(self, message: Message) -> Answer:
+        await asyncio.sleep(0.02)
+        if self.refuses:
+            self.refuses = False
+            raise Busy("429", 0.05)
+        return Answer("hello")
+
+
+async def test_a_busy_agent_service_gets_fewer_conversations_at_once():
+    agent = Crowded()
+    bench = Bench(SCENARIOS, MODELS, 6, Limits(agent=4), Patience(first=0.01))
+    outcomes = await bench.run(agent, MemoryJournal())
+    assert [o.stop for o in outcomes] == ["max_turns"] * 12
+    # Without fewer places, the fifth would open as soon as one of the four closed.
+    assert agent.open_with_the_fifth < 4
 
 
 def test_a_bench_rejects_fewer_than_one_attempt():

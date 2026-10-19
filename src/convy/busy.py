@@ -78,27 +78,30 @@ class Places:
                 answer = await request()
             except Busy as busy:
                 self.busy()
+                left = deadline - time.monotonic()
+                if left <= 0 or busy.retry_after > left:
+                    raise Busy(
+                        f"{busy}; still busy, and convy waits up to {self.patience.seconds:g} s",
+                        busy.retry_after,
+                    ) from busy
                 if busy.retry_after:
                     wait = busy.retry_after + random.uniform(0, self.patience.first)
                 else:
                     wait = random.uniform(0, window)
                     window = min(window * 2, self.patience.longest)
-                if time.monotonic() + wait > deadline:
-                    raise Busy(
-                        f"{busy}; still busy, and convy waits up to {self.patience.seconds:g} s",
-                        busy.retry_after,
-                    ) from busy
-                await asyncio.sleep(wait)
+                await asyncio.sleep(min(wait, left))
             else:
-                self.answered()
+                await self.answered()
                 return answer
 
     def busy(self) -> None:
         self.allowed = max(1, self.allowed // 2)
         self.answers = 0
 
-    def answered(self) -> None:
-        self.answers += 1
-        if self.answers >= self.allowed and self.allowed < self.most:
-            self.allowed += 1
-            self.answers = 0
+    async def answered(self) -> None:
+        async with self.changed:
+            self.answers += 1
+            if self.answers >= self.allowed and self.allowed < self.most:
+                self.allowed += 1
+                self.answers = 0
+                self.changed.notify_all()  # a request waiting for a place may go now

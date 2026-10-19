@@ -60,10 +60,10 @@ async def test_a_busy_service_halves_the_places_and_answers_bring_them_back():
         places.busy()
         assert places.allowed == allowed
     for _ in range(1 + 2 + 3):  # one more place after as many answers as there are
-        places.answered()
+        await places.answered()
     assert places.allowed == 4
     for _ in range(100):
-        places.answered()
+        await places.answered()
     assert places.allowed == 8
 
 
@@ -107,3 +107,35 @@ async def test_retries_tell_the_places_how_the_service_answered():
     for _ in range(2):
         await places.retry(service.request)
     assert places.allowed == 3
+
+
+async def test_a_place_that_comes_back_lets_a_waiting_request_in_at_once():
+    places = Places(2, Patience())
+    places.busy()  # one place left
+    entered = asyncio.Event()
+
+    async def holding() -> None:
+        async with places:
+            await asyncio.sleep(1)
+
+    async def waiting() -> None:
+        async with places:
+            entered.set()
+
+    holder = asyncio.create_task(holding())
+    waiter = asyncio.create_task(waiting())
+    await asyncio.sleep(0.01)
+    assert not entered.is_set()
+    await places.retry(Service().request)  # an answer brings the second place back
+    await asyncio.wait_for(entered.wait(), 0.1)
+    holder.cancel()
+    await asyncio.gather(holder, waiter, return_exceptions=True)
+
+
+async def test_without_a_wait_asked_convy_keeps_trying_until_the_time_is_up():
+    places = Places(1, Patience(seconds=0.3, first=0.3, longest=0.3))
+    service = Service(*[Busy("503")] * 1000)
+    start = time.monotonic()
+    with pytest.raises(Busy):
+        await places.retry(service.request)
+    assert 0.28 <= time.monotonic() - start < 0.4  # a random wait is cut to the time left
