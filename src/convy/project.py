@@ -3,15 +3,14 @@
 import hashlib
 import importlib.util
 import sys
-import tomllib
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Annotated
 
-from msgspec import Struct
-from pydantic import BaseModel, Field
+import msgspec
+from msgspec import Meta, Struct
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from convy.agent import Agent
@@ -25,29 +24,64 @@ RENAMED = {"env.example": ".env.example", "gitignore": ".gitignore"}
 COMPILED = "__pycache__"  # pip compiles the installed template; a project does not need it
 
 
-class AgentSettings(BaseModel, extra="forbid", frozen=True):
-    """An agent's own table, `[tool.convy.agents.<name>]`."""
-
-    parallel: int = Field(ge=1)
+type Places = Annotated[int, Meta(ge=1)]  # how much a participant does at once
 
 
-class Settings(BaseSettings):
-    """The project's settings: `[tool.convy]` of its `pyproject.toml`, given to the constructor,
-    then `.env`, then the environment, each over the one before. A variable is `CONVY_` and the key
-    in capitals, an agent's limit `CONVY_AGENTS__<AGENT>__PARALLEL`."""
+class AgentTable(Struct, frozen=True, forbid_unknown_fields=True):
+    """An agent's own table, `[tool.convy.agents.<agent>]`."""
+
+    parallel: Places
+
+
+class Table(Struct, frozen=True, forbid_unknown_fields=True):
+    """`[tool.convy]`: how much each participant does at once, and an agent's own limit."""
+
+    agent_parallel: Places = 4
+    user_parallel: Places = 4
+    judge_parallel: Places = 4
+    agents: dict[str, AgentTable] = {}
+
+    def limits(self, agent: str) -> Limits:
+        """The limits a run of the agent plays with: its own, else `agent_parallel`. Agents are
+        matched in lower case, since the environment gives their names so; of two names alike, the
+        later wins, and the environment's come after the file's."""
+        own = {name.lower(): table for name, table in self.agents.items()}
+        return Limits(
+            agent=own.get(agent.lower(), AgentTable(self.agent_parallel)).parallel,
+            user=self.user_parallel,
+            judge=self.judge_parallel,
+        )
+
+
+class Tools(Struct, frozen=True):
+    """`[tool]` of `pyproject.toml`, as far as convy reads it."""
+
+    convy: Table = Table()
+
+
+class Pyproject(Struct, frozen=True):
+    """`pyproject.toml`, as far as convy reads it."""
+
+    tool: Tools = Tools()
+
+
+class Variables(BaseSettings):
+    """The `CONVY_*` variables of `.env` and the environment, over `[tool.convy]`, which is given
+    to the constructor: a variable is `CONVY_` and the key in capitals, an agent's limit
+    `CONVY_AGENTS__<AGENT>__PARALLEL`. It only reads them; the result is checked as a `Table`."""
 
     model_config = SettingsConfigDict(
-        title="[tool.convy] or CONVY_*",
+        title="CONVY_*",
         env_prefix="CONVY_",
         env_nested_delimiter="__",
         extra="ignore",  # .env holds the project's other settings too, such as its keys
         frozen=True,
         hide_input_in_errors=True,
     )
-    agent_parallel: int = Field(4, ge=1)
-    user_parallel: int = Field(4, ge=1)
-    judge_parallel: int = Field(4, ge=1)
-    agents: dict[str, AgentSettings] = {}
+    agent_parallel: int
+    user_parallel: int
+    judge_parallel: int
+    agents: dict[str, dict[str, int]]
 
     @classmethod
     def settings_customise_sources(
@@ -91,40 +125,24 @@ class Project(Struct, frozen=True):
         return found
 
     def limits(self, agent: str) -> Limits:
-        """The limits a run of the agent plays with: its own, else `agent_parallel`. Agents are
-        matched in lower case, since the environment gives their names so; a lower source comes
-        first in `agents`, so the higher one's limit wins."""
-        settings = Settings(_env_file=self.directory / ".env", **self.table())
-        own = {name.lower(): found for name, found in settings.agents.items()}
-        default = AgentSettings(parallel=settings.agent_parallel)
-        return Limits(
-            agent=own.get(agent.lower(), default).parallel,
-            user=settings.user_parallel,
-            judge=settings.judge_parallel,
-        )
+        return self.table().limits(agent)
 
-    def table(self) -> dict[str, Any]:
-        """`[tool.convy]` of the project's `pyproject.toml`, or nothing without one. A key convy
-        does not know is an error, so a typo does not leave a limit at its default unnoticed, and
-        so are two agents whose names differ only in case."""
+    def table(self) -> Table:
+        """`[tool.convy]` of the project's `pyproject.toml`, then `.env`, then the environment,
+        each over the one before. A key convy does not know in the file is an error, so a typo does
+        not leave a limit at its default unnoticed."""
         path = self.directory / "pyproject.toml"
-        if not path.is_file():
-            return {}
         try:
-            with path.open("rb") as file:
-                found = tomllib.load(file)
-        except tomllib.TOMLDecodeError as error:
+            table = msgspec.toml.decode(path.read_bytes(), type=Pyproject).tool.convy
+        except FileNotFoundError:
+            table = Table()
+        except msgspec.MsgspecError as error:  # not TOML, or not the table convy reads
             raise ValueError(f"{path}: {error}") from None
-        match found:
-            case {"tool": {"convy": dict() as table}}:
-                if unknown := sorted(set(table) - set(Settings.model_fields)):
-                    raise ValueError(f"{path}: [tool.convy] has no {', '.join(unknown)}")
-                match table.get("agents"):
-                    case dict() as agents if len({name.lower() for name in agents}) < len(agents):
-                        raise ValueError(f"{path}: [tool.convy.agents] names an agent twice")
-                return table
-            case _:
-                return {}
+        found = Variables(_env_file=self.directory / ".env", **msgspec.to_builtins(table))
+        try:
+            return msgspec.convert(found.model_dump(), Table)
+        except msgspec.ValidationError as error:
+            raise ValueError(f"CONVY_* variables: {error}") from None
 
     def agent(self, name: str) -> ProjectAgent:
         path = self.agent_file(name)

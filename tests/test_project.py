@@ -198,18 +198,26 @@ def test_limits_default_to_4_without_a_table(tmp_path: Path):
 @pytest.mark.parametrize(
     ("table", "error"),
     [
-        ("[tool.convy]\njudge-parallel = 2\n", "[tool.convy] has no judge-parallel"),
-        ("[tool.convy.agents.bot]\nparalel = 2\n", "paralel"),
-        ("[tool.convy]\nagent_parallel = 0\n", "greater than or equal to 1"),
-        ("[tool.convy\n", "pyproject.toml: Expected ']'"),
         (
-            "[tool.convy.agents.bot]\nparallel = 1\n[tool.convy.agents.Bot]\nparallel = 2\n",
-            "[tool.convy.agents] names an agent twice",
+            "[tool.convy]\njudge-parallel = 2\n",
+            "unknown field `judge-parallel` - at `$.tool.convy`",
         ),
-        ("[tool.convy]\nagents = 5\n", "Input should be a valid dictionary"),
+        ("[tool.convy.agents.bot]\nparalel = 2\n", "unknown field `paralel`"),
+        ("[tool.convy]\nagent_parallel = 0\n", "`int` >= 1 - at `$.tool.convy.agent_parallel`"),
+        ("[tool.convy]\nagents = 5\n", "Expected `object`, got `int` - at `$.tool.convy.agents`"),
+        ("[tool.convy\n", "Expected ']'"),
     ],
 )
-def test_a_wrong_limit_is_an_error(tmp_path: Path, table: str, error: str):
+def test_a_wrong_table_is_an_error_that_names_the_file(tmp_path: Path, table: str, error: str):
     write(tmp_path / "pyproject.toml", table)
-    with pytest.raises(ValueError, match=re.escape(error)):
+    with pytest.raises(ValueError, match=re.escape(f"{tmp_path / 'pyproject.toml'}: ")) as raised:
+        Project(tmp_path).limits("bot")
+    assert error in str(raised.value)
+
+
+def test_a_wrong_variable_is_an_error_that_names_the_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
+    with pytest.raises(ValueError, match=re.escape("CONVY_* variables: Expected `int` >= 1")):
         Project(tmp_path).limits("bot")

@@ -495,7 +495,7 @@ def test_a_wrong_limit_resumes_nothing(project: Path, monkeypatch: pytest.Monkey
     capsys.readouterr()
     monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
     assert convy("resume", folder.name) == 2
-    assert "error: [tool.convy] or CONVY_*: judge_parallel: " in capsys.readouterr().err
+    assert "error: CONVY_* variables: Expected `int` >= 1" in capsys.readouterr().err
     assert recorded(folder) == before
     assert isinstance(status(folder), Interrupted)
 
@@ -524,14 +524,20 @@ def test_parallel_is_gone_and_the_command_says_where_limits_are(
     assert not (project / "results").exists()
 
 
-def test_a_wrong_limit_runs_nothing(project: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ("0", "error: CONVY_* variables: Expected `int` >= 1 - at `$.judge_parallel`\n"),
+        ("many", "error: CONVY_*: judge_parallel: Input should be a valid integer, "),
+    ],
+)
+def test_a_wrong_limit_runs_nothing(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys, value: str, error: str
+):
     (project / "models.py").write_text(FAKE_MODELS)
-    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
+    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", value)
     assert convy("run", "echo") == 2
-    assert capsys.readouterr().err == (
-        "error: [tool.convy] or CONVY_*: judge_parallel: "
-        "Input should be greater than or equal to 1\n"
-    )
+    assert capsys.readouterr().err.startswith(error)
     assert not (project / "results").exists()
 
 

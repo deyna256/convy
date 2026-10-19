@@ -67,10 +67,12 @@ and holds secrets.
   own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`; they override the file for one run or one
   machine, such as CI. The keys use underscores, as pytest's and mypy's do, so that a key and its
   variable have one name: pydantic-settings cannot read keys with dashes and still match the
-  variables. A key convy does not know in `[tool.convy]` is an error, so a typo does not leave a
-  limit at 4 unnoticed. Agents are matched without regard to case: the environment gives names in
-  one case, and on Windows its names have no case at all. convy reads `pyproject.toml` and `.env`
-  in the project's folder.
+  variables. msgspec reads `[tool.convy]` into a `Table` and checks it, as it checks every file
+  convy reads; pydantic-settings only reads `.env` and the environment over it, and msgspec
+  checks the result again. A key convy does not know in `[tool.convy]` is an error, so a typo
+  does not leave a limit at 4 unnoticed. Agents are matched without regard to case: the
+  environment gives names in one case, and on Windows its names have no case at all. convy reads
+  `pyproject.toml` and `.env` in the project's folder.
 - **`--parallel` is removed.** The command says where the limits are now when it is given.
 - **A run records its limits,** as it records `k`. The run's format moves from 3 to 4. A run
   written before reads its one `parallel` as the limit of every participant, since it held all
@@ -114,4 +116,4 @@ and holds secrets.
   alpha, listed in the changelog.
 - If the user waits long for its slot, the agent's conversation stays open and the agent idles. The
   docs say to keep the user's limit at least as high as the agent's.
-- `pydantic-settings` reads `pyproject.toml` and the environment itself, so no dependency is added.
+- msgspec reads `pyproject.toml` and pydantic-settings the environment, so no dependency is added.
