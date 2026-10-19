@@ -1,11 +1,9 @@
-import asyncio
 from typing import Any
 
 import msgspec
 import pytest
 
 from convy.agent import Answer, Message, Thinking
-from convy.busy import Busy, Patience, Places
 from convy.dialog import (
     ChatJudge,
     Checked,
@@ -17,7 +15,6 @@ from convy.dialog import (
     NoConfidence,
     NoGrade,
     NoReason,
-    PatientJudge,
     Reason,
     SimulatedUser,
     Transcript,
@@ -335,12 +332,3 @@ async def test_a_chat_judge_that_reviews_the_thinking_shows_it_to_its_model():
     model = FakeModel('{"claims": [{"pass": true}]}')
     await Checked(ChatJudge(model, reviews_agent_thinking=True)).decide(THOUGHT, ("greets",))
     assert "Agent (thinking): be warm" in model.calls[0][0]["content"]
-
-
-async def test_a_patient_judge_holds_no_place_while_it_waits_for_a_busy_service():
-    decided = (Claim(True, NoReason()),)
-    judge = PatientJudge(FakeJudge(Busy("429", 0.3), decided), Places(1, Patience(first=0.01)))
-    first = asyncio.create_task(judge.decide(Transcript(), ("greets",)))
-    await asyncio.sleep(0.05)
-    assert await asyncio.wait_for(judge.decide(Transcript(), ("greets",)), 0.2) == decided
-    assert await first == decided

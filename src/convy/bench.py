@@ -168,15 +168,17 @@ class Bench(Struct, frozen=True):
         """Play every scenario `attempts` times, each participant within its limit, fewer at once
         while its service is busy, and waiting for it as `patience` allows; skip the attempts in
         `done`. The places are made here, in the event loop that waits for them."""
-        places = Places(self.limits.agent, self.patience)
-        queued = QueuedAgent(agent, places)
+        conversations = Places(self.limits.agent, self.patience)
+        queued = QueuedAgent(agent, conversations)
         models = Models(
             PatientModel(self.models.user, Places(self.limits.user, self.patience)),
             PatientJudge(self.models.judge, Places(self.limits.judge, self.patience)),
         )
         async with asyncio.TaskGroup() as group:
             tasks = [
-                group.create_task(self.played(scenario, attempt, queued, models, places, journal))
+                group.create_task(
+                    self.played(scenario, attempt, queued, models, conversations, journal)
+                )
                 for scenario in self.scenarios
                 for attempt in range(1, self.attempts + 1)
                 if (scenario.id, attempt) not in done
@@ -189,10 +191,10 @@ class Bench(Struct, frozen=True):
         attempt: int,
         agent: Agent,
         models: Models,
-        places: Places,
+        conversations: Places,
         journal: Journal,
     ) -> Outcome:
-        outcome = await scenario.outcome(agent, models, attempt, places)
+        outcome = await scenario.outcome(agent, models, attempt, conversations)
         journal.record(outcome)
         return outcome
 

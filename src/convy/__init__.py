@@ -24,7 +24,7 @@ from convy.bench import (
     Running,
     RunSpec,
 )
-from convy.busy import Busy, Patience
+from convy.busy import Busy, Patience, Places
 from convy.dialog import (
     ChatJudge,
     Claim,
@@ -87,6 +87,7 @@ __all__ = [
     "OpenAiModel",
     "Outcome",
     "Patience",
+    "Places",
     "Reason",
     "Report",
     "Run",

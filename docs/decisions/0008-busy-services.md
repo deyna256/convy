@@ -25,8 +25,8 @@ time ([OpenAI, Rate limits](https://developers.openai.com/api/docs/guides/rate-l
 ## Decision
 
 - **The caller reports, convy decides.** Only the code that sent a request knows whether the
-  service refused it before acting on it. An `Agent`, `Model` or `Judge` raises `Busy`, with the
-  wait the service asked for, exactly then; `JsonConnection` does it for 429 and 503, and retries
+  service refused it before acting on it. An `Agent`, `Model` or `Judge` raises `Busy` then, with
+  the wait the service asked for; `JsonConnection` does it for 429 and 503, and retries
   nothing itself. Anything else is a failure as before. A service that cannot be reached is not
   busy but gone, often at a wrong address: it fails at once rather than after two minutes of
   waiting.

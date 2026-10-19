@@ -41,7 +41,7 @@ async def test_a_service_still_busy_when_the_time_is_up_is_busy():
     service = Service(*[Busy("503")] * 100)
     places = Places(1, Patience(seconds=0.1, first=0.02, longest=0.02))
     start = time.monotonic()
-    with pytest.raises(Busy, match=re.escape("503; still busy, and convy waits up to 0.1 s")):
+    with pytest.raises(Busy, match=re.escape("503; convy waits up to 0.1 s from the first try")):
         await places.retry(service.request)
     assert time.monotonic() - start < 0.2
 

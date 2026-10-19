@@ -81,7 +81,7 @@ class Places:
                 left = deadline - time.monotonic()
                 if left <= 0 or busy.retry_after > left:
                     raise Busy(
-                        f"{busy}; still busy, and convy waits up to {self.patience.seconds:g} s",
+                        f"{busy}; convy waits up to {self.patience.seconds:g} s from the first try",
                         busy.retry_after,
                     ) from busy
                 if busy.retry_after:

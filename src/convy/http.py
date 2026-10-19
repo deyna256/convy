@@ -22,7 +22,7 @@ PLACEHOLDER = re.compile(r"\{(text|session)\}")
 
 
 class HttpFailure(Exception):
-    """A request failed, and the service may have acted on it."""
+    """A request failed, and convy does not send it again."""
 
 
 class Tls(Struct, frozen=True):

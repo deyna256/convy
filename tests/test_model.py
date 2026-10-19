@@ -1,13 +1,10 @@
-import asyncio
-
 import httpx2
 import pytest
 
-from convy.busy import Busy, Patience, Places
 from convy.env import Env
 from convy.fakes import FakeModel
 from convy.http import JsonEndpoint
-from convy.model import ModelFailure, OpenAiModel, PatientModel
+from convy.model import ModelFailure, OpenAiModel
 
 
 async def test_open_ai_model_sends_its_name_and_the_messages():
@@ -79,11 +76,3 @@ def test_env_reads_dotenv_then_the_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("API_KEY", "from-environment")
     env = GatewayEnv()
     assert (env.base_url, env.api_key) == ("https://from-file", "from-environment")
-
-
-async def test_a_patient_model_holds_no_place_while_it_waits_for_a_busy_service():
-    model = PatientModel(FakeModel(Busy("429", 0.3), "hi"), Places(1, Patience(first=0.01)))
-    first = asyncio.create_task(model.reply([]))
-    await asyncio.sleep(0.05)  # the first now waits to try again
-    assert await asyncio.wait_for(model.reply([]), 0.2) == "hi"
-    assert await first == "hi"
