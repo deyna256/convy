@@ -88,19 +88,14 @@ CONVY_JUDGE_PARALLEL=1 uv run convy run support_bot
 CONVY_AGENTS__SUPPORT_BOT__PARALLEL=5 uv run convy run support_bot
 ```
 
-`pyproject.toml` comes first, then `.env`, then the environment; each wins over the one before.
-convy reads `pyproject.toml` and `.env` in the project's folder. A key it does not know in
-`[tool.convy]` is an error, so a typo does not leave a limit at 4 unnoticed. Agents are matched
-without regard to case, since the environment gives their names in one case: `Support_Bot`,
-`support_bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` all mean one agent. Of two tables whose
-names differ only in case, the later one counts.
+The environment wins over `.env` in the project's folder, and both win over `pyproject.toml`. A key
+convy does not know in `[tool.convy]` is an error. Agent names are matched in any case, so
+`Support_Bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` mean one agent.
 
 The wait for a place counts neither in the time per answer nor against `--turn-timeout`. Keep the
 user's limit at least as high as the agent's: a conversation that waits for the user's message keeps
-its place, and the agent waits with it.
-
-A run records the limits it started with. `convy compare` says when two runs had different agent
-limits, since an agent under more load may answer slower.
+its place. `convy compare` says when two runs had different agent limits, since an agent under more
+load may answer slower.
 
 ## Forget a run
 
