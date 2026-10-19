@@ -7,11 +7,14 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import ModuleType
+from typing import Annotated
 
-from msgspec import Struct
+import msgspec
+from msgspec import Meta, Struct
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from convy.agent import Agent
-from convy.bench import Files, RunSpec
+from convy.bench import Files, Limits, RunSpec
 from convy.model import Models
 from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Scenarios
@@ -19,6 +22,78 @@ from convy.scenario import Scenarios
 # Files in the template whose names would otherwise be hidden from the package.
 RENAMED = {"env.example": ".env.example", "gitignore": ".gitignore"}
 COMPILED = "__pycache__"  # pip compiles the installed template; a project does not need it
+
+
+type Places = Annotated[int, Meta(ge=1)]  # how much a participant does at once
+
+
+class AgentSettings(Struct, frozen=True, forbid_unknown_fields=True):
+    """An agent's own table, `[tool.convy.agents.<agent>]`."""
+
+    parallel: Places
+
+
+class Settings(Struct, frozen=True, forbid_unknown_fields=True):
+    """The project's settings, as `[tool.convy]` holds them: how much each participant does at
+    once, and an agent's own limit."""
+
+    agent_parallel: Places = 4
+    user_parallel: Places = 4
+    judge_parallel: Places = 4
+    agents: dict[str, AgentSettings] = {}
+
+    def limits(self, agent: str) -> Limits:
+        """The limits a run of the agent plays with: its own, else `agent_parallel`. Agents are
+        matched in lower case, since the environment gives their names so; of two names alike, the
+        later wins, and the environment's come after the file's."""
+        own = {name.lower(): found for name, found in self.agents.items()}
+        return Limits(
+            agent=own.get(agent.lower(), AgentSettings(self.agent_parallel)).parallel,
+            user=self.user_parallel,
+            judge=self.judge_parallel,
+        )
+
+
+class Tools(Struct, frozen=True):
+    """`[tool]` of `pyproject.toml`, as far as convy reads it."""
+
+    convy: Settings = Settings()
+
+
+class Pyproject(Struct, frozen=True):
+    """`pyproject.toml`, as far as convy reads it."""
+
+    tool: Tools = Tools()
+
+
+class Variables(BaseSettings):
+    """The `CONVY_*` variables of `.env` and the environment, over `[tool.convy]`, which is given
+    to the constructor: a variable is `CONVY_` and the key in capitals, an agent's limit
+    `CONVY_AGENTS__<AGENT>__PARALLEL`. It only reads them; the result is checked as `Settings`."""
+
+    model_config = SettingsConfigDict(
+        title="CONVY_* variables",
+        env_prefix="CONVY_",
+        env_nested_delimiter="__",
+        extra="ignore",  # .env holds the project's other settings too, such as its keys
+        frozen=True,
+        hide_input_in_errors=True,
+    )
+    agent_parallel: int
+    user_parallel: int
+    judge_parallel: int
+    agents: dict[str, dict[str, int]]
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return env_settings, dotenv_settings, init_settings
 
 
 class ProjectAgent(Struct, frozen=True):
@@ -49,6 +124,26 @@ class Project(Struct, frozen=True):
                 "with a `name`, `reviews_agent_thinking` and a `decide` method"
             )
         return found
+
+    def limits(self, agent: str) -> Limits:
+        return self.settings().limits(agent)
+
+    def settings(self) -> Settings:
+        """`[tool.convy]` of the project's `pyproject.toml`, then `.env`, then the environment,
+        each over the one before. A key convy does not know in the file is an error, so a typo does
+        not leave a limit at its default unnoticed."""
+        path = self.directory / "pyproject.toml"
+        try:
+            table = msgspec.toml.decode(path.read_bytes(), type=Pyproject).tool.convy
+        except FileNotFoundError:
+            table = Settings()
+        except msgspec.MsgspecError as error:  # not TOML, or not the table convy reads
+            raise ValueError(f"{path}: {error}") from None
+        found = Variables(_env_file=self.directory / ".env", **msgspec.to_builtins(table))
+        try:
+            return msgspec.convert(found.model_dump(), Settings)
+        except msgspec.ValidationError as error:
+            raise ValueError(f"CONVY_* variables: {error}") from None
 
     def agent(self, name: str) -> ProjectAgent:
         path = self.agent_file(name)

@@ -155,7 +155,8 @@ class SupportChat:
 ```
 
 The counter must belong to the conversation. A counter shared by conversations that run at the same
-time mixes their tokens. Run such an agent with `--parallel 1`.
+time mixes their tokens. Give such an agent a limit of 1, `parallel = 1` under
+`[tool.convy.agents.<agent>]`; see [How much runs at once](runs.md#how-much-runs-at-once).
 
 ## No tokens at all
 

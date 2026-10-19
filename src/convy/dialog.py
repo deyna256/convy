@@ -1,5 +1,6 @@
 """The dialogue: its record, the simulated user who drives it, and the judge who rates it."""
 
+import asyncio
 import json
 from typing import Protocol
 
@@ -360,6 +361,27 @@ class ChatJudge(Struct, frozen=True):
 
     def reason(self, said: str | None) -> Reason | NoReason:
         return Reason(said) if said and said.strip() else NoReason()
+
+
+class QueuedJudge(Struct, frozen=True):
+    """The same judge, holding a place of `places` for each decision."""
+
+    judge: Judge
+    places: asyncio.Semaphore
+
+    @property
+    def name(self) -> str:
+        return self.judge.name
+
+    @property
+    def reviews_agent_thinking(self) -> bool:
+        return self.judge.reviews_agent_thinking
+
+    async def decide(
+        self, transcript: Transcript, claims: tuple[str | Graded, ...]
+    ) -> tuple[Claim, ...]:
+        async with self.places:
+            return await self.judge.decide(transcript, claims)
 
 
 class Checked(Struct, frozen=True):

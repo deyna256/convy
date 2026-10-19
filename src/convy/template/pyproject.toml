@@ -3,3 +3,11 @@ name = "convy-project"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["convy==0.3.0"]
+
+# How much convy does at once; a limit not given is 4. CONVY_AGENT_PARALLEL and the like override
+# these for one run. See
+# https://github.com/deyna256/convy/blob/main/docs/runs.md#how-much-runs-at-once
+[tool.convy]
+agent_parallel = 4  # conversations at once with each agent
+user_parallel = 4   # messages of the simulated user at once
+judge_parallel = 4  # decisions of the judge at once

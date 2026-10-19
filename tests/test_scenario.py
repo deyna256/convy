@@ -160,7 +160,17 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
     outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
     assert outcome.stop == "model_failure"
     started = datetime(2026, 10, 6, tzinfo=UTC)
-    spec = RunSpec("run", "bot", "", "fake", "gpt", 1, 1, 600, (SCENARIO,), started)
+    spec = RunSpec(
+        id="run",
+        agent="bot",
+        version="",
+        user="fake",
+        judge="gpt",
+        k=1,
+        turn_timeout=600,
+        scenarios=(SCENARIO,),
+        started=started,
+    )
     journal = RunJournal(tmp_path, spec)
     journal.create()
     journal.record(outcome)

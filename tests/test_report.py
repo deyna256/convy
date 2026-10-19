@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from convy.agent import Answer, Message, NoUsage, Thinking, Usage
-from convy.bench import CONVY, Finished, Interrupted, RunJournal, RunSpec
+from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
     Confidence,
@@ -24,6 +24,7 @@ from convy.report import Comparison, Evidence, Index, Report, Run, Runs, Tally
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
+DEFAULT_LIMITS = Limits()
 PASSED = Verdict((Claim(True),))
 FAILED = Verdict((Claim(False),))
 
@@ -64,22 +65,25 @@ def journal(
     claims: tuple[str | Graded, ...] = ("greets",),
     trust: float = 0.0,
     convy: str = CONVY,
+    limits: Limits = DEFAULT_LIMITS,
 ) -> RunJournal:
     """A run of `scenarios` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
     started = started or datetime.now(UTC)
     played = tuple(Scenario(chr(97 + i), 1, asks, claims) for i in range(scenarios))
+    user, judge = models
     spec = RunSpec(
-        id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
-        agent,
-        version,
-        *models,
-        k,
-        4,
-        600,
-        played,
-        started,
+        id=id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
+        agent=agent,
+        version=version,
+        user=user,
+        judge=judge,
+        k=k,
+        turn_timeout=600,
+        scenarios=played,
+        started=started,
         trust=trust,
         convy=convy,
+        limits=limits,
     )
     written = RunJournal(directory, spec)
     written.create()
@@ -93,8 +97,9 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     written = journal(tmp_path, "bot", "1", 2)
     folder = written.folder()
     data = json.loads((folder / "run.json").read_text())
-    assert data["format"] == 3
-    (folder / "run.json").write_text(json.dumps({**data, "format": 2}))
+    assert data["format"] == 4
+    older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 4}}
+    (folder / "run.json").write_text(json.dumps(older))
     line = {
         "scenario": "a",
         "attempt": 1,
@@ -114,6 +119,18 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
         Verdict((Claim(True, NoReason()),)),
     ]
     assert run.unreadable == 0
+
+
+@pytest.mark.parametrize("format", [2, 3])
+def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, format: int):
+    folder = journal(tmp_path, "bot", "1", 1).folder()
+    data = json.loads((folder / "run.json").read_text())
+    del data["spec"]["limits"]
+    older = {**data, "format": format, "spec": {**data["spec"], "parallel": 2}}
+    (folder / "run.json").write_text(json.dumps(older))
+    (run,) = Runs(tmp_path)
+    assert run.spec.limits == Limits(agent=2, user=2, judge=2)
+    assert run.format == format
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
@@ -571,6 +588,28 @@ def test_a_comparison_names_the_models_that_differ(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), models=("u", "j2"))
     assert Comparison(*both(tmp_path)).page().differences == ("judge: j → j2",)
+
+
+def test_a_comparison_names_another_agent_limit_but_not_other_limits(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=at(5),
+        limits=Limits(agent=4, user=1, judge=1),
+    )
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=at(6),
+        limits=Limits(agent=20, user=8, judge=2),
+    )
+    assert Comparison(*both(tmp_path)).page().differences == ("agent limit: 4 → 20",)
 
 
 @pytest.mark.parametrize(("then", "shown"), [("0.1.0", "0.1.0"), ("", "unknown")])

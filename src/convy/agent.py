@@ -1,4 +1,5 @@
-"""What convy needs from an agent, and the wrapper that limits the time of each of its steps."""
+"""What convy needs from an agent, and the wrappers that limit the time of each of its steps and
+the conversations it holds at once."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -98,6 +99,20 @@ class TimeLimited(Struct, frozen=True):
                     f"the conversation did not open or close in {self.seconds:g} s"
                 ) from None
             raise
+
+
+class QueuedAgent(Struct, frozen=True):
+    """The same agent, holding a place of `places` while a conversation is open, from opening to
+    closing. A conversation waits for its place before it opens, so the wait counts neither in an
+    answer's time nor against a time limit inside."""
+
+    agent: Agent
+    places: asyncio.Semaphore
+
+    @asynccontextmanager
+    async def conversation(self) -> AsyncIterator[Conversation]:
+        async with self.places, self.agent.conversation() as conversation:
+            yield conversation
 
 
 class LimitedConversation(Struct, frozen=True):

@@ -1,8 +1,19 @@
 """The promises every `Judge` keeps, checked on each implementation convy ships."""
 
+import asyncio
+
 import pytest
 
-from convy.dialog import ChatJudge, Claim, Grade, Graded, Judge, Reason, Transcript
+from convy.dialog import (
+    ChatJudge,
+    Claim,
+    Grade,
+    Graded,
+    Judge,
+    QueuedJudge,
+    Reason,
+    Transcript,
+)
 from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
@@ -13,10 +24,12 @@ CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no"), grade=Grade("mo
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),
     "FakeJudge": lambda: FakeJudge(CLAIMED),
+    "QueuedJudge": lambda: QueuedJudge(FakeJudge(CLAIMED), asyncio.Semaphore(1)),
 }
 FAILING = {
     "ChatJudge": lambda: ChatJudge(FakeModel(ModelFailure("down"))),
     "FakeJudge": lambda: FakeJudge(ModelFailure("down")),
+    "QueuedJudge": lambda: QueuedJudge(FakeJudge(ModelFailure("down")), asyncio.Semaphore(1)),
 }
 
 

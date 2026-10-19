@@ -13,8 +13,9 @@ from typing import Literal, Protocol
 import msgspec
 from msgspec import Struct
 
-from convy.agent import Agent
-from convy.model import Models
+from convy.agent import Agent, QueuedAgent
+from convy.dialog import QueuedJudge
+from convy.model import Models, QueuedModel
 from convy.scenario import Outcome, Scenario
 
 if sys.platform == "win32":
@@ -34,8 +35,23 @@ class Files(Struct, frozen=True):
     models: str = ""
 
 
-class RunSpec(Struct, frozen=True):
-    """What a run plays and with what: everything needed to continue it unchanged."""
+class Limits(Struct, frozen=True, kw_only=True):
+    """How much each participant does at once: conversations with the agent, messages of the
+    simulated user, decisions of the judge. Given by name, since the three are easy to swap."""
+
+    agent: int = 4
+    user: int = 4
+    judge: int = 4
+
+    def __post_init__(self) -> None:
+        for name, value in (("agent", self.agent), ("user", self.user), ("judge", self.judge)):
+            if value < 1:
+                raise ValueError(f"the {name}'s limit must be at least 1, got {value}")
+
+
+class RunSpec(Struct, frozen=True, kw_only=True):
+    """What a run plays and with what: everything needed to continue it unchanged. Its fields are
+    given by name: a call that gave them in an older order fails instead of mixing them up."""
 
     id: str
     agent: str
@@ -43,13 +59,13 @@ class RunSpec(Struct, frozen=True):
     user: str
     judge: str
     k: int
-    parallel: int
     turn_timeout: float
     scenarios: tuple[Scenario, ...]
     started: datetime
     convy: str = CONVY
     files: Files = Files()
     trust: float = 0.0  # decisions the judge is less sure of are cut out; 0 cuts nothing
+    limits: Limits = Limits()  # the limits the run started with; a resumed run may use others
 
     def __post_init__(self) -> None:
         if not 0 <= self.trust <= 1:
@@ -117,7 +133,7 @@ type Status = Running | Finished | Interrupted
 class RunFile(Struct, frozen=True):
     """What `run.json` holds."""
 
-    format: Literal[2, 3]
+    format: Literal[2, 3, 4]
     spec: RunSpec
     status: Status
 
@@ -138,23 +154,25 @@ class Bench(Struct, frozen=True):
     scenarios: tuple[Scenario, ...]
     models: Models
     attempts: int = 1
-    parallel: int = 4
+    limits: Limits = Limits()
 
     def __post_init__(self) -> None:
         if self.attempts < 1:
             raise ValueError(f"attempts must be at least 1, got {self.attempts}")
-        if self.parallel < 1:
-            raise ValueError(f"parallel must be at least 1, got {self.parallel}")
 
     async def run(
         self, agent: Agent, journal: Journal, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
-        """Play every scenario `attempts` times, at most `parallel` conversations at once; skip
-        the attempts in `done`."""
-        limit = asyncio.Semaphore(self.parallel)
+        """Play every scenario `attempts` times, each participant within its limit; skip the
+        attempts in `done`. The places are made here, in the event loop that waits for them."""
+        queued = QueuedAgent(agent, asyncio.Semaphore(self.limits.agent))
+        models = Models(
+            QueuedModel(self.models.user, asyncio.Semaphore(self.limits.user)),
+            QueuedJudge(self.models.judge, asyncio.Semaphore(self.limits.judge)),
+        )
         async with asyncio.TaskGroup() as group:
             tasks = [
-                group.create_task(self.played(scenario, attempt, agent, journal, limit))
+                group.create_task(self.played(scenario, attempt, queued, models, journal))
                 for scenario in self.scenarios
                 for attempt in range(1, self.attempts + 1)
                 if (scenario.id, attempt) not in done
@@ -162,15 +180,9 @@ class Bench(Struct, frozen=True):
         return tuple(task.result() for task in tasks)
 
     async def played(
-        self,
-        scenario: Scenario,
-        attempt: int,
-        agent: Agent,
-        journal: Journal,
-        limit: asyncio.Semaphore,
+        self, scenario: Scenario, attempt: int, agent: Agent, models: Models, journal: Journal
     ) -> Outcome:
-        async with limit:
-            outcome = await scenario.outcome(agent, self.models, attempt)
+        outcome = await scenario.outcome(agent, models, attempt)
         journal.record(outcome)
         return outcome
 
@@ -215,7 +227,7 @@ class RunJournal(Struct, frozen=True):
 
     def write(self, status: Status) -> None:
         temporary = self.folder() / "run.json.tmp"
-        temporary.write_bytes(msgspec.json.encode(RunFile(3, self.spec, status)))
+        temporary.write_bytes(msgspec.json.encode(RunFile(4, self.spec, status)))
         temporary.replace(self.folder() / "run.json")  # never half-written
 
     def record(self, outcome: Outcome) -> None:

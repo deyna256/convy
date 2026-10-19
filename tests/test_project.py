@@ -1,3 +1,4 @@
+import re
 import sys
 import tomllib
 from importlib.metadata import version
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from convy.bench import Limits
 from convy.fakes import Echo
 from convy.model import Models
 from convy.project import Project
@@ -143,3 +145,79 @@ def test_project_files_import_a_module_of_the_project(
         f"from convy.fakes import Echo\nfrom {shared} import version\nagent = Echo()\n",
     )
     assert Project(tmp_path).agent("bot").version == "from the project"
+
+
+LIMITS = """
+[tool.convy]
+agent_parallel = 3
+judge_parallel = 2
+
+[tool.convy.agents.fast]
+parallel = 20
+
+[tool.convy.agents.Bot]
+parallel = 9
+"""
+
+
+@pytest.fixture
+def limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Project:
+    """A project whose pyproject.toml sets limits, run from another folder: the project's own
+    files count, not those where convy runs."""
+    write(tmp_path / "project" / "pyproject.toml", LIMITS)
+    monkeypatch.chdir(tmp_path)
+    write(tmp_path / "pyproject.toml", "[tool.convy]\nagent_parallel = 1\n")
+    return Project(tmp_path / "project")
+
+
+def test_limits_come_from_the_project_table(limited: Project):
+    assert limited.limits("fast") == Limits(agent=20, user=4, judge=2)
+    assert limited.limits("other") == Limits(agent=3, user=4, judge=2)
+
+
+def test_the_environment_wins_over_env_file_and_table(
+    limited: Project, monkeypatch: pytest.MonkeyPatch
+):
+    env = "GW_API_KEY=secret\nCONVY_JUDGE_PARALLEL=5\nCONVY_USER_PARALLEL=6\n"
+    write(limited.directory / ".env", env)
+    monkeypatch.setenv("CONVY_USER_PARALLEL", "7")
+    monkeypatch.setenv("CONVY_AGENTS__FAST__PARALLEL", "1")
+    assert limited.limits("fast") == Limits(agent=1, user=7, judge=5)
+
+
+def test_agents_are_matched_in_any_case(limited: Project, monkeypatch: pytest.MonkeyPatch):
+    assert limited.limits("bot").agent == 9
+    monkeypatch.setenv("CONVY_AGENTS__BOT__PARALLEL", "11")  # the environment gives `bot`
+    assert limited.limits("Bot").agent == 11
+
+
+def test_limits_default_to_4_without_a_table(tmp_path: Path):
+    assert Project(tmp_path).limits("bot") == Limits()
+
+
+@pytest.mark.parametrize(
+    ("table", "error"),
+    [
+        (
+            "[tool.convy]\njudge-parallel = 2\n",
+            "unknown field `judge-parallel` - at `$.tool.convy`",
+        ),
+        ("[tool.convy.agents.bot]\nparalel = 2\n", "unknown field `paralel`"),
+        ("[tool.convy]\nagent_parallel = 0\n", "`int` >= 1 - at `$.tool.convy.agent_parallel`"),
+        ("[tool.convy]\nagents = 5\n", "Expected `object`, got `int` - at `$.tool.convy.agents`"),
+        ("[tool.convy\n", "Expected ']'"),
+    ],
+)
+def test_a_wrong_table_is_an_error_that_names_the_file(tmp_path: Path, table: str, error: str):
+    write(tmp_path / "pyproject.toml", table)
+    with pytest.raises(ValueError, match=re.escape(f"{tmp_path / 'pyproject.toml'}: ")) as raised:
+        Project(tmp_path).limits("bot")
+    assert error in str(raised.value)
+
+
+def test_a_wrong_variable_is_an_error_that_names_the_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
+    with pytest.raises(ValueError, match=re.escape("CONVY_* variables: Expected `int` >= 1")):
+        Project(tmp_path).limits("bot")

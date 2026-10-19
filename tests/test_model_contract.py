@@ -1,11 +1,13 @@
 """The promises every `Model` keeps, checked on each implementation convy ships."""
 
+import asyncio
+
 import httpx2
 import pytest
 
 from convy.fakes import FakeModel
 from convy.http import JsonEndpoint
-from convy.model import Model, ModelFailure, OpenAiModel
+from convy.model import Model, ModelFailure, OpenAiModel, QueuedModel
 
 CHAT = {"choices": [{"message": {"content": "hi"}}]}
 
@@ -17,10 +19,15 @@ def open_ai(status: int = 200) -> OpenAiModel:
     )
 
 
-MODELS = {"OpenAiModel": open_ai, "FakeModel": lambda: FakeModel("hi")}
+MODELS = {
+    "OpenAiModel": open_ai,
+    "FakeModel": lambda: FakeModel("hi"),
+    "QueuedModel": lambda: QueuedModel(FakeModel("hi"), asyncio.Semaphore(1)),
+}
 FAILING = {
     "OpenAiModel": lambda: open_ai(status=401),
     "FakeModel": lambda: FakeModel(ModelFailure("down")),
+    "QueuedModel": lambda: QueuedModel(FakeModel(ModelFailure("down")), asyncio.Semaphore(1)),
 }
 
 
