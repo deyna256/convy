@@ -106,8 +106,10 @@ judge_per_minute = 500   # decisions of the judge per minute
 per_minute = 600         # messages to this agent per minute
 ```
 
-It counts requests, not tokens: a limit on tokens is met by waiting, as for any busy service. If the
-user and the judge share one key, give each its share of the key's limit.
+Set it a little below the provider's limit, such as 90%: at the limit itself, small delays on the
+way bring two requests closer and the service refuses one. It counts requests, not tokens: a limit
+on tokens is met by waiting, as for any busy service. If the user and the judge share one key, give
+each its share of the key's limit.
 
 The wait for a place or for its moment to send counts neither in the time per answer nor against
 `--turn-timeout`. Keep the user's limit at least as high as the agent's: a conversation that waits

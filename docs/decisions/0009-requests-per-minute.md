@@ -35,5 +35,7 @@ exceed the limit" ([Anthropic, Rate limits](https://platform.claude.com/docs/en/
 
 ## Consequences
 
-- A known limit is kept with almost no 429; an unknown one is still found through `Busy`.
+- A limit set a little below the provider's meets no 429: against the judge above, 108 a minute
+  met none and 120, the service's own limit, met about 20, since delays on the way bring two
+  requests closer. An unknown limit is still found through `Busy`.
 - The user and the judge on one key each need their share of its limit.
