@@ -172,21 +172,28 @@ def test_report_rebuilds_the_page_and_names_old_journals(project: Path, capsys):
 SLOW = """
 import os
 import signal
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 from convy.fakes import FakeAgent
 
 
 class Stopping:
     \"\"\"A fake agent, slowed by SLOW. With STOP set, it presses Ctrl+C when its second
-    conversation opens, as a person would.\"\"\"
+    conversation opens, as a person would. With PEAK set, it writes there the most conversations
+    it has had open at once.\"\"\"
 
     def __init__(self):
         self.agent = FakeAgent("hello", delay=float(os.environ.get("SLOW", "0")))
 
-    def conversation(self):
+    @asynccontextmanager
+    async def conversation(self):
         if os.environ.get("STOP") and self.agent.opened:
             signal.raise_signal(signal.SIGINT)
-        return self.agent.conversation()
+        async with self.agent.conversation() as conversation:
+            if peak := os.environ.get("PEAK"):
+                Path(peak).write_text(str(self.agent.peak))
+            yield conversation
 
 
 agent = Stopping()
@@ -202,12 +209,14 @@ def started_run(
     monkeypatch: pytest.MonkeyPatch,
     models: str = TALKATIVE,
     options: tuple[str, ...] = (),
+    attempts: int = 3,
 ) -> Path:
-    """Run the slow agent on one scenario with three attempts; it presses Ctrl+C when its second
-    attempt opens. Return the run's folder. `asyncio.run` handles the signal as a real Ctrl+C."""
+    """Run the slow agent on one scenario, one attempt at a time; it presses Ctrl+C when its
+    second attempt opens. Return the run's folder. `asyncio.run` handles the signal as a real
+    Ctrl+C."""
     (project / "models.py").write_text(models)
     (project / "agents" / "slow.py").write_text(SLOW)
-    argv = ["run", "slow", "--scenarios", "clarify-*", "-k", "3", *options]
+    argv = ["run", "slow", "--scenarios", "clarify-*", "-k", str(attempts), *options]
     monkeypatch.setenv("CONVY_AGENT_PARALLEL", "1")  # one attempt at a time, for resume too
     with monkeypatch.context() as stopping:
         stopping.setenv("STOP", "1")
@@ -428,32 +437,89 @@ def test_resume_keeps_the_trust_of_the_run(project: Path, monkeypatch: pytest.Mo
     assert file.spec.trust == 0.8
 
 
-def test_resume_plays_with_the_current_limits_and_says_when_the_agent_limit_changed(
+def test_resume_plays_with_the_current_limits(
+    project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    folder = started_run(project, monkeypatch, attempts=5)  # at most 2 recorded: 3 or more left
+    peak = tmp_path / "peak"
+    monkeypatch.setenv("CONVY_AGENT_PARALLEL", "2")
+    monkeypatch.setenv("SLOW", "0.05")  # so that conversations overlap
+    monkeypatch.setenv("PEAK", str(peak))
+    assert convy("resume", folder.name) == 0
+    assert peak.read_text() == "2"
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.limits.agent == 1  # the run keeps the limits it started with
+
+
+def test_resume_says_when_the_agent_limit_changed(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys
 ):
     folder = started_run(project, monkeypatch)
     capsys.readouterr()
     monkeypatch.setenv("CONVY_AGENT_PARALLEL", "2")
     assert convy("resume", folder.name) == 0
-    out = capsys.readouterr().out
-    assert "slow: the agent's limit is 2, the run started with 1; " in out
-    assert isinstance(status(folder), Finished)
+    assert capsys.readouterr().err == (
+        "slow: the agent's limit is 2, the run started with 1; "
+        "its answer times will mix two loads\n"
+    )
+
+
+def test_resume_with_the_same_agent_limit_says_nothing_of_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
+    folder = started_run(project, monkeypatch)
+    capsys.readouterr()
+    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "2")  # only the agent's limit changes its times
+    assert convy("resume", folder.name) == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_a_run_of_format_3_is_resumed_with_its_limit_as_every_limit(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+):
+    folder = started_run(project, monkeypatch)
+    data = json.loads((folder / "run.json").read_text())
+    spec = {key: value for key, value in data["spec"].items() if key != "limits"}
+    (folder / "run.json").write_text(
+        json.dumps({**data, "format": 3, "spec": {**spec, "parallel": 1}})
+    )
+    assert convy("resume", folder.name) == 0
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
-    assert file.spec.limits.agent == 1  # the run keeps the limits it started with
+    assert (file.format, file.status.__class__) == (4, Finished)
+    assert file.spec.limits == Limits(agent=1, user=1, judge=1)
 
 
-def test_a_run_records_the_limits_of_its_agent(project: Path):
+def test_a_wrong_limit_resumes_nothing(project: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+    folder = started_run(project, monkeypatch)
+    before = recorded(folder)
+    capsys.readouterr()
+    monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
+    assert convy("resume", folder.name) == 2
+    assert "error: [tool.convy] or CONVY_*: judge_parallel: " in capsys.readouterr().err
+    assert recorded(folder) == before
+    assert isinstance(status(folder), Interrupted)
+
+
+def test_each_agent_of_a_command_runs_with_its_own_limit(project: Path):
     (project / "models.py").write_text(FAKE_MODELS)
+    (project / "agents" / "other.py").write_text((project / "agents" / "echo.py").read_text())
     with (project / "pyproject.toml").open("a") as file:
         file.write("\n[tool.convy.agents.echo]\nparallel = 2\n")
-    assert convy("run", "echo", "--scenarios", "clarify-*") == 0
-    (folder,) = runs(project, "echo")
-    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
-    assert file.spec.limits == Limits(agent=2, user=4, judge=4)
+        file.write("\n[tool.convy.agents.other]\nparallel = 3\n")
+    assert convy("run", "echo", "other", "--scenarios", "clarify-*") == 0
+    limits = [
+        msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile).spec.limits
+        for agent in ("echo", "other")
+        for folder in runs(project, agent)
+    ]
+    assert limits == [Limits(agent=2), Limits(agent=3)]
 
 
-def test_parallel_is_gone_and_the_command_says_where_limits_are(project: Path, capsys):
-    assert convy("run", "echo", "--parallel", "2") == 2
+@pytest.mark.parametrize("given", [("--parallel", "2"), ("--parallel=2",)])
+def test_parallel_is_gone_and_the_command_says_where_limits_are(
+    project: Path, capsys, given: tuple[str, ...]
+):
+    assert convy("run", "echo", *given) == 2
     assert "error: --parallel is gone: set agent_parallel" in capsys.readouterr().err
     assert not (project / "results").exists()
 
@@ -462,8 +528,9 @@ def test_a_wrong_limit_runs_nothing(project: Path, monkeypatch: pytest.MonkeyPat
     (project / "models.py").write_text(FAKE_MODELS)
     monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
     assert convy("run", "echo") == 2
-    assert "error: settings: judge_parallel: Input should be greater than or equal to 1" in (
-        capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        "error: [tool.convy] or CONVY_*: judge_parallel: "
+        "Input should be greater than or equal to 1\n"
     )
     assert not (project / "results").exists()
 

@@ -1,9 +1,11 @@
 """The promises every `Agent` keeps, checked on each implementation convy ships."""
 
+import asyncio
+
 import httpx2
 import pytest
 
-from convy.agent import Agent, AgentFailure, Answer, Message, TimeLimited
+from convy.agent import Agent, AgentFailure, Answer, Message, QueuedAgent, TimeLimited
 from convy.fakes import Echo, FakeAgent
 from convy.http import JsonAgent, JsonEndpoint
 
@@ -19,6 +21,7 @@ AGENTS = {
     "FakeAgent": lambda: FakeAgent("hi"),
     "Echo": lambda: Echo(),
     "TimeLimited": lambda: TimeLimited(Echo(), 5),
+    "QueuedAgent": lambda: QueuedAgent(Echo(), asyncio.Semaphore(2)),  # two places: two at once
 }
 
 
@@ -41,7 +44,8 @@ async def test_conversations_are_independent(agent: Agent):
 
 async def test_failed_turn_is_agent_failure():
     down = FakeAgent(AgentFailure("down"))
-    for agent in (down, TimeLimited(down, 5), json_agent(status=400)):
+    queued = QueuedAgent(down, asyncio.Semaphore(1))
+    for agent in (down, TimeLimited(down, 5), queued, json_agent(status=400)):
         async with agent.conversation() as conversation:
             with pytest.raises(AgentFailure):
                 await conversation.answer(Message("hello"))

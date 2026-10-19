@@ -154,15 +154,20 @@ judge_parallel = 2
 
 [tool.convy.agents.fast]
 parallel = 20
+
+[tool.convy.agents.Bot]
+parallel = 9
 """
 
 
 @pytest.fixture
 def limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Project:
-    """A project whose pyproject.toml sets limits, read from where convy runs."""
-    write(tmp_path / "pyproject.toml", LIMITS)
+    """A project whose pyproject.toml sets limits, run from another folder: the project's own
+    files count, not those where convy runs."""
+    write(tmp_path / "project" / "pyproject.toml", LIMITS)
     monkeypatch.chdir(tmp_path)
-    return Project(tmp_path)
+    write(tmp_path / "pyproject.toml", "[tool.convy]\nagent_parallel = 1\n")
+    return Project(tmp_path / "project")
 
 
 def test_limits_come_from_the_project_table(limited: Project):
@@ -173,14 +178,20 @@ def test_limits_come_from_the_project_table(limited: Project):
 def test_the_environment_wins_over_env_file_and_table(
     limited: Project, monkeypatch: pytest.MonkeyPatch
 ):
-    write(Path(".env"), "GW_API_KEY=secret\nCONVY_JUDGE_PARALLEL=5\nCONVY_USER_PARALLEL=6\n")
+    env = "GW_API_KEY=secret\nCONVY_JUDGE_PARALLEL=5\nCONVY_USER_PARALLEL=6\n"
+    write(limited.directory / ".env", env)
     monkeypatch.setenv("CONVY_USER_PARALLEL", "7")
     monkeypatch.setenv("CONVY_AGENTS__FAST__PARALLEL", "1")
     assert limited.limits("fast") == Limits(agent=1, user=7, judge=5)
 
 
-def test_limits_default_to_4_without_a_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.chdir(tmp_path)
+def test_agents_are_matched_in_any_case(limited: Project, monkeypatch: pytest.MonkeyPatch):
+    assert limited.limits("bot").agent == 9
+    monkeypatch.setenv("CONVY_AGENTS__BOT__PARALLEL", "11")  # the environment gives `bot`
+    assert limited.limits("Bot").agent == 11
+
+
+def test_limits_default_to_4_without_a_table(tmp_path: Path):
     assert Project(tmp_path).limits("bot") == Limits()
 
 
@@ -190,12 +201,15 @@ def test_limits_default_to_4_without_a_table(tmp_path: Path, monkeypatch: pytest
         ("[tool.convy]\njudge-parallel = 2\n", "[tool.convy] has no judge-parallel"),
         ("[tool.convy.agents.bot]\nparalel = 2\n", "paralel"),
         ("[tool.convy]\nagent_parallel = 0\n", "greater than or equal to 1"),
+        ("[tool.convy\n", "pyproject.toml: Expected ']'"),
+        (
+            "[tool.convy.agents.bot]\nparallel = 1\n[tool.convy.agents.Bot]\nparallel = 2\n",
+            "[tool.convy.agents] names an agent twice",
+        ),
+        ("[tool.convy]\nagents = 5\n", "Input should be a valid dictionary"),
     ],
 )
-def test_a_wrong_limit_is_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, table: str, error: str
-):
+def test_a_wrong_limit_is_an_error(tmp_path: Path, table: str, error: str):
     write(tmp_path / "pyproject.toml", table)
-    monkeypatch.chdir(tmp_path)
     with pytest.raises(ValueError, match=re.escape(error)):
         Project(tmp_path).limits("bot")

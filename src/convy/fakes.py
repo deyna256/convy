@@ -100,13 +100,12 @@ class FakeModel:
     async def reply(self, messages: list[dict[str, str]]) -> str:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append(list(messages))
-        if self.delay:
-            self.busy += 1
-            self.peak = max(self.peak, self.busy)
-            try:
-                await asyncio.sleep(self.delay)
-            finally:
-                self.busy -= 1
+        self.busy += 1
+        self.peak = max(self.peak, self.busy)
+        try:
+            await asyncio.sleep(self.delay)  # even at 0, other calls get to run
+        finally:
+            self.busy -= 1
         match step:
             case ModelFailure():
                 raise step
@@ -144,13 +143,12 @@ class FakeJudge:
     ) -> tuple[Claim, ...]:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append((transcript, claims))
-        if self.delay:
-            self.busy += 1
-            self.peak = max(self.peak, self.busy)
-            try:
-                await asyncio.sleep(self.delay)
-            finally:
-                self.busy -= 1
+        self.busy += 1
+        self.peak = max(self.peak, self.busy)
+        try:
+            await asyncio.sleep(self.delay)  # even at 0, other calls get to run
+        finally:
+            self.busy -= 1
         match step:
             case ModelFailure():
                 raise step

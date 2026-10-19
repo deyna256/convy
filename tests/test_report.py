@@ -70,15 +70,17 @@ def journal(
     """A run of `scenarios` scenarios, `a`, `b`, …, `k` attempts each, holding `outcomes`."""
     started = started or datetime.now(UTC)
     played = tuple(Scenario(chr(97 + i), 1, asks, claims) for i in range(scenarios))
+    user, judge = models
     spec = RunSpec(
-        id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
-        agent,
-        version,
-        *models,
-        k,
-        600,
-        played,
-        started,
+        id=id or f"{started:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}",
+        agent=agent,
+        version=version,
+        user=user,
+        judge=judge,
+        k=k,
+        turn_timeout=600,
+        scenarios=played,
+        started=started,
         trust=trust,
         convy=convy,
         limits=limits,
@@ -127,7 +129,7 @@ def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, fo
     older = {**data, "format": format, "spec": {**data["spec"], "parallel": 2}}
     (folder / "run.json").write_text(json.dumps(older))
     (run,) = Runs(tmp_path)
-    assert run.spec.limits == Limits(2, 2, 2)
+    assert run.spec.limits == Limits(agent=2, user=2, judge=2)
     assert run.format == format
 
 

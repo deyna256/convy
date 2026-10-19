@@ -3,19 +3,16 @@
 import hashlib
 import importlib.util
 import sys
+import tomllib
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from msgspec import Struct
 from pydantic import BaseModel, Field
-from pydantic_settings import (
-    BaseSettings,
-    PydanticBaseSettingsSource,
-    PyprojectTomlConfigSettingsSource,
-    SettingsConfigDict,
-)
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from convy.agent import Agent
 from convy.bench import Files, Limits, RunSpec
@@ -34,31 +31,18 @@ class AgentSettings(BaseModel, extra="forbid", frozen=True):
     parallel: int = Field(ge=1)
 
 
-class ToolTable(PyprojectTomlConfigSettingsSource):
-    """`[tool.convy]` in `pyproject.toml`, where a key convy does not know is an error: a typo
-    would otherwise leave a limit at its default without a word."""
-
-    def __call__(self) -> dict[str, object]:
-        found = super().__call__()
-        if unknown := sorted(set(found) - set(self.settings_cls.model_fields)):
-            raise ValueError(f"pyproject.toml: [tool.convy] has no {', '.join(unknown)}")
-        return found
-
-
 class Settings(BaseSettings):
-    """The project's settings: `[tool.convy]` in `pyproject.toml`, then `.env`, then the
-    environment, each over the one before. Variables are the keys in capitals after `CONVY_`, an
-    agent's as `CONVY_AGENTS__<NAME>__PARALLEL`."""
+    """The project's settings: `[tool.convy]` of its `pyproject.toml`, given to the constructor,
+    then `.env`, then the environment, each over the one before. A variable is `CONVY_` and the key
+    in capitals, an agent's limit `CONVY_AGENTS__<AGENT>__PARALLEL`."""
 
     model_config = SettingsConfigDict(
-        title="settings",
+        title="[tool.convy] or CONVY_*",
         env_prefix="CONVY_",
-        env_file=".env",
         env_nested_delimiter="__",
         extra="ignore",  # .env holds the project's other settings too, such as its keys
         frozen=True,
         hide_input_in_errors=True,
-        pyproject_toml_table_header=("tool", "convy"),
     )
     agent_parallel: int = Field(4, ge=1)
     user_parallel: int = Field(4, ge=1)
@@ -74,7 +58,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return env_settings, dotenv_settings, ToolTable(settings_cls)
+        return env_settings, dotenv_settings, init_settings
 
 
 class ProjectAgent(Struct, frozen=True):
@@ -107,15 +91,40 @@ class Project(Struct, frozen=True):
         return found
 
     def limits(self, agent: str) -> Limits:
-        """The limits a run of the agent plays with: its own table's, else `agent_parallel`. Read
-        from the current directory, as `.env` is."""
-        settings = Settings()
-        own = settings.agents.get(agent)
+        """The limits a run of the agent plays with: its own, else `agent_parallel`. Agents are
+        matched in lower case, since the environment gives their names so; a lower source comes
+        first in `agents`, so the higher one's limit wins."""
+        settings = Settings(_env_file=self.directory / ".env", **self.table())
+        own = {name.lower(): found for name, found in settings.agents.items()}
+        default = AgentSettings(parallel=settings.agent_parallel)
         return Limits(
-            agent=own.parallel if own else settings.agent_parallel,
+            agent=own.get(agent.lower(), default).parallel,
             user=settings.user_parallel,
             judge=settings.judge_parallel,
         )
+
+    def table(self) -> dict[str, Any]:
+        """`[tool.convy]` of the project's `pyproject.toml`, or nothing without one. A key convy
+        does not know is an error, so a typo does not leave a limit at its default unnoticed, and
+        so are two agents whose names differ only in case."""
+        path = self.directory / "pyproject.toml"
+        if not path.is_file():
+            return {}
+        try:
+            with path.open("rb") as file:
+                found = tomllib.load(file)
+        except tomllib.TOMLDecodeError as error:
+            raise ValueError(f"{path}: {error}") from None
+        match found:
+            case {"tool": {"convy": dict() as table}}:
+                if unknown := sorted(set(table) - set(Settings.model_fields)):
+                    raise ValueError(f"{path}: [tool.convy] has no {', '.join(unknown)}")
+                match table.get("agents"):
+                    case dict() as agents if len({name.lower() for name in agents}) < len(agents):
+                        raise ValueError(f"{path}: [tool.convy.agents] names an agent twice")
+                return table
+            case _:
+                return {}
 
     def agent(self, name: str) -> ProjectAgent:
         path = self.agent_file(name)

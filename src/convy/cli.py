@@ -298,7 +298,8 @@ class ResumeCommand(BaseModel):
         if limits.agent != spec.limits.agent:
             print(
                 f"{spec.agent}: the agent's limit is {limits.agent}, the run started with "
-                f"{spec.limits.agent}; its answer times will mix two loads"
+                f"{spec.limits.agent}; its answer times will mix two loads",
+                file=sys.stderr,
             )
         bench = Bench(spec.scenarios, models, spec.k, limits)
         agent = TimeLimited(loaded.agent, spec.turn_timeout)
@@ -358,7 +359,8 @@ def main(argv: list[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):  # a pipe or a file on Windows is not UTF-8 by default
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
-    if any(arg.partition("=")[0] == "--parallel" for arg in argv or sys.argv[1:]):
+    given = sys.argv[1:] if argv is None else argv
+    if any(arg.partition("=")[0] == "--parallel" for arg in given):
         print(
             "error: --parallel is gone: set agent_parallel, user_parallel and judge_parallel "
             "under [tool.convy] in pyproject.toml, or CONVY_AGENT_PARALLEL and the like",

@@ -49,8 +49,9 @@ class Limits(Struct, frozen=True):
                 raise ValueError(f"the {name}'s limit must be at least 1, got {value}")
 
 
-class RunSpec(Struct, frozen=True):
-    """What a run plays and with what: everything needed to continue it unchanged."""
+class RunSpec(Struct, frozen=True, kw_only=True):
+    """What a run plays and with what: everything needed to continue it unchanged. Its fields are
+    given by name: a call that gave them in an older order fails instead of mixing them up."""
 
     id: str
     agent: str

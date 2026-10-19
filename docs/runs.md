@@ -89,8 +89,11 @@ CONVY_AGENTS__SUPPORT_BOT__PARALLEL=5 uv run convy run support_bot
 ```
 
 `pyproject.toml` comes first, then `.env`, then the environment; each wins over the one before.
-convy reads them in the folder it runs in. A key it does not know in `[tool.convy]` is an error, so
-a typo does not leave a limit at 4 unnoticed.
+convy reads `pyproject.toml` and `.env` in the project's folder. A key it does not know in
+`[tool.convy]` is an error, so a typo does not leave a limit at 4 unnoticed. Agents are matched
+without regard to case, since the environment gives their names in one case: `Support_Bot`,
+`support_bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` all mean one agent, and two tables whose
+names differ only in case are an error.
 
 The wait for a place counts neither in the time per answer nor against `--turn-timeout`. Keep the
 user's limit at least as high as the agent's: a conversation that waits for the user's message keeps
