@@ -1,11 +1,11 @@
 """The models convy itself uses: the simulated user's and the judge's."""
 
-import asyncio
 from typing import TYPE_CHECKING, Annotated, Protocol
 
 import msgspec
 from msgspec import Meta, Struct
 
+from convy.busy import Places
 from convy.http import HttpFailure, JsonEndpoint
 
 if TYPE_CHECKING:  # dialog.py imports this module
@@ -86,19 +86,18 @@ class Contained(Struct, frozen=True):
             raise ModelFailure(f"{self.name}: {type(error).__name__}: {error}") from error
 
 
-class QueuedModel(Struct, frozen=True):
-    """The same model, holding a place of `places` for each reply."""
+class PatientModel(Struct, frozen=True):
+    """The same model, each reply sent in a place of `places`, which waits for a busy service."""
 
     model: Model
-    places: asyncio.Semaphore
+    places: Places
 
     @property
     def name(self) -> str:
         return self.model.name
 
     async def reply(self, messages: list[dict[str, str]]) -> str:
-        async with self.places:
-            return await self.model.reply(messages)
+        return await self.places.call(lambda: self.model.reply(messages))
 
 
 class Models(Struct, frozen=True):

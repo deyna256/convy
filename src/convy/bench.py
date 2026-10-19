@@ -14,8 +14,9 @@ import msgspec
 from msgspec import Struct
 
 from convy.agent import Agent, QueuedAgent
-from convy.dialog import QueuedJudge
-from convy.model import Models, QueuedModel
+from convy.busy import Patience, Places
+from convy.dialog import PatientJudge
+from convy.model import Models, PatientModel
 from convy.scenario import Outcome, Scenario
 
 if sys.platform == "win32":
@@ -155,6 +156,7 @@ class Bench(Struct, frozen=True):
     models: Models
     attempts: int = 1
     limits: Limits = Limits()
+    patience: Patience = Patience()
 
     def __post_init__(self) -> None:
         if self.attempts < 1:
@@ -163,16 +165,20 @@ class Bench(Struct, frozen=True):
     async def run(
         self, agent: Agent, journal: Journal, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
-        """Play every scenario `attempts` times, each participant within its limit; skip the
-        attempts in `done`. The places are made here, in the event loop that waits for them."""
-        queued = QueuedAgent(agent, asyncio.Semaphore(self.limits.agent))
+        """Play every scenario `attempts` times, each participant within its limit, fewer at once
+        while its service is busy, and waiting for it as `patience` allows; skip the attempts in
+        `done`. The places are made here, in the event loop that waits for them."""
+        conversations = Places(self.limits.agent, self.patience)
+        queued = QueuedAgent(agent, conversations)
         models = Models(
-            QueuedModel(self.models.user, asyncio.Semaphore(self.limits.user)),
-            QueuedJudge(self.models.judge, asyncio.Semaphore(self.limits.judge)),
+            PatientModel(self.models.user, Places(self.limits.user, self.patience)),
+            PatientJudge(self.models.judge, Places(self.limits.judge, self.patience)),
         )
         async with asyncio.TaskGroup() as group:
             tasks = [
-                group.create_task(self.played(scenario, attempt, queued, models, journal))
+                group.create_task(
+                    self.played(scenario, attempt, queued, models, conversations, journal)
+                )
                 for scenario in self.scenarios
                 for attempt in range(1, self.attempts + 1)
                 if (scenario.id, attempt) not in done
@@ -180,9 +186,15 @@ class Bench(Struct, frozen=True):
         return tuple(task.result() for task in tasks)
 
     async def played(
-        self, scenario: Scenario, attempt: int, agent: Agent, models: Models, journal: Journal
+        self,
+        scenario: Scenario,
+        attempt: int,
+        agent: Agent,
+        models: Models,
+        conversations: Places,
+        journal: Journal,
     ) -> Outcome:
-        outcome = await scenario.outcome(agent, models, attempt)
+        outcome = await scenario.outcome(agent, models, attempt, conversations)
         journal.record(outcome)
         return outcome
 

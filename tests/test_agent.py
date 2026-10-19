@@ -10,10 +10,12 @@ from convy.agent import (
     Conversation,
     Message,
     NoUsage,
+    QueuedAgent,
     Thinking,
     TimeLimited,
     Usage,
 )
+from convy.busy import Busy, Patience, Places
 from convy.dialog import ChatJudge
 from convy.fakes import Echo, EchoConversation, FakeAgent, FakeModel
 from convy.model import Models
@@ -52,7 +54,9 @@ async def test_a_slow_opening_or_closing_fails_the_attempt(agent: Slow):
     models = Models(
         user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}'))
     )
-    outcome = await scenario.outcome(TimeLimited(agent, 0.05), models, attempt=1)
+    outcome = await scenario.outcome(
+        TimeLimited(agent, 0.05), models, attempt=1, places=Places(1, Patience())
+    )
     assert outcome.stop == "agent_failure"
 
 
@@ -118,3 +122,16 @@ def test_thinking_tokens_are_part_of_the_output(thinking: int):
 def test_thinking_needs_text(text: str):
     with pytest.raises(ValueError, match=r"thinking needs text; give NoThinking\(\) instead"):
         Thinking(text)
+
+
+async def test_an_agent_busy_when_a_conversation_opens_gets_fewer_conversations():
+    class Full:
+        def conversation(self):
+            raise Busy("no free session")
+
+    places = Places(4, Patience())
+    with pytest.raises(Busy):
+        async with QueuedAgent(Full(), places).conversation():
+            pass
+    assert places.allowed == 2
+    assert places.taken == 0

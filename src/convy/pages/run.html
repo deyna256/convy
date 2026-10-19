@@ -48,7 +48,7 @@ function tiles() {
     tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
     tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
     tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out${thought(M.thinking_tokens)}`),
-    tile("Errors", String(M.errors), `agent ${M.agent_errors} · models ${M.model_errors}`));
+    tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`));
 }
 
 function table() {

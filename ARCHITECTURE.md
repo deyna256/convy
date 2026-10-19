@@ -27,12 +27,13 @@ All code is in `src/convy/`.
 | module | what is there |
 |---|---|
 | `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `Thinking`, `NoThinking`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
-| `http.py` | `JsonEndpoint` (JSON over HTTP with retries) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
-| `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `QueuedModel` |
+| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once, fewer while its service is busy, which sends and retries them as its patience allows |
+| `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
+| `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `QueuedJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge the agent's thinking only if it reviews it; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
+| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge the agent's thinking only if it reviews it; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
-| `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
+| `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
 | `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
@@ -114,10 +115,10 @@ in all of `src/convy/`.
 - **Data has public fields.** `Message`, `Usage`, `Answer`, `Turn`, `Verdict`, `Outcome` and `RunSpec`
   are immutable records with public fields; accessor methods would be noise in Python.
 - **A conversation is opened with `async with`**, Python's usual "open, use, close".
-- **Three kinds of objects change inside:** a conversation (its session and history), fakes (they count)
-  and `MemoryJournal`. They are plain classes, not frozen `Struct`s, and their state never leaves them.
-  The `Queued*` wrappers are frozen, but the `asyncio.Semaphore` each holds counts its places; a
-  bench makes new ones for every run.
+- **Four kinds of objects change inside:** a conversation (its session and history), fakes (they
+  count), `MemoryJournal`, and `Places` (a participant's requests under way and the places it
+  allows; a bench makes new ones for every run). They are plain classes, not frozen `Struct`s, and
+  their state never leaves them.
 - **The report's page data uses `None`** (`null` in JSON) for numbers nobody reported: it is data for
   the browser, not part of the domain.
 
@@ -139,22 +140,27 @@ run's folder; see [decision 5](docs/decisions/0005-runs.md).
 ## Cross-cutting concerns
 
 **Concurrency.** Conversations run at the same time, so the whole path is `async`: `asyncio.timeout`
-for time limits, `asyncio.TaskGroup` for concurrent work, and an `asyncio.Semaphore` per participant
-for how much it does at once ([decision 7](docs/decisions/0007-participant-limits.md)). `Bench.run`
-makes them in the event loop that waits for them and hands them to `QueuedAgent`, `QueuedModel` and
-`QueuedJudge`: the agent's place is held while a conversation is open, the user's for a message, the
-judge's for a decision, after the agent's is let go. Nothing blocks the event loop except the run's
-append of one short line per attempt and the rewrite of its small `run.json`. Durations are measured
-with `time.monotonic`. One process plays a run's folder at a time: `RunJournal.play` holds
-`run.lock`, which the system frees when the process ends, however it ends; taking it does not wait.
-Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the run `interrupted` on that,
-or on any other error, and re-raises it.
+for time limits, `asyncio.TaskGroup` for concurrent work, and `Places` per participant for how much
+it does at once ([decision 7](docs/decisions/0007-participant-limits.md)), fewer while its service
+is busy ([decision 8](docs/decisions/0008-busy-services.md)). `Bench.run` makes them in the event
+loop that waits for them and hands them to `QueuedAgent`, `PatientModel` and `PatientJudge`: the
+agent's place is held while a conversation is open, the user's and the judge's for one try of a
+request, so none is held while waiting for a busy service, and the judge decides after the agent's
+is let go. Nothing blocks the event loop except the run's append of one short line per attempt and
+the rewrite of its small `run.json`. Durations are measured with `time.monotonic`. One process plays
+a run's folder at a time: `RunJournal.play` holds `run.lock`, which the system frees when the
+process ends, however it ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench;
+`RunJournal.play` marks the run `interrupted` on that, or on any other error, and re-raises it.
 
-**Failure.** Three kinds, one rule each:
+**Failure.** Four kinds, one rule each:
 
 - `AgentFailure` — the agent failed: the dialogue ends and the attempt is `Failed` without asking the
   judge, so a broken agent cannot pass on what it said before.
-- `ModelFailure` — the simulated user's or the judge's model failed after retries, or gave an answer
+- `Busy` — a service refused a request before acting on it. The participant's `Patience` waits and
+  sends it again; when it gives up, an agent's attempt has `NoVerdict` and stops as `agent_busy`,
+  and a model's or a judge's `Busy` is a `ModelFailure`
+  ([decision 8](docs/decisions/0008-busy-services.md)).
+- `ModelFailure` — the simulated user's or the judge's model failed, stayed busy, or gave an answer
   convy cannot use: an empty message, or a judge's answer without one decision per claim whose
   `"pass"` is `true` or `false`, or whose `"grade"` is one of the claim's; or raised any other
   error, which `Contained` (the user's model) turns into `ModelFailure`; or a judge that raised any
@@ -171,10 +177,11 @@ conversation, a turn, closing it — because a bug there must not stop a run; in
 the agent's failure or a crashed run; in `Checked` (`dialog.py`) around a judge's `decide`, for the
 same reason; and in `cli.py` around loading the project, where any error is a configuration error.
 
-**Retries** live only in `JsonConnection`, which `JsonEndpoint` opens; everything that talks HTTP
-goes through it. Only requests the service did not process are repeated — 429, 503 and a connection
-that could not be made — so an agent never gets the same message twice. A 500, 502, 504 or a read
-timeout may come after the service acted on the request, so it is not repeated.
+**Retries** live only in `Places`, one for each participant of a run. Only a request whose service
+refused it unprocessed is repeated, which its caller reports by raising `Busy`, so an agent never
+gets the same message twice: `JsonConnection` raises it for 429 and 503, while a 500, 502, 504 or a
+read timeout may come after the service acted on the request, and a connection that could not be
+made means no service at all, so each is a failure.
 
 **Secrets.** Keys are `SecretStr` and never printed. A settings error is shown by field and message
 only, because pydantic's own text includes every value it read; `Env` also sets

@@ -3,6 +3,7 @@ import secrets
 from datetime import UTC, datetime
 from pathlib import Path
 
+import msgspec
 import pytest
 
 from convy.agent import Answer, Message, NoUsage, Thinking, Usage
@@ -234,6 +235,19 @@ def both(directory: Path) -> tuple[Run, Run]:
     return first, second
 
 
+def test_an_agent_whose_service_stayed_busy_counts_as_busy_not_in_the_pass_rate(tmp_path):
+    busy = msgspec.structs.replace(outcome("a", NoVerdict("busy")), stop="agent_busy")
+    journal(tmp_path, "bot", "1", 1, busy, outcome("a", PASSED, attempt=2), k=2)
+    metrics = Report(only(tmp_path)).page().metrics
+    assert (metrics.passed, metrics.judged) == (1, 1)
+    assert (metrics.agent_errors, metrics.busy, metrics.model_errors, metrics.errors) == (
+        0,
+        1,
+        0,
+        1,
+    )
+
+
 def test_a_scenario_is_failing_flaky_passing_or_without_a_verdict(tmp_path):
     journal(
         tmp_path,
@@ -278,7 +292,12 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     assert metrics.stable == 1  # only a passed both
     assert (metrics.seconds, metrics.slowest) == (2.0, 2.0)
     assert (metrics.input, metrics.output, metrics.tokens) == (30, 30, 60)
-    assert (metrics.agent_errors, metrics.model_errors, metrics.errors) == (1, 1, 2)
+    assert (metrics.agent_errors, metrics.busy, metrics.model_errors, metrics.errors) == (
+        1,
+        0,
+        1,
+        2,
+    )
     assert (page.run.short, page.run.agent, page.run.status, page.run.k, page.run.scenarios) == (
         page.run.id.rpartition("_")[2],
         "bot",

@@ -270,6 +270,7 @@ class Metrics(Struct, frozen=True):
     tokens: float | None
     thinking_tokens: float | None
     agent_errors: int
+    busy: int  # attempts whose agent's service stayed busy
     model_errors: int
     errors: int
 
@@ -474,6 +475,7 @@ class Summary(Struct, frozen=True):
         turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
         k = self.run.spec.k
         agent_errors = sum(a.stop == "agent_failure" for a in attempts)
+        busy = sum(a.stop == "agent_busy" for a in attempts)
         model_errors = sum(a.stop == "model_failure" for a in attempts)
         return Metrics(
             passed=sum(judged),
@@ -490,8 +492,9 @@ class Summary(Struct, frozen=True):
             tokens=self.average(a.tokens for a in attempts),
             thinking_tokens=self.average(a.thinking_tokens for a in attempts),
             agent_errors=agent_errors,
+            busy=busy,
             model_errors=model_errors,
-            errors=agent_errors + model_errors,
+            errors=agent_errors + busy + model_errors,
         )
 
     def scenarios(self) -> dict[str, ScenarioView]:

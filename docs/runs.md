@@ -61,7 +61,9 @@ git, does not carry it, so a run played on another machine is not seen.
 
 ## How much runs at once
 
-Each participant has its own limit on work at the same time:
+Each participant has its own limit on work at the same time. While a participant's service says it
+is busy, convy sends fewer requests at once, and goes back up to the limit as the service answers;
+see [A busy service](agents.md#a-busy-service).
 
 - the agent: conversations open at once. A conversation holds its place from opening to closing;
   the judge decides after it has let the place go.
@@ -104,8 +106,9 @@ Delete its folder and run `convy report`.
 ## Exit codes
 
 - `0`: every attempt finished, and each pass rate is at least `--fail-under`, if you gave it.
-- `1`: an attempt ended with an agent error or a failure of convy's models. For `convy resume`, an
-  attempt it played. This wins over `3`: a run with errors does not measure quality.
+- `1`: an attempt ended with an agent error, an agent's service that stayed busy, or a failure of
+  convy's models. For `convy resume`, an attempt it played. This wins over `3`: a run with errors
+  does not measure quality.
 - `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
   resumed, also when another process is playing it.
 - `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged.

@@ -14,7 +14,7 @@ Five tiles sum up the run:
 - **Time per answer**: the mean, and the slowest. Only the agent's own time counts, not the
   simulated user's or the judge's.
 - **Tokens per attempt**: in and out, as the agent reports them.
-- **Errors**: of the agent and of convy's models.
+- **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
 
 ## Scenarios
 

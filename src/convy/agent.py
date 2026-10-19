@@ -3,10 +3,12 @@ the conversations it holds at once."""
 
 import asyncio
 from collections.abc import AsyncIterator
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from typing import Protocol
 
 from msgspec import Struct
+
+from convy.busy import Busy, Places
 
 
 class Message(Struct, frozen=True):
@@ -104,14 +106,19 @@ class TimeLimited(Struct, frozen=True):
 class QueuedAgent(Struct, frozen=True):
     """The same agent, holding a place of `places` while a conversation is open, from opening to
     closing. A conversation waits for its place before it opens, so the wait counts neither in an
-    answer's time nor against a time limit inside."""
+    answer's time nor against a time limit inside; a service busy at opening leaves fewer places."""
 
     agent: Agent
-    places: asyncio.Semaphore
+    places: Places
 
     @asynccontextmanager
     async def conversation(self) -> AsyncIterator[Conversation]:
-        async with self.places, self.agent.conversation() as conversation:
+        async with self.places, AsyncExitStack() as opened:
+            try:
+                conversation = await opened.enter_async_context(self.agent.conversation())
+            except Busy:
+                self.places.busy()
+                raise
             yield conversation
 
 

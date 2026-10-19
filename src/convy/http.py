@@ -1,6 +1,5 @@
 """JSON over HTTP: the endpoint every HTTP call goes through, and an agent built on it."""
 
-import asyncio
 import json
 import re
 import ssl
@@ -16,22 +15,14 @@ import msgspec
 from msgspec import Struct
 
 from convy.agent import AgentFailure, Answer, Conversation, Message, NoUsage, Usage
+from convy.busy import Busy
 
-RETRIED = frozenset({429, 503})  # the service says it did not process the request
-MAX_RETRY_AFTER = 60.0
+BUSY = frozenset({429, 503})  # the service says it did not process the request
 PLACEHOLDER = re.compile(r"\{(text|session)\}")
 
 
 class HttpFailure(Exception):
-    """A request failed and will not be repeated."""
-
-
-class Busy(Exception):
-    """The service did not process the request; it may be repeated after `retry_after` seconds."""
-
-    def __init__(self, message: str, retry_after: float = 0.0):
-        super().__init__(message)
-        self.retry_after = retry_after
+    """A request failed, and convy does not send it again."""
 
 
 class Tls(Struct, frozen=True):
@@ -65,13 +56,13 @@ class Tls(Struct, frozen=True):
 
 
 class JsonEndpoint(Struct, frozen=True):
-    """An address that takes and returns JSON, with retries for requests it did not process."""
+    """An address that takes and returns JSON. A request the service refused because it is busy
+    raises `Busy`, which convy waits on; nothing is repeated here."""
 
     url: str
     headers: dict[str, str] = {}
     tls: Tls = Tls()
     timeout: float = 120
-    pauses: tuple[float, ...] = (2, 4, 8)
     transport: httpx2.AsyncBaseTransport | None = None
 
     @asynccontextmanager
@@ -102,31 +93,21 @@ class JsonConnection(Struct, frozen=True):
     http: httpx2.AsyncClient
 
     async def post(self, body: object) -> object:
-        """Send `body` and return the parsed answer, or raise `HttpFailure`."""
-        for pause in self.endpoint.pauses:
-            try:
-                return await self.attempt(body)
-            except Busy as busy:
-                await asyncio.sleep(busy.retry_after or pause)
-        try:
-            return await self.attempt(body)
-        except Busy as busy:
-            raise HttpFailure(str(busy)) from busy
-
-    async def attempt(self, body: object) -> object:
+        """Send `body` and return the parsed answer; raise `Busy` when the service refused it
+        unprocessed, `HttpFailure` when it failed otherwise."""
         url = self.endpoint.address()
         try:
             response = await self.http.post(
                 self.endpoint.url, json=body, headers=self.endpoint.headers
             )
-        except (httpx2.ConnectError, httpx2.ConnectTimeout) as error:
-            raise Busy(f"POST {url}: cannot connect: {error}") from error
+        except (httpx2.ConnectError, httpx2.ConnectTimeout) as error:  # gone, not busy: fail now
+            raise HttpFailure(f"POST {url}: cannot connect: {error}") from error
         except UnicodeEncodeError:  # the message would show part of the value, maybe of a key
             names = [name for name, value in self.endpoint.headers.items() if not value.isascii()]
             raise HttpFailure(f"POST {url}: a header value is not ASCII: {names}") from None
         except (httpx2.HTTPError, httpx2.InvalidURL) as error:
             raise HttpFailure(f"POST {url}: {type(error).__name__}: {error}") from error
-        if response.status_code in RETRIED:
+        if response.status_code in BUSY:
             raise Busy(f"POST {url}: {response.status_code}", self.retry_after(response))
         if not response.is_success:
             raise HttpFailure(f"POST {url}: {response.status_code} {response.text[:200]}")
@@ -138,16 +119,19 @@ class JsonConnection(Struct, frozen=True):
             ) from error
 
     def retry_after(self, response: httpx2.Response) -> float:
-        """Seconds from `Retry-After`, given as seconds or as a date; 0 when absent."""
+        """Seconds the service asks to wait: OpenAI's `retry-after-ms`, else `Retry-After` as
+        seconds or as a date; 0 when it does not say."""
+        milliseconds = response.headers.get("retry-after-ms", "").strip()
+        if milliseconds.isascii() and milliseconds.isdigit():
+            return int(milliseconds) / 1000
         value = response.headers.get("Retry-After", "").strip()
         if value.isascii() and value.isdigit():
-            seconds = float(value)
-        else:
-            try:
-                seconds = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
-            except (ValueError, TypeError):  # TypeError: a date without a timezone
-                return 0.0
-        return min(max(seconds, 0.0), MAX_RETRY_AFTER)
+            return float(value)
+        try:
+            seconds = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+        except (ValueError, TypeError):  # TypeError: a date without a timezone
+            return 0.0
+        return max(seconds, 0.0)
 
 
 class JsonAgent(Struct, frozen=True):

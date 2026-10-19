@@ -1,6 +1,5 @@
 """The dialogue: its record, the simulated user who drives it, and the judge who rates it."""
 
-import asyncio
 import json
 from typing import Protocol
 
@@ -8,6 +7,7 @@ import msgspec
 from msgspec import Struct, field
 
 from convy.agent import Answer, Message, NoThinking, Thinking
+from convy.busy import Places
 from convy.model import Model, ModelFailure
 
 STOP = "###STOP###"
@@ -363,11 +363,11 @@ class ChatJudge(Struct, frozen=True):
         return Reason(said) if said and said.strip() else NoReason()
 
 
-class QueuedJudge(Struct, frozen=True):
-    """The same judge, holding a place of `places` for each decision."""
+class PatientJudge(Struct, frozen=True):
+    """The same judge, each decision sent in a place of `places`, which waits for a busy service."""
 
     judge: Judge
-    places: asyncio.Semaphore
+    places: Places
 
     @property
     def name(self) -> str:
@@ -380,8 +380,7 @@ class QueuedJudge(Struct, frozen=True):
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
-        async with self.places:
-            return await self.judge.decide(transcript, claims)
+        return await self.places.call(lambda: self.judge.decide(transcript, claims))
 
 
 class Checked(Struct, frozen=True):

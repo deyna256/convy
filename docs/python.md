@@ -43,6 +43,8 @@ outcomes = asyncio.run(journal.play(bench, Echo(), journal))
 Path("results/echo/first/report.html").write_text(Report(run).html(), encoding="utf-8")
 ```
 
-The run records the installed convy version, as `convy run` does. `play` raises `RunInUse` when
-another process is playing the run's folder. Put your own agent in place of `Echo()`. The fakes in
-`convy.fakes` are public too: use them to test your agent classes without a model.
+`Bench` also takes `patience=Patience(seconds=300)`: how long each participant waits for a busy
+service, 120 seconds by default. The run records the installed convy version, as `convy run` does.
+`play` raises `RunInUse` when another process is playing the run's folder. Put your own agent in
+place of `Echo()`. The fakes in `convy.fakes` are public too: use them to test your agent classes
+without a model.
