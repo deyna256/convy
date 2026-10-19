@@ -53,17 +53,17 @@ class FormatTwo(Struct, frozen=True):
                 return claim
 
 
-class SharedLimit(Struct, frozen=True):
+class OlderSpec(Struct, frozen=True):
     """What the specification of a `run.json` of format 2 or 3 held instead of `limits`: one
     `parallel`, which held all three participants."""
 
     parallel: int
 
 
-class FormatThree(Struct, frozen=True):
+class OlderRunFile(Struct, frozen=True):
     """A `run.json` of format 2 or 3, as far as format 4 changed it."""
 
-    spec: SharedLimit
+    spec: OlderSpec
 
 
 class Run(Struct, frozen=True):
@@ -121,8 +121,8 @@ class Runs(Struct, frozen=True):
         raw = (folder / "run.json").read_bytes()
         file = msgspec.json.decode(raw, type=RunFile)
         if file.format < 4:
-            shared = msgspec.json.decode(raw, type=FormatThree).spec.parallel
-            limits = Limits(shared, shared, shared)
+            shared = msgspec.json.decode(raw, type=OlderRunFile).spec.parallel
+            limits = Limits(agent=shared, user=shared, judge=shared)
             file = msgspec.structs.replace(
                 file, spec=msgspec.structs.replace(file.spec, limits=limits)
             )

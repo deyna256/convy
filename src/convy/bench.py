@@ -35,9 +35,9 @@ class Files(Struct, frozen=True):
     models: str = ""
 
 
-class Limits(Struct, frozen=True):
+class Limits(Struct, frozen=True, kw_only=True):
     """How much each participant does at once: conversations with the agent, messages of the
-    simulated user, decisions of the judge."""
+    simulated user, decisions of the judge. Given by name, since the three are easy to swap."""
 
     agent: int = 4
     user: int = 4

@@ -67,7 +67,7 @@ and holds secrets.
   own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`; they override the file for one run or one
   machine, such as CI. The keys use underscores, as pytest's and mypy's do, so that a key and its
   variable have one name: pydantic-settings cannot read keys with dashes and still match the
-  variables. msgspec reads `[tool.convy]` into a `Table` and checks it, as it checks every file
+  variables. msgspec reads `[tool.convy]` into `Settings` and checks it, as it checks every file
   convy reads; pydantic-settings only reads `.env` and the environment over it, and msgspec
   checks the result again. A key convy does not know in `[tool.convy]` is an error, so a typo
   does not leave a limit at 4 unnoticed. Agents are matched without regard to case: the

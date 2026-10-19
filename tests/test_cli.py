@@ -528,7 +528,7 @@ def test_parallel_is_gone_and_the_command_says_where_limits_are(
     ("value", "error"),
     [
         ("0", "error: CONVY_* variables: Expected `int` >= 1 - at `$.judge_parallel`\n"),
-        ("many", "error: CONVY_*: judge_parallel: Input should be a valid integer, "),
+        ("many", "error: CONVY_* variables: judge_parallel: Input should be a valid integer, "),
     ],
 )
 def test_a_wrong_limit_runs_nothing(

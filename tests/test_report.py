@@ -591,8 +591,24 @@ def test_a_comparison_names_the_models_that_differ(tmp_path):
 
 
 def test_a_comparison_names_another_agent_limit_but_not_other_limits(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), limits=Limits(4, 1, 1))
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), limits=Limits(20, 8, 2))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=at(5),
+        limits=Limits(agent=4, user=1, judge=1),
+    )
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=at(6),
+        limits=Limits(agent=20, user=8, judge=2),
+    )
     assert Comparison(*both(tmp_path)).page().differences == ("agent limit: 4 → 20",)
 
 

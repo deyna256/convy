@@ -35,7 +35,7 @@ All code is in `src/convy/`.
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent`; `Table`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
+| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
 | `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
 
@@ -88,7 +88,7 @@ in all of `src/convy/`.
    of its grades and the `pass` the scenario gives that grade; a judge gets the agent's thinking
    only if its `reviews_agent_thinking` is true. `[tool.convy]` of `pyproject.toml`:
    `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
-   pydantic-settings; the `CONVY_*` variables are then checked by msgspec as a `Table`. Past the
+   pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
    entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
    that mirrors outside JSON may hold `None` for its `null`, and is turned into domain types at
    once. JSON of no fixed shape, a `JsonAgent`'s body template and paths, which the user sets, is
