@@ -11,7 +11,7 @@ Five tiles sum up the run:
 - **Pass rate**: the share of attempts the judge passed, with the count (`67% · 8 of 12 attempts`).
   With `--trust`, it also says how many attempts were left out (`· 4 not trusted`).
 - **Stable scenarios**: those that passed every attempt.
-- **Answer time**: the mean per answer, and the slowest. Only the agent's own time counts, not the
+- **Time per answer**: the mean, and the slowest. Only the agent's own time counts, not the
   simulated user's or the judge's.
 - **Tokens per attempt**: in and out, as the agent reports them.
 - **Errors**: of the agent and of convy's models.
@@ -26,7 +26,7 @@ Each scenario gets a row and a status:
 - **No verdict**: no attempt was decided, because one of convy's models failed or the judge was not
   sure enough.
 
-The row also shows answer time and tokens. A filter such as `refund-*` narrows the list.
+The row also shows time per answer and tokens. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
 many attempts it held in and how many of its decisions were not trusted. A graded claim also says
@@ -36,7 +36,8 @@ dialogue with the time and tokens of each answer. An answer with the agent's thi
 folded above, under "Thinking", and its tokens say how many went to thinking, such as
 `300 out, 200 thinking`: they are part of the output, not added to it. If the judge says how sure
 it is, each decision shows that too, or "sure: not given" where it did not say. The address keeps
-the open scenario, so you can send a link to it.
+the open scenario, so you can send a link to it. **Total answer time** adds the durations of all
+answers in an attempt.
 
 `results/index.html` lists every run, newest first, with a link to its report.
 
@@ -49,6 +50,7 @@ uv run convy compare e46f 4693       # before, then after
 ```
 
 The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old value and the change.
+Pass-rate changes are in **percentage points**, not relative percent.
 [See a real one.](https://deyna256.github.io/convy/compare.html)
 
 - Green means better, red means worse.

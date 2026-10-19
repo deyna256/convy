@@ -46,7 +46,7 @@ function tiles() {
   return el("div", {className: "tiles"},
     tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
     tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
-    tile("Answer time", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
+    tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
     tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out${thought(M.thinking_tokens)}`),
     tile("Errors", String(M.errors), `agent ${M.agent_errors} · models ${M.model_errors}`));
 }
@@ -63,7 +63,7 @@ function table() {
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Answer time"), el("th", {className: "n"}, "Tokens per attempt"))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
     el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
 }
 
