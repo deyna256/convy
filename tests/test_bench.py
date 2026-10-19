@@ -22,6 +22,7 @@ from convy.bench import (
     Running,
     RunSpec,
 )
+from convy.busy import Busy, Patience
 from convy.dialog import ChatJudge, Claim, NoReason, NoVerdict, Reason, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeJudge, FakeModel, MemoryJournal
 from convy.model import Models
@@ -103,6 +104,16 @@ async def test_a_failed_attempt_does_not_stop_the_others():
     agent = FakeAgent(AgentFailure("down"))
     outcomes = await Bench(SCENARIOS, MODELS, attempts=2).run(agent, MemoryJournal())
     assert [o.stop for o in outcomes] == ["agent_failure"] * 4
+
+
+async def test_every_participant_waits_for_its_busy_service():
+    user = FakeModel(Busy("429", 0.05), "hi")
+    judge = FakeJudge(Busy("429", 0.05), (Claim(True, NoReason()),))
+    agent = FakeAgent(Busy("429", 0.05), "hello")
+    bench = Bench(SCENARIOS, Models(user, judge), patience=Patience(first=0.01))
+    outcomes = await bench.run(agent, MemoryJournal())
+    assert [o.stop for o in outcomes] == ["max_turns"] * 2
+    assert all(isinstance(o.verdict, Verdict) for o in outcomes)
 
 
 def test_a_bench_rejects_fewer_than_one_attempt():

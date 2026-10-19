@@ -85,6 +85,24 @@ You do not need to catch errors in `answer`. Any exception fails the turn, and c
 the dialogue. The text of the exception goes into the run's folder and the report, so keep keys out
 of it. `Env`'s own errors never show the values they read.
 
+## A busy service
+
+When the service refuses a message because it is busy, such as with "429 Too Many Requests", raise
+`Busy` with the wait it asks for, in seconds, or 0 when it does not say:
+
+```python
+from convy import Busy
+
+        if response.status_code == 429:
+            raise Busy("429", float(response.headers.get("Retry-After", 0)))
+```
+
+convy then waits and sends the message again, for up to 2 minutes, and the wait counts neither in
+the time per answer nor against `--turn-timeout`. If the service is still busy, the attempt has no
+verdict and is left out of the pass rate: convy sent too much, the agent did nothing wrong. Raise
+`Busy` only when the service did not act on the message, or the agent may get it twice. A model or a
+judge of your own raises `Busy` the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
+
 ## A client without async
 
 convy is async. If your client only has blocking calls, run them in a thread with

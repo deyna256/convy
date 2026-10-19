@@ -8,6 +8,8 @@ from typing import Protocol
 
 from msgspec import Struct
 
+from convy.busy import Places
+
 
 class Message(Struct, frozen=True):
     """A message from the simulated user to the agent."""
@@ -107,7 +109,7 @@ class QueuedAgent(Struct, frozen=True):
     answer's time nor against a time limit inside."""
 
     agent: Agent
-    places: asyncio.Semaphore
+    places: Places
 
     @asynccontextmanager
     async def conversation(self) -> AsyncIterator[Conversation]:

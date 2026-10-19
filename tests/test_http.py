@@ -12,6 +12,7 @@ import time_machine
 import trustme
 
 from convy.agent import AgentFailure, Answer, Message, NoUsage, Usage
+from convy.busy import Busy
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
 
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
@@ -39,7 +40,7 @@ class Service(httpx2.MockTransport):
         return response
 
     def endpoint(self) -> JsonEndpoint:
-        return JsonEndpoint("https://agent.test/chat", pauses=(0, 0), transport=self)
+        return JsonEndpoint("https://agent.test/chat", transport=self)
 
 
 async def test_post_returns_the_parsed_answer():
@@ -49,16 +50,18 @@ async def test_post_returns_the_parsed_answer():
 
 
 @pytest.mark.parametrize("status", [429, 503])
-async def test_post_repeats_a_request_the_service_did_not_process(status: int):
-    service = Service(httpx2.Response(status), httpx2.Response(200, json={}))
-    assert await service.endpoint().post({}) == {}
-    assert len(service.requests) == 2
+async def test_a_request_the_service_did_not_process_is_busy_with_the_wait_asked(status: int):
+    service = Service(httpx2.Response(status, headers={"Retry-After": "7"}))
+    with pytest.raises(Busy, match=str(status)) as busy:
+        await service.endpoint().post({})
+    assert busy.value.retry_after == 7
+    assert len(service.requests) == 1  # convy waits and repeats it, not the endpoint
 
 
 @pytest.mark.parametrize("error", [httpx2.ConnectError("refused"), httpx2.ConnectTimeout("slow")])
-async def test_post_repeats_when_it_cannot_connect(error: Exception):
-    service = Service(error, httpx2.Response(200, json={}))
-    assert await service.endpoint().post({}) == {}
+async def test_a_service_that_cannot_be_reached_is_busy(error: Exception):
+    with pytest.raises(Busy, match="cannot connect"):
+        await Service(error).endpoint().post({})
 
 
 @pytest.mark.parametrize(
@@ -72,31 +75,29 @@ async def test_post_does_not_repeat_a_request_the_service_may_have_processed(fai
     assert len(service.requests) == 1
 
 
-async def test_post_fails_when_the_retries_run_out():
-    service = Service(*[httpx2.Response(503)] * 3)
-    with pytest.raises(HttpFailure, match="503"):
-        await service.endpoint().post({})
-    assert len(service.requests) == 3
-
-
 async def test_post_fails_on_an_answer_that_is_not_json():
     with pytest.raises(HttpFailure, match="not JSON: oops"):
         await Service(httpx2.Response(200, text="oops")).endpoint().post({})
 
 
 @pytest.mark.parametrize(
-    ("header", "seconds"),
+    ("headers", "seconds"),
     [
-        ("7", 7.0),
-        ("600", 60.0),
-        (format_datetime(NOW + timedelta(seconds=30), usegmt=True), 30.0),
-        ("soon", 0.0),
-        ("Wed, 21 Oct 2026 07:28:00 -0000", 0.0),  # a date without a timezone
-        ("\u00b2", 0.0),  # a digit to str.isdigit, not to float
+        ({"Retry-After": "7"}, 7.0),
+        ({"Retry-After": "600"}, 600.0),  # longer than convy waits: it gives up at once
+        ({"Retry-After": format_datetime(NOW + timedelta(seconds=30), usegmt=True)}, 30.0),
+        ({"retry-after-ms": "1500", "Retry-After": "2"}, 1.5),
+        ({"Retry-After": "soon"}, 0.0),
+        ({"Retry-After": "Wed, 21 Oct 2026 07:28:00 -0000"}, 0.0),  # a date without a timezone
+        ({"Retry-After": "\u00b2"}, 0.0),  # a digit to str.isdigit, not to float
+        ({}, 0.0),
     ],
 )
-async def test_retry_after_is_seconds_or_a_date_capped_at_a_minute(header: str, seconds: float):
-    response = httpx2.Response(429, headers={b"Retry-After": header.encode("latin-1")})
+async def test_the_wait_asked_is_milliseconds_seconds_or_a_date(
+    headers: dict[str, str], seconds: float
+):
+    encoded = {name.encode(): value.encode("latin-1") for name, value in headers.items()}
+    response = httpx2.Response(429, headers=encoded)
     async with Service().endpoint().connection() as connection:
         with time_machine.travel(NOW, tick=False):
             assert connection.retry_after(response) == seconds
@@ -124,7 +125,7 @@ async def test_an_unreadable_certificate_is_an_http_failure(tmp_path):
 
 async def test_a_malformed_url_is_an_http_failure():
     with pytest.raises(HttpFailure, match="InvalidURL"):
-        await JsonEndpoint("https://agent.test/\x00", pauses=()).post({})
+        await JsonEndpoint("https://agent.test/\x00").post({})
 
 
 async def test_a_header_that_is_not_ascii_is_an_http_failure_without_its_value():

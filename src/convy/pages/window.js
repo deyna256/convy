@@ -1,4 +1,4 @@
-const STOPS = {user_stop: "the user finished", max_turns: "the turns ran out", agent_failure: "the agent failed", model_failure: "convy's model failed"};
+const STOPS = {user_stop: "the user finished", max_turns: "the turns ran out", agent_failure: "the agent failed", agent_busy: "the agent's service stayed busy", model_failure: "convy's model failed"};
 const clock = () => {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("width", "14"); svg.setAttribute("height", "14"); svg.setAttribute("aria-hidden", "true");

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from msgspec import Struct
 
 from convy.agent import Answer, Conversation, Message, Usage
+from convy.busy import Busy
 from convy.dialog import Claim, Graded, Transcript
 from convy.model import ModelFailure
 from convy.scenario import Outcome
@@ -80,7 +81,7 @@ class EchoConversation(Struct, frozen=True):
 
 
 class FakeModel:
-    """A model that replies from a list: a step is a string, or an exception to raise.
+    """A model that replies from a list: a step is a string, or `ModelFailure` or `Busy` to raise.
 
     The list runs across all calls, and the last step repeats. Its `name` is `"fake"`. Each reply
     takes `delay` seconds; `peak` is the most replies that were under way at once.
@@ -88,7 +89,7 @@ class FakeModel:
 
     name = "fake"
 
-    def __init__(self, *steps: str | ModelFailure, delay: float = 0):
+    def __init__(self, *steps: str | ModelFailure | Busy, delay: float = 0):
         if not steps:
             raise ValueError("FakeModel needs at least one step")
         self.steps = steps
@@ -107,14 +108,15 @@ class FakeModel:
         finally:
             self.busy -= 1
         match step:
-            case ModelFailure():
+            case ModelFailure() | Busy():
                 raise step
             case str():
                 return step
 
 
 class FakeJudge:
-    """A judge that decides from a list: a step is the claims to return, or an exception to raise.
+    """A judge that decides from a list: a step is the claims to return, or `ModelFailure` or `Busy`
+    to raise.
 
     The list runs across all calls, and the last step repeats. Its `name` is `"fake"`;
     `reviews_agent_thinking` is `False` unless given. Each decision takes `delay` seconds; `peak`
@@ -125,7 +127,7 @@ class FakeJudge:
 
     def __init__(
         self,
-        *steps: tuple[Claim, ...] | ModelFailure,
+        *steps: tuple[Claim, ...] | ModelFailure | Busy,
         reviews_agent_thinking: bool = False,
         delay: float = 0,
     ):
@@ -150,7 +152,7 @@ class FakeJudge:
         finally:
             self.busy -= 1
         match step:
-            case ModelFailure():
+            case ModelFailure() | Busy():
                 raise step
             case tuple():
                 return step

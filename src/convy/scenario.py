@@ -11,6 +11,7 @@ import yamlrocks
 from msgspec import Struct, field
 
 from convy.agent import Agent, AgentFailure, Answer, Conversation, Message
+from convy.busy import Busy, Patience, Places
 from convy.dialog import (
     Checked,
     Failed,
@@ -24,7 +25,10 @@ from convy.dialog import (
 )
 from convy.model import Contained, ModelFailure, Models
 
-type Stop = Literal["user_stop", "max_turns", "agent_failure", "model_failure"]
+PATIENCE = Patience()  # how long an agent is waited for when a bench gives no patience
+UNCOUNTED = Places(1)  # where an agent outside a bench reports how its service answered
+
+type Stop = Literal["user_stop", "max_turns", "agent_failure", "agent_busy", "model_failure"]
 
 
 class Outcome(Struct, frozen=True):
@@ -38,8 +42,8 @@ class Outcome(Struct, frozen=True):
     stop: Stop
 
     def failed(self) -> bool:
-        """Whether the agent or convy's model failed."""
-        return self.stop in ("agent_failure", "model_failure")
+        """Whether the agent or convy's model failed, or the agent's service stayed busy."""
+        return self.stop in ("agent_failure", "agent_busy", "model_failure")
 
 
 class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
@@ -57,8 +61,17 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         if not self.claims:
             raise ValueError("judge must list at least one claim")
 
-    async def outcome(self, agent: Agent, models: Models, attempt: int) -> Outcome:
-        """Play the scenario once against the agent."""
+    async def outcome(
+        self,
+        agent: Agent,
+        models: Models,
+        attempt: int,
+        patience: Patience = PATIENCE,
+        places: Places = UNCOUNTED,
+    ) -> Outcome:
+        """Play the scenario once against the agent, waiting for its busy service as `patience`
+        allows and telling the agent's `places` how it answered. An agent whose service stays busy
+        is not judged: convy sent too much, the agent did nothing wrong."""
         user = SimulatedUser(Contained(models.user), self.instructions)
         transcript = Transcript()
         stop: Stop = "max_turns"
@@ -71,10 +84,15 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
                             break
                         case Message() as message:
                             transcript = transcript.with_turn(
-                                await self.turn(conversation, message)
+                                await patience.call(
+                                    lambda: self.turn(conversation, message), places
+                                )
                             )
         except ModelFailure as failure:
             return self.ended(attempt, transcript, NoVerdict(str(failure)), "model_failure")
+        except Busy as busy:
+            reason = f"the agent's service stayed busy: {busy}"
+            return self.ended(attempt, transcript, NoVerdict(reason), "agent_busy")
         except TurnFailed as failed:
             return self.failed(attempt, transcript.with_turn(failed.turn), str(failed))
         except Exception as error:  # opening or closing the conversation is the agent's code too
@@ -86,9 +104,12 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         return self.ended(attempt, transcript, Verdict(decided), stop)
 
     async def turn(self, conversation: Conversation, message: Message) -> Turn:
+        """One try of a turn, timed alone, so that waiting for a busy service is not answering."""
         start = time.monotonic()
         try:
             answer = self.checked(await conversation.answer(message))
+        except Busy:
+            raise
         except Exception as error:  # the agent's code: any bug is a failed turn
             failed = Turn(message, Answer(self.agent_error(error)), time.monotonic() - start)
             raise TurnFailed(failed) from error

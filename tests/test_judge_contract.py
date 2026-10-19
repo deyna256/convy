@@ -1,16 +1,15 @@
 """The promises every `Judge` keeps, checked on each implementation convy ships."""
 
-import asyncio
-
 import pytest
 
+from convy.busy import Busy, Patience, Places
 from convy.dialog import (
     ChatJudge,
     Claim,
     Grade,
     Graded,
     Judge,
-    QueuedJudge,
+    PatientJudge,
     Reason,
     Transcript,
 )
@@ -24,12 +23,19 @@ CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no"), grade=Grade("mo
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),
     "FakeJudge": lambda: FakeJudge(CLAIMED),
-    "QueuedJudge": lambda: QueuedJudge(FakeJudge(CLAIMED), asyncio.Semaphore(1)),
+    "PatientJudge": lambda: PatientJudge(FakeJudge(CLAIMED), Patience(), Places(1)),
 }
 FAILING = {
     "ChatJudge": lambda: ChatJudge(FakeModel(ModelFailure("down"))),
     "FakeJudge": lambda: FakeJudge(ModelFailure("down")),
-    "QueuedJudge": lambda: QueuedJudge(FakeJudge(ModelFailure("down")), asyncio.Semaphore(1)),
+    "PatientJudge": lambda: PatientJudge(FakeJudge(ModelFailure("down")), Patience(), Places(1)),
+}
+BUSY = {
+    "ChatJudge": lambda: ChatJudge(FakeModel(Busy("slow down", 1))),
+    "FakeJudge": lambda: FakeJudge(Busy("slow down", 1)),
+    "PatientJudge": lambda: PatientJudge(
+        FakeJudge(Busy("slow down", 1)), Patience(seconds=0), Places(1)
+    ),
 }
 
 
@@ -49,3 +55,10 @@ async def test_failure_is_model_failure(make):
 @pytest.mark.parametrize("make", JUDGES.values(), ids=JUDGES)
 def test_a_judge_says_whether_it_reviews_the_agent_thinking(make):
     assert make().reviews_agent_thinking is False
+
+
+@pytest.mark.parametrize("make", BUSY.values(), ids=BUSY)
+async def test_a_busy_service_is_busy(make):
+    """A decision the service refused because it is busy raises `Busy`, which convy waits on."""
+    with pytest.raises(Busy):
+        await make().decide(Transcript(), CLAIMS)

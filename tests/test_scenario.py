@@ -11,6 +11,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, NoThinking, Usage
 from convy.bench import RunJournal, RunSpec
+from convy.busy import Busy, Patience
 from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Reason, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
@@ -104,6 +105,38 @@ def test_an_answer_written_before_thinking_reads_without_it():
     old = b'{"text": "hi", "usage": {"type": "usage", "input": 1, "output": 2}}'
     answer = msgspec.json.decode(old, type=Answer)
     assert (answer.thinking, answer.usage) == (NoThinking(), Usage(1, 2, 0))
+
+
+async def test_waiting_for_a_busy_agent_is_not_answer_time():
+    agent = FakeAgent(Busy("429", 0.1), "hello")  # every conversation starts the list over
+    patience = Patience(first=0.01)
+    outcome = await SCENARIO.outcome(agent, models("hi"), attempt=1, patience=patience)
+    assert outcome.verdict == Verdict((Claim(True, Reason("fine")),))
+    assert [turn.answer.text for turn in outcome.transcript.turns] == ["hello", "hello"]
+    assert all(turn.seconds < 0.1 for turn in outcome.transcript.turns)
+
+
+async def test_an_agent_whose_service_stays_busy_is_not_judged():
+    judge = FakeModel(PASS)
+    used = Models(user=FakeModel("hi"), judge=ChatJudge(judge))
+    patience = Patience(seconds=0.05, first=0.01, longest=0.01)
+    outcome = await SCENARIO.outcome(FakeAgent(Busy("503")), used, attempt=1, patience=patience)
+    assert outcome.stop == "agent_busy"
+    assert outcome.failed()
+    assert outcome.verdict == NoVerdict(
+        "the agent's service stayed busy: 503; still busy, and convy waits up to 0.05 s"
+    )
+    assert judge.calls == []
+
+
+async def test_an_agent_busy_when_a_conversation_opens_is_not_judged():
+    class Full:
+        def conversation(self):
+            raise Busy("no free session")
+
+    outcome = await SCENARIO.outcome(Full(), models("hi"), attempt=1)
+    assert outcome.stop == "agent_busy"
+    assert outcome.verdict == NoVerdict("the agent's service stayed busy: no free session")
 
 
 async def test_an_agent_that_cannot_open_a_conversation_fails():
