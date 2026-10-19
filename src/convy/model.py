@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Annotated, Protocol
 import msgspec
 from msgspec import Meta, Struct
 
-from convy.busy import Patience, Places
+from convy.busy import Places
 from convy.http import HttpFailure, JsonEndpoint
 
 if TYPE_CHECKING:  # dialog.py imports this module
@@ -87,11 +87,9 @@ class Contained(Struct, frozen=True):
 
 
 class PatientModel(Struct, frozen=True):
-    """The same model, sending each reply's request in a place of `places` and waiting for its busy
-    service as `patience` allows, with no place held while it waits."""
+    """The same model, each reply sent in a place of `places`, which waits for a busy service."""
 
     model: Model
-    patience: Patience
     places: Places
 
     @property
@@ -99,11 +97,7 @@ class PatientModel(Struct, frozen=True):
         return self.model.name
 
     async def reply(self, messages: list[dict[str, str]]) -> str:
-        async def tried() -> str:
-            async with self.places:
-                return await self.model.reply(messages)
-
-        return await self.patience.call(tried, self.places)
+        return await self.places.call(lambda: self.model.reply(messages))
 
 
 class Models(Struct, frozen=True):

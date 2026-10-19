@@ -4,7 +4,7 @@ import httpx2
 import pytest
 
 from convy.agent import Agent, AgentFailure, Answer, Message, QueuedAgent, TimeLimited
-from convy.busy import Busy, Places
+from convy.busy import Busy, Patience, Places
 from convy.fakes import Echo, FakeAgent
 from convy.http import JsonAgent, JsonEndpoint
 
@@ -20,7 +20,7 @@ AGENTS = {
     "FakeAgent": lambda: FakeAgent("hi"),
     "Echo": lambda: Echo(),
     "TimeLimited": lambda: TimeLimited(Echo(), 5),
-    "QueuedAgent": lambda: QueuedAgent(Echo(), Places(2)),  # two places: two at once
+    "QueuedAgent": lambda: QueuedAgent(Echo(), Places(2, Patience())),  # two places: two at once
 }
 
 
@@ -48,7 +48,7 @@ async def test_a_busy_service_is_busy():
     for agent in (
         busy,
         TimeLimited(busy, 5),
-        QueuedAgent(busy, Places(1)),
+        QueuedAgent(busy, Places(1, Patience())),
         json_agent(429),
     ):
         async with agent.conversation() as conversation:
@@ -58,7 +58,7 @@ async def test_a_busy_service_is_busy():
 
 async def test_failed_turn_is_agent_failure():
     down = FakeAgent(AgentFailure("down"))
-    queued = QueuedAgent(down, Places(1))
+    queued = QueuedAgent(down, Places(1, Patience()))
     for agent in (down, TimeLimited(down, 5), queued, json_agent(status=400)):
         async with agent.conversation() as conversation:
             with pytest.raises(AgentFailure):

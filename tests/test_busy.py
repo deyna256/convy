@@ -25,13 +25,13 @@ class Service:
 
 async def test_a_request_waits_at_least_as_long_as_the_service_asks():
     service = Service(Busy("429", 0.1))
-    assert await Patience(first=0.01).call(service.request, Places(1)) == "done"
+    assert await Places(1, Patience(first=0.01)).retry(service.request) == "done"
     assert 0.1 <= service.times[1] - service.times[0] < 0.2
 
 
 async def test_without_a_wait_asked_the_waits_stay_within_a_window_up_to_longest():
     service = Service(*[Busy("503")] * 6)
-    assert await Patience(first=0.01, longest=0.04).call(service.request, Places(1)) == "done"
+    assert await Places(1, Patience(first=0.01, longest=0.04)).retry(service.request) == "done"
     gaps = [later - earlier for earlier, later in pairwise(service.times)]
     assert len(gaps) == 6
     assert max(gaps) < 0.04 + 0.02  # a little for the event loop
@@ -39,23 +39,23 @@ async def test_without_a_wait_asked_the_waits_stay_within_a_window_up_to_longest
 
 async def test_a_service_still_busy_when_the_time_is_up_is_busy():
     service = Service(*[Busy("503")] * 100)
-    patience = Patience(seconds=0.1, first=0.02, longest=0.02)
+    places = Places(1, Patience(seconds=0.1, first=0.02, longest=0.02))
     start = time.monotonic()
     with pytest.raises(Busy, match=re.escape("503; still busy, and convy waits up to 0.1 s")):
-        await patience.call(service.request, Places(1))
+        await places.retry(service.request)
     assert time.monotonic() - start < 0.2
 
 
 async def test_a_wait_longer_than_the_time_left_gives_up_at_once():
     service = Service(Busy("429", 600))
     with pytest.raises(Busy) as busy:
-        await Patience(seconds=1).call(service.request, Places(1))
+        await Places(1, Patience(seconds=1)).retry(service.request)
     assert busy.value.retry_after == 600
     assert len(service.times) == 1
 
 
 async def test_a_busy_service_halves_the_places_and_answers_bring_them_back():
-    places = Places(8)
+    places = Places(8, Patience())
     for allowed in (4, 2, 1, 1):
         places.busy()
         assert places.allowed == allowed
@@ -68,7 +68,7 @@ async def test_a_busy_service_halves_the_places_and_answers_bring_them_back():
 
 
 async def test_no_more_requests_go_than_the_places_allowed():
-    places = Places(4)
+    places = Places(4, Patience())
     places.busy()
     entered = 0
 
@@ -88,26 +88,22 @@ async def test_no_more_requests_go_than_the_places_allowed():
 
 
 async def test_a_request_holds_no_place_while_it_waits():
-    places = Places(1)
+    places = Places(1, Patience(first=0.01))
     told, other = Service(Busy("429", 0.2)), Service()
-
-    async def placed(service: Service) -> str:
-        async with places:
-            return await service.request()
 
     async def later() -> str:
         await asyncio.sleep(0.05)  # sent while the first waits to try again
-        return await Patience(first=0.01).call(lambda: placed(other), places)
+        return await places.call(other.request)
 
-    await asyncio.gather(Patience(first=0.01).call(lambda: placed(told), places), later())
+    await asyncio.gather(places.call(told.request), later())
     assert other.times[0] < told.times[1]
 
 
-async def test_patience_tells_the_places_how_the_service_answered():
-    places = Places(8)
+async def test_retries_tell_the_places_how_the_service_answered():
+    places = Places(8, Patience(first=0.01))
     service = Service(Busy("429", 0.01), Busy("429", 0.01))
-    assert await Patience(first=0.01).call(service.request, places) == "done"
+    assert await places.retry(service.request) == "done"
     assert places.allowed == 2  # halved twice; one answer is not yet two
     for _ in range(2):
-        await Patience().call(service.request, places)
+        await places.retry(service.request)
     assert places.allowed == 3

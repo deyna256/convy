@@ -11,7 +11,7 @@ import yamlrocks
 from msgspec import Struct, field
 
 from convy.agent import Agent, AgentFailure, Answer, Conversation, Message
-from convy.busy import Busy, Patience, Places
+from convy.busy import Busy, Places
 from convy.dialog import (
     Checked,
     Failed,
@@ -24,9 +24,6 @@ from convy.dialog import (
     Verdict,
 )
 from convy.model import Contained, ModelFailure, Models
-
-PATIENCE = Patience()  # how long an agent is waited for when a bench gives no patience
-UNCOUNTED = Places(1)  # where an agent outside a bench reports how its service answered
 
 type Stop = Literal["user_stop", "max_turns", "agent_failure", "agent_busy", "model_failure"]
 
@@ -61,17 +58,8 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         if not self.claims:
             raise ValueError("judge must list at least one claim")
 
-    async def outcome(
-        self,
-        agent: Agent,
-        models: Models,
-        attempt: int,
-        patience: Patience = PATIENCE,
-        places: Places = UNCOUNTED,
-    ) -> Outcome:
-        """Play the scenario once against the agent, waiting for its busy service as `patience`
-        allows and telling the agent's `places` how it answered. An agent whose service stays busy
-        is not judged: convy sent too much, the agent did nothing wrong."""
+    async def outcome(self, agent: Agent, models: Models, attempt: int, places: Places) -> Outcome:
+        """Play the scenario once against the agent, whose `places` wait for its busy service."""
         user = SimulatedUser(Contained(models.user), self.instructions)
         transcript = Transcript()
         stop: Stop = "max_turns"
@@ -84,9 +72,7 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
                             break
                         case Message() as message:
                             transcript = transcript.with_turn(
-                                await patience.call(
-                                    lambda: self.turn(conversation, message), places
-                                )
+                                await places.retry(lambda: self.turn(conversation, message))
                             )
         except ModelFailure as failure:
             return self.ended(attempt, transcript, NoVerdict(str(failure)), "model_failure")

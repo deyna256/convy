@@ -23,18 +23,18 @@ CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no"), grade=Grade("mo
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),
     "FakeJudge": lambda: FakeJudge(CLAIMED),
-    "PatientJudge": lambda: PatientJudge(FakeJudge(CLAIMED), Patience(), Places(1)),
+    "PatientJudge": lambda: PatientJudge(FakeJudge(CLAIMED), Places(1, Patience())),
 }
 FAILING = {
     "ChatJudge": lambda: ChatJudge(FakeModel(ModelFailure("down"))),
     "FakeJudge": lambda: FakeJudge(ModelFailure("down")),
-    "PatientJudge": lambda: PatientJudge(FakeJudge(ModelFailure("down")), Patience(), Places(1)),
+    "PatientJudge": lambda: PatientJudge(FakeJudge(ModelFailure("down")), Places(1, Patience())),
 }
 BUSY = {
     "ChatJudge": lambda: ChatJudge(FakeModel(Busy("slow down", 1))),
     "FakeJudge": lambda: FakeJudge(Busy("slow down", 1)),
     "PatientJudge": lambda: PatientJudge(
-        FakeJudge(Busy("slow down", 1)), Patience(seconds=0), Places(1)
+        FakeJudge(Busy("slow down", 1)), Places(1, Patience(seconds=0))
     ),
 }
 

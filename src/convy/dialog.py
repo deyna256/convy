@@ -7,7 +7,7 @@ import msgspec
 from msgspec import Struct, field
 
 from convy.agent import Answer, Message, NoThinking, Thinking
-from convy.busy import Patience, Places
+from convy.busy import Places
 from convy.model import Model, ModelFailure
 
 STOP = "###STOP###"
@@ -364,11 +364,9 @@ class ChatJudge(Struct, frozen=True):
 
 
 class PatientJudge(Struct, frozen=True):
-    """The same judge, sending each decision's request in a place of `places` and waiting for its
-    busy service as `patience` allows, with no place held while it waits."""
+    """The same judge, each decision sent in a place of `places`, which waits for a busy service."""
 
     judge: Judge
-    patience: Patience
     places: Places
 
     @property
@@ -382,11 +380,7 @@ class PatientJudge(Struct, frozen=True):
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
-        async def tried() -> tuple[Claim, ...]:
-            async with self.places:
-                return await self.judge.decide(transcript, claims)
-
-        return await self.patience.call(tried, self.places)
+        return await self.places.call(lambda: self.judge.decide(transcript, claims))
 
 
 class Checked(Struct, frozen=True):

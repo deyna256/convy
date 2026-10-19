@@ -19,18 +19,18 @@ def open_ai(status: int = 200) -> OpenAiModel:
 MODELS = {
     "OpenAiModel": open_ai,
     "FakeModel": lambda: FakeModel("hi"),
-    "PatientModel": lambda: PatientModel(FakeModel("hi"), Patience(), Places(1)),
+    "PatientModel": lambda: PatientModel(FakeModel("hi"), Places(1, Patience())),
 }
 FAILING = {
     "OpenAiModel": lambda: open_ai(status=401),
     "FakeModel": lambda: FakeModel(ModelFailure("down")),
-    "PatientModel": lambda: PatientModel(FakeModel(ModelFailure("down")), Patience(), Places(1)),
+    "PatientModel": lambda: PatientModel(FakeModel(ModelFailure("down")), Places(1, Patience())),
 }
 BUSY = {
     "OpenAiModel": lambda: open_ai(status=429),
     "FakeModel": lambda: FakeModel(Busy("slow down", 1)),
     "PatientModel": lambda: PatientModel(
-        FakeModel(Busy("slow down", 1)), Patience(seconds=0), Places(1)
+        FakeModel(Busy("slow down", 1)), Places(1, Patience(seconds=0))
     ),
 }
 

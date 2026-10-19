@@ -11,7 +11,7 @@ from pydantic_settings import SettingsConfigDict
 
 from convy.agent import AgentFailure, Answer, NoThinking, Usage
 from convy.bench import RunJournal, RunSpec
-from convy.busy import Busy, Patience
+from convy.busy import Busy, Patience, Places
 from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Reason, Verdict
 from convy.env import Env
 from convy.fakes import EchoConversation, FakeAgent, FakeModel
@@ -22,6 +22,12 @@ from convy.scenario import Matching, Outcome, Scenario, Scenarios
 
 SCENARIO = Scenario(id="greet", max_turns=2, instructions="Say hi.", claims=("greets",))
 PASS = '{"claims": [{"pass": true, "reason": "fine"}]}'
+PATIENCE = Patience()  # frozen, so one serves every test
+
+
+def alone(patience: Patience = PATIENCE) -> Places:
+    """The places of an agent played outside a bench: one conversation, each test its own."""
+    return Places(1, patience)
 
 
 def models(*user: str | ModelFailure, judge: str | ModelFailure = PASS) -> Models:
@@ -30,7 +36,7 @@ def models(*user: str | ModelFailure, judge: str | ModelFailure = PASS) -> Model
 
 async def test_turns_run_out():
     outcome = await SCENARIO.outcome(
-        FakeAgent(Answer("hello", Usage(3, 4))), models("hi"), attempt=1
+        FakeAgent(Answer("hello", Usage(3, 4))), models("hi"), attempt=1, places=alone()
     )
     assert outcome.stop == "max_turns"
     assert outcome.verdict == Verdict((Claim(True, Reason("fine")),))
@@ -40,7 +46,9 @@ async def test_turns_run_out():
 
 
 async def test_the_user_finishes():
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), models("hi", "###STOP###"), attempt=1)
+    outcome = await SCENARIO.outcome(
+        FakeAgent("hello"), models("hi", "###STOP###"), attempt=1, places=alone()
+    )
     assert outcome.stop == "user_stop"
     assert len(outcome.transcript.turns) == 1
 
@@ -49,7 +57,7 @@ async def test_the_user_finishes():
 async def test_a_failed_turn_fails_the_attempt_without_the_judge(error: Exception):
     judge = FakeModel(PASS)
     used = Models(user=FakeModel("hi"), judge=ChatJudge(judge))
-    outcome = await SCENARIO.outcome(FakeAgent("hello", error), used, attempt=1)
+    outcome = await SCENARIO.outcome(FakeAgent("hello", error), used, attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
     assert isinstance(outcome.verdict, Failed)
     assert outcome.transcript.turns[-1].answer.text.startswith(
@@ -71,7 +79,7 @@ async def test_a_wrong_answer_fails_the_turn(answer: object):
         async def conversation(self):
             yield Wrong()
 
-    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1)
+    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
     assert "the answer is not a valid Answer" in outcome.transcript.turns[-1].answer.text
     msgspec.json.decode(msgspec.json.encode(outcome), type=Outcome)  # the journal can read it
@@ -96,7 +104,7 @@ async def test_thinking_tokens_above_the_output_fail_the_turn_not_the_run(build)
         async def conversation(self):
             yield Talking()
 
-    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1)
+    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
     assert "thinking tokens must be from 0 to the output's 2" in str(outcome.verdict)
 
@@ -109,8 +117,7 @@ def test_an_answer_written_before_thinking_reads_without_it():
 
 async def test_waiting_for_a_busy_agent_is_not_answer_time():
     agent = FakeAgent(Busy("429", 0.1), "hello")  # every conversation starts the list over
-    patience = Patience(first=0.01)
-    outcome = await SCENARIO.outcome(agent, models("hi"), attempt=1, patience=patience)
+    outcome = await SCENARIO.outcome(agent, models("hi"), 1, alone(Patience(first=0.01)))
     assert outcome.verdict == Verdict((Claim(True, Reason("fine")),))
     assert [turn.answer.text for turn in outcome.transcript.turns] == ["hello", "hello"]
     assert all(turn.seconds < 0.1 for turn in outcome.transcript.turns)
@@ -120,7 +127,7 @@ async def test_an_agent_whose_service_stays_busy_is_not_judged():
     judge = FakeModel(PASS)
     used = Models(user=FakeModel("hi"), judge=ChatJudge(judge))
     patience = Patience(seconds=0.05, first=0.01, longest=0.01)
-    outcome = await SCENARIO.outcome(FakeAgent(Busy("503")), used, attempt=1, patience=patience)
+    outcome = await SCENARIO.outcome(FakeAgent(Busy("503")), used, 1, alone(patience))
     assert outcome.stop == "agent_busy"
     assert outcome.failed()
     assert outcome.verdict == NoVerdict(
@@ -134,7 +141,7 @@ async def test_an_agent_busy_when_a_conversation_opens_is_not_judged():
         def conversation(self):
             raise Busy("no free session")
 
-    outcome = await SCENARIO.outcome(Full(), models("hi"), attempt=1)
+    outcome = await SCENARIO.outcome(Full(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_busy"
     assert outcome.verdict == NoVerdict("the agent's service stayed busy: no free session")
 
@@ -144,7 +151,7 @@ async def test_an_agent_that_cannot_open_a_conversation_fails():
         def conversation(self):
             raise ConnectionError("no session")
 
-    outcome = await SCENARIO.outcome(Closed(), models("hi"), attempt=1)
+    outcome = await SCENARIO.outcome(Closed(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
     assert outcome.verdict == Failed("[agent error: ConnectionError: no session]")
 
@@ -153,7 +160,7 @@ async def test_an_agent_that_cannot_open_a_conversation_fails():
     "used", [models(ModelFailure("user down")), models("hi", judge=ModelFailure("judge down"))]
 )
 async def test_a_failed_model_leaves_no_verdict(used: Models):
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
+    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1, places=alone())
     assert outcome.stop == "model_failure"
     assert isinstance(outcome.verdict, NoVerdict)
 
@@ -173,13 +180,15 @@ class Buggy:
     ],
 )
 async def test_a_bug_in_a_model_is_a_model_failure(used: Models):
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
+    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1, places=alone())
     assert outcome.stop == "model_failure"
     assert outcome.verdict == NoVerdict("buggy: KeyError: 'choices'")
 
 
 async def test_a_judge_answer_without_a_verdict_leaves_no_verdict():
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), models("hi", judge="Looks fine."), 1)
+    outcome = await SCENARIO.outcome(
+        FakeAgent("hello"), models("hi", judge="Looks fine."), 1, alone()
+    )
     assert outcome.stop == "model_failure"
     assert outcome.verdict == NoVerdict("the judge did not answer with JSON: Looks fine.")
 
@@ -190,7 +199,7 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
     service = httpx2.MockTransport(lambda request: httpx2.Response(200, content=content))
     judge = OpenAiModel(JsonEndpoint("https://llm.test", transport=service), "gpt")
     used = Models(user=FakeModel("hi", "###STOP###"), judge=ChatJudge(judge))
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
+    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1, places=alone())
     assert outcome.stop == "model_failure"
     started = datetime(2026, 10, 6, tzinfo=UTC)
     spec = RunSpec(
@@ -214,7 +223,7 @@ async def test_a_judge_reply_that_cannot_be_encoded_leaves_no_verdict(tmp_path):
 async def test_a_judge_with_a_broken_tls_leaves_no_verdict():
     endpoint = JsonEndpoint("https://llm.test/chat/completions", tls=Tls(ca="/missing.pem"))
     used = Models(user=FakeModel("hi", "###STOP###"), judge=ChatJudge(OpenAiModel(endpoint, "gpt")))
-    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1)
+    outcome = await SCENARIO.outcome(FakeAgent("hello"), used, attempt=1, places=alone())
     assert outcome.stop == "model_failure"
     assert isinstance(outcome.verdict, NoVerdict)
     assert str(Path("/missing.pem")) in outcome.verdict.error
@@ -235,7 +244,7 @@ async def test_settings_missing_in_an_agent_do_not_leak_keys(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("BOT_URL", raising=False)
     monkeypatch.setenv("BOT_KEY", "sk-SECRET123")
-    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1)
+    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
     assert "url" in str(outcome.verdict)
     assert b"sk-SECRET123" not in msgspec.json.encode(outcome)

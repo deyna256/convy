@@ -82,7 +82,7 @@ def test_env_reads_dotenv_then_the_environment(tmp_path, monkeypatch):
 
 
 async def test_a_patient_model_holds_no_place_while_it_waits_for_a_busy_service():
-    model = PatientModel(FakeModel(Busy("429", 0.3), "hi"), Patience(first=0.01), Places(1))
+    model = PatientModel(FakeModel(Busy("429", 0.3), "hi"), Places(1, Patience(first=0.01)))
     first = asyncio.create_task(model.reply([]))
     await asyncio.sleep(0.05)  # the first now waits to try again
     assert await asyncio.wait_for(model.reply([]), 0.2) == "hi"

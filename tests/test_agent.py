@@ -14,6 +14,7 @@ from convy.agent import (
     TimeLimited,
     Usage,
 )
+from convy.busy import Patience, Places
 from convy.dialog import ChatJudge
 from convy.fakes import Echo, EchoConversation, FakeAgent, FakeModel
 from convy.model import Models
@@ -52,7 +53,9 @@ async def test_a_slow_opening_or_closing_fails_the_attempt(agent: Slow):
     models = Models(
         user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}'))
     )
-    outcome = await scenario.outcome(TimeLimited(agent, 0.05), models, attempt=1)
+    outcome = await scenario.outcome(
+        TimeLimited(agent, 0.05), models, attempt=1, places=Places(1, Patience())
+    )
     assert outcome.stop == "agent_failure"
 
 
