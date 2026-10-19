@@ -139,3 +139,19 @@ async def test_without_a_wait_asked_convy_keeps_trying_until_the_time_is_up():
     with pytest.raises(Busy):
         await places.retry(service.request)
     assert 0.28 <= time.monotonic() - start < 0.4  # a random wait is cut to the time left
+
+
+async def test_requests_are_spaced_evenly_to_keep_a_limit_per_minute():
+    places = Places(4, Patience(), per_minute=600)  # one request every 0.1 s
+    service = Service()
+    await asyncio.gather(*(places.call(service.request) for _ in range(4)))
+    gaps = [later - earlier for earlier, later in pairwise(service.times)]
+    assert min(gaps) >= 0.095
+
+
+async def test_tries_again_after_a_busy_service_keep_the_limit_per_minute_too():
+    places = Places(1, Patience(first=0.001), per_minute=600)
+    service = Service(Busy("503"), Busy("503"))
+    assert await places.retry(service.request) == "done"
+    gaps = [later - earlier for earlier, later in pairwise(service.times)]
+    assert min(gaps) >= 0.095

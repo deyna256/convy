@@ -32,12 +32,15 @@ class Patience(Struct, frozen=True, kw_only=True):
 
 class Places:
     """A participant's requests under way at once: up to `most`, half as many each time its service
-    is busy, and one more again after as many answers as there are places; and its `patience` with
-    a busy service. Made in the event loop that waits for it."""
+    is busy, and one more again after as many answers as there are places; sent no faster than
+    `per_minute`, evenly, or as fast as they come at 0; and its `patience` with a busy service.
+    Made in the event loop that waits for it."""
 
-    def __init__(self, most: int, patience: Patience):
+    def __init__(self, most: int, patience: Patience, per_minute: float = 0):
         self.most = most
         self.patience = patience
+        self.per_minute = per_minute
+        self.next = 0.0  # time.monotonic() at which the next request may go
         self.allowed = most
         self.taken = 0
         self.answers = 0  # since the last change of `allowed`
@@ -59,15 +62,29 @@ class Places:
             self.changed.notify_all()
 
     async def call[T](self, request: Callable[[], Awaitable[T]]) -> T:
-        """What `request` gives, each try sent in a place, so no place is held while waiting."""
+        """What `request` gives, each try sent in a place, so no place is held while waiting, and
+        in its turn once in the place, so that a place taken late does not shorten the spacing."""
 
         async def placed() -> T:
             async with self:
-                return await request()
+                return await self.paced(request)
 
-        return await self.retry(placed)
+        return await self.tries(placed)
 
     async def retry[T](self, request: Callable[[], Awaitable[T]]) -> T:
+        """What `request` gives, each try in its turn, with no place: for a turn of a conversation
+        that already holds one."""
+        return await self.tries(lambda: self.paced(request))
+
+    async def paced[T](self, request: Callable[[], Awaitable[T]]) -> T:
+        if self.per_minute:
+            now = time.monotonic()
+            turn = max(now, self.next)
+            self.next = turn + 60 / self.per_minute  # taken before waiting, so no two share it
+            await asyncio.sleep(turn - now)
+        return await request()
+
+    async def tries[T](self, request: Callable[[], Awaitable[T]]) -> T:
         """What `request` gives once its service is not busy, tried as often as `patience` allows;
         `Busy` when the service asks for longer than is left, or is still busy when the time is
         up."""

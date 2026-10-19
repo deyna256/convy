@@ -83,7 +83,7 @@ parallel = 20          # conversations at once with this agent, instead of agent
 ```
 
 To change a limit for one run or on one machine, such as in CI, set a variable: `CONVY_` and the
-key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`:
+key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`, or `__PER_MINUTE`:
 
 ```sh
 CONVY_JUDGE_PARALLEL=1 uv run convy run support_bot
@@ -94,10 +94,25 @@ The environment wins over `.env` in the project's folder, and both win over `pyp
 convy does not know in `[tool.convy]` is an error. Agent names are matched in any case, so
 `Support_Bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` mean one agent.
 
-The wait for a place counts neither in the time per answer nor against `--turn-timeout`. Keep the
-user's limit at least as high as the agent's: a conversation that waits for the user's message keeps
-its place. `convy compare` says when two runs had different agent limits, since an agent under more
-load may answer slower.
+Hosted models also limit requests per minute. Give a participant its limit, and convy sends its
+requests no faster, spaced evenly, since a limit per minute may be enforced per second; 0, the
+default, is no limit:
+
+```toml
+[tool.convy]
+judge_per_minute = 500   # decisions of the judge per minute
+
+[tool.convy.agents.support_bot]
+per_minute = 600         # messages to this agent per minute
+```
+
+It counts requests, not tokens: a limit on tokens is met by waiting, as for any busy service. If the
+user and the judge share one key, give each its share of the key's limit.
+
+The wait for a place or for its moment to send counts neither in the time per answer nor against
+`--turn-timeout`. Keep the user's limit at least as high as the agent's: a conversation that waits
+for the user's message keeps its place. `convy compare` says when two runs had different agent
+limits, since an agent under more load may answer slower.
 
 ## Forget a run
 

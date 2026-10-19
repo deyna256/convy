@@ -5,6 +5,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from itertools import pairwise
 
 import msgspec
 import pytest
@@ -24,7 +25,7 @@ from convy.bench import (
     RunSpec,
 )
 from convy.busy import Busy, Patience
-from convy.dialog import ChatJudge, Claim, NoReason, NoVerdict, Reason, Transcript, Verdict
+from convy.dialog import ChatJudge, Claim, Graded, NoReason, NoVerdict, Reason, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeJudge, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
@@ -160,6 +161,60 @@ async def test_a_busy_agent_service_gets_fewer_conversations_at_once():
     assert agent.open_with_the_fifth < 4
 
 
+class Clock:
+    """When each request of a participant was sent."""
+
+    def __init__(self) -> None:
+        self.times: list[float] = []
+
+    def tick(self) -> None:
+        self.times.append(time.monotonic())
+
+    def gaps(self) -> list[float]:
+        return [later - earlier for earlier, later in pairwise(sorted(self.times))]
+
+
+class ClockedModel(Clock):
+    name = "clocked"
+
+    async def reply(self, messages: list[dict[str, str]]) -> str:
+        self.tick()
+        return "hi"
+
+
+class ClockedJudge(Clock):
+    name = "clocked"
+    reviews_agent_thinking = False
+
+    async def decide(
+        self, transcript: Transcript, claims: tuple[str | Graded, ...]
+    ) -> tuple[Claim, ...]:
+        self.tick()
+        return tuple(Claim(True, NoReason()) for _ in claims)
+
+
+class ClockedAgent(Clock):
+    @asynccontextmanager
+    async def conversation(self):
+        yield self
+
+    async def answer(self, message: Message) -> Answer:
+        self.tick()
+        return Answer("hello")
+
+
+@pytest.mark.parametrize("participant", ["agent", "user", "judge"])
+async def test_a_participant_keeps_to_its_limit_per_minute(participant: str):
+    """Only one participant is limited, so the others do not space its requests for it."""
+    clocks = {"agent": ClockedAgent(), "user": ClockedModel(), "judge": ClockedJudge()}
+    limits = Limits(**{f"{participant}_per_minute": 600})  # one request every 0.1 s
+    models = Models(clocks["user"], clocks["judge"])
+    await Bench(SCENARIOS, models, 2, limits).run(clocks["agent"], MemoryJournal())
+    gaps = clocks[participant].gaps()
+    assert len(gaps) == 3
+    assert min(gaps) >= 0.095
+
+
 def test_a_bench_rejects_fewer_than_one_attempt():
     with pytest.raises(ValueError, match="attempts must be at least 1, got 0"):
         Bench(SCENARIOS, MODELS, attempts=0)
@@ -169,6 +224,14 @@ def test_a_bench_rejects_fewer_than_one_attempt():
 def test_a_limit_below_1_is_rejected(name: str):
     with pytest.raises(ValueError, match=f"the {name}'s limit must be at least 1, got 0"):
         Limits(**{name: 0})
+
+
+@pytest.mark.parametrize("name", ["agent", "user", "judge"])
+def test_a_limit_per_minute_below_0_is_rejected(name: str):
+    with pytest.raises(
+        ValueError, match=f"the {name}'s limit per minute must be at least 0, got -1"
+    ):
+        Limits(**{f"{name}_per_minute": -1})
 
 
 def outcome(verdict: Verdict | NoVerdict, scenario: str = "a") -> Outcome:
