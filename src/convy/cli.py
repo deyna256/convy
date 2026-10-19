@@ -146,7 +146,6 @@ class RunCommand(BaseModel):
     agents: CliPositionalArg[list[str]]
     k: int = Field(1, ge=1, description="attempts per scenario")
     scenarios: str = Field("*", description="only scenarios whose id matches this mask")
-    parallel: int = Field(4, ge=1, description="conversations at once")
     turn_timeout: float = Field(
         600,
         gt=0,
@@ -170,7 +169,7 @@ class RunCommand(BaseModel):
         project = Project(Path())
         try:
             agents = [project.agent(name) for name in self.agents]
-            benches = [self.bench(project) for _ in agents]
+            benches = [self.bench(project, loaded.name) for loaded in agents]
             fingerprints = [project.files(loaded.name) for loaded in agents]
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()
@@ -211,15 +210,15 @@ class RunCommand(BaseModel):
         print(f"{journal.spec.agent}: {seen}, {'below' if low else 'at least'} {bar * 100:.10g}%")
         return low
 
-    def bench(self, project: Project) -> Bench:
-        """A bench for one agent, with models of its own: a fake model's replies run on across its
-        calls, and a project's models are built fresh by running `models.py`."""
+    def bench(self, project: Project, agent: str) -> Bench:
+        """A bench for one agent, with models of its own and its limits: a fake model's replies
+        run on across its calls, and a project's models are built fresh by running `models.py`."""
         if self.smoke:
             user = FakeModel("Hello! What can you help me with?", "Thank you!")
             judge = ChatJudge(FakeModel('{"claims": [{"pass": true, "reason": "smoke"}]}'))
             return Bench((SMOKE,), Models(user, judge))
         scenarios = tuple(Matching(project.scenarios(), self.scenarios))
-        return Bench(scenarios, project.models(), self.k, self.parallel)
+        return Bench(scenarios, project.models(), self.k, project.limits(agent))
 
     def journal(
         self, project: Project, bench: Bench, loaded: ProjectAgent, files: Files
@@ -233,12 +232,12 @@ class RunCommand(BaseModel):
             user=bench.models.user.name,
             judge=bench.models.judge.name,
             k=bench.attempts,
-            parallel=bench.parallel,
             turn_timeout=self.turn_timeout,
             trust=self.trust,
             scenarios=bench.scenarios,
             started=started,
             files=files,
+            limits=bench.limits,
         )
         journal = RunJournal(project.results(), spec)
         journal.create()  # ponytail: an id clash is an error; draw a new id if it ever happens
@@ -277,7 +276,7 @@ class ResumeCommand(BaseModel):
             match run.status:
                 case Finished():
                     raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
-            if run.format != 3:  # resuming would write format 3 over lines of an older one
+            if run.format < 3:  # resuming would write format 3 lines over lines of an older one
                 raise ValueError(f"run {spec.id} was written by an older convy; start a new run")
             if changes := spec.code_changes(project.files(spec.agent), CONVY):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
@@ -285,6 +284,7 @@ class ResumeCommand(BaseModel):
             models = project.models()
             if changes := spec.label_changes(loaded.version, models.user.name, models.judge.name):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
+            limits = project.limits(spec.agent)
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()
             raise SystemExit(2) from None
@@ -295,7 +295,12 @@ class ResumeCommand(BaseModel):
             f"{spec.agent}: resuming run {spec.id}, "
             f"{len(run.done())} of {len(spec.pairs())} attempts recorded"
         )
-        bench = Bench(spec.scenarios, models, spec.k, spec.parallel)
+        if limits.agent != spec.limits.agent:
+            print(
+                f"{spec.agent}: the agent's limit is {limits.agent}, the run started with "
+                f"{spec.limits.agent}; its answer times will mix two loads"
+            )
+        bench = Bench(spec.scenarios, models, spec.k, limits)
         agent = TimeLimited(loaded.agent, spec.turn_timeout)
         journal = RunJournal(project.results(), spec)
         outcomes = Recorded(project, journal).outcomes(bench, agent, run.done())
@@ -337,7 +342,7 @@ class Convy(BaseSettings):
     init: CliSubCommand[InitCommand] = Field(description="create a project with examples")
     run: CliSubCommand[RunCommand] = Field(description="play scenarios against agents")
     resume: CliSubCommand[ResumeCommand] = Field(
-        description="play the rest of a run that was stopped, exactly as it started"
+        description="play the rest of a run that was stopped, as it started"
     )
     report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
     compare: CliSubCommand[CompareCommand] = Field(
@@ -353,6 +358,13 @@ def main(argv: list[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):  # a pipe or a file on Windows is not UTF-8 by default
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
+    if any(arg.partition("=")[0] == "--parallel" for arg in argv or sys.argv[1:]):
+        print(
+            "error: --parallel is gone: set agent_parallel, user_parallel and judge_parallel "
+            "under [tool.convy] in pyproject.toml, or CONVY_AGENT_PARALLEL and the like",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     try:
         CliApp.run(Convy, cli_args=argv)  # None: sys.argv[1:]
     except ValidationError as error:

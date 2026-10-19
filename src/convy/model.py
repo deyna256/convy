@@ -1,5 +1,6 @@
 """The models convy itself uses: the simulated user's and the judge's."""
 
+import asyncio
 from typing import TYPE_CHECKING, Annotated, Protocol
 
 import msgspec
@@ -83,6 +84,21 @@ class Contained(Struct, frozen=True):
             raise
         except Exception as error:  # a model is user code too: any bug is a failed model
             raise ModelFailure(f"{self.name}: {type(error).__name__}: {error}") from error
+
+
+class QueuedModel(Struct, frozen=True):
+    """The same model, holding a place of `places` for each reply."""
+
+    model: Model
+    places: asyncio.Semaphore
+
+    @property
+    def name(self) -> str:
+        return self.model.name
+
+    async def reply(self, messages: list[dict[str, str]]) -> str:
+        async with self.places:
+            return await self.model.reply(messages)
 
 
 class Models(Struct, frozen=True):

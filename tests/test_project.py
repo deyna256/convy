@@ -1,3 +1,4 @@
+import re
 import sys
 import tomllib
 from importlib.metadata import version
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from convy.bench import Limits
 from convy.fakes import Echo
 from convy.model import Models
 from convy.project import Project
@@ -143,3 +145,57 @@ def test_project_files_import_a_module_of_the_project(
         f"from convy.fakes import Echo\nfrom {shared} import version\nagent = Echo()\n",
     )
     assert Project(tmp_path).agent("bot").version == "from the project"
+
+
+LIMITS = """
+[tool.convy]
+agent_parallel = 3
+judge_parallel = 2
+
+[tool.convy.agents.fast]
+parallel = 20
+"""
+
+
+@pytest.fixture
+def limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Project:
+    """A project whose pyproject.toml sets limits, read from where convy runs."""
+    write(tmp_path / "pyproject.toml", LIMITS)
+    monkeypatch.chdir(tmp_path)
+    return Project(tmp_path)
+
+
+def test_limits_come_from_the_project_table(limited: Project):
+    assert limited.limits("fast") == Limits(agent=20, user=4, judge=2)
+    assert limited.limits("other") == Limits(agent=3, user=4, judge=2)
+
+
+def test_the_environment_wins_over_env_file_and_table(
+    limited: Project, monkeypatch: pytest.MonkeyPatch
+):
+    write(Path(".env"), "GW_API_KEY=secret\nCONVY_JUDGE_PARALLEL=5\nCONVY_USER_PARALLEL=6\n")
+    monkeypatch.setenv("CONVY_USER_PARALLEL", "7")
+    monkeypatch.setenv("CONVY_AGENTS__FAST__PARALLEL", "1")
+    assert limited.limits("fast") == Limits(agent=1, user=7, judge=5)
+
+
+def test_limits_default_to_4_without_a_table(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    assert Project(tmp_path).limits("bot") == Limits()
+
+
+@pytest.mark.parametrize(
+    ("table", "error"),
+    [
+        ("[tool.convy]\njudge-parallel = 2\n", "[tool.convy] has no judge-parallel"),
+        ("[tool.convy.agents.bot]\nparalel = 2\n", "paralel"),
+        ("[tool.convy]\nagent_parallel = 0\n", "greater than or equal to 1"),
+    ],
+)
+def test_a_wrong_limit_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, table: str, error: str
+):
+    write(tmp_path / "pyproject.toml", table)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ValueError, match=re.escape(error)):
+        Project(tmp_path).limits("bot")

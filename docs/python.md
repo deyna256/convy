@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from convy import Bench, Claim, Models, Reason, Report, RunJournal, Runs, RunSpec, Scenario
+from convy import Bench, Claim, Limits, Models, Reason, Report, RunJournal, Runs, RunSpec, Scenario
 from convy.fakes import Echo, FakeJudge, FakeModel
 
 scenario = Scenario(
@@ -21,7 +21,7 @@ models = Models(  # fakes: nothing is called; use OpenAiModel and ChatJudge for 
     user=FakeModel("Hello!", "Thank you!", "###STOP###"),
     judge=FakeJudge((Claim(True, Reason("it answered")),)),
 )
-bench = Bench((scenario,), models)
+bench = Bench((scenario,), models, limits=Limits(agent=2, user=4, judge=1))  # at once
 spec = RunSpec(
     id="first",  # the run's folder: results/echo/first/
     agent="echo",
@@ -29,11 +29,11 @@ spec = RunSpec(
     user=models.user.name,
     judge=models.judge.name,
     k=bench.attempts,
-    parallel=bench.parallel,
     turn_timeout=600,
     scenarios=bench.scenarios,
     started=datetime.now().astimezone(),
     trust=0.0,  # leave out the judge's decisions less sure than this
+    limits=bench.limits,
 )
 results = Path("results")
 journal = RunJournal(results, spec)

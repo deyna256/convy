@@ -15,23 +15,22 @@ from convy.bench import (
     Files,
     Finished,
     Interrupted,
+    Limits,
     RunFile,
     RunInUse,
     RunJournal,
     Running,
     RunSpec,
 )
-from convy.dialog import ChatJudge, Claim, NoVerdict, Reason, Transcript, Verdict
-from convy.fakes import FakeAgent, FakeModel, MemoryJournal
+from convy.dialog import ChatJudge, Claim, NoReason, NoVerdict, Reason, Transcript, Verdict
+from convy.fakes import FakeAgent, FakeJudge, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
 
 MODELS = Models(user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}')))
 SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
 STARTED = datetime(2026, 10, 6, 14, 5, tzinfo=UTC)
-SPEC = RunSpec(
-    "2026-10-06T14-05-00_a3f9", "bot", "1", "fake", "fake", 2, 4, 600, SCENARIOS, STARTED
-)
+SPEC = RunSpec("2026-10-06T14-05-00_a3f9", "bot", "1", "fake", "fake", 2, 600, SCENARIOS, STARTED)
 
 
 async def test_every_scenario_is_played_attempts_times():
@@ -48,11 +47,32 @@ async def test_every_scenario_is_played_attempts_times():
     assert sorted(journal.outcomes, key=lambda o: (o.scenario, o.attempt)) == list(outcomes)
 
 
-async def test_at_most_parallel_conversations_run_at_once():
+async def test_each_participant_does_at_most_its_limit_at_once():
     agent = FakeAgent("hello", delay=0.01)
-    await Bench(SCENARIOS, MODELS, attempts=4, parallel=3).run(agent, MemoryJournal())
+    user = FakeModel("hi", delay=0.01)
+    judge = FakeJudge((Claim(True, NoReason()),), delay=0.01)
+    limits = Limits(agent=3, user=2, judge=1)
+    await Bench(SCENARIOS, Models(user, judge), 4, limits).run(agent, MemoryJournal())
     assert agent.opened == 8
-    assert agent.peak == 3
+    assert (agent.peak, user.peak, judge.peak) == (3, 2, 1)
+
+
+async def test_the_judge_does_not_hold_the_agent_place():
+    """With one conversation at a time and a slow judge, the next conversation opens while the
+    judge decides the last one: four decisions of 0.1 s overlap instead of adding up."""
+    judge = FakeJudge((Claim(True, NoReason()),), delay=0.1)
+    bench = Bench(SCENARIOS, Models(FakeModel("hi"), judge), 2, Limits(agent=1))
+    start = time.monotonic()
+    await bench.run(FakeAgent("hello"), MemoryJournal())
+    assert time.monotonic() - start < 0.3
+    assert judge.peak == 4
+
+
+async def test_waiting_for_a_place_is_not_answer_time():
+    bench = Bench(SCENARIOS, MODELS, 3, Limits(agent=1))
+    outcomes = await bench.run(FakeAgent("hello", delay=0.05), MemoryJournal())
+    assert len(outcomes) == 6
+    assert all(turn.seconds < 0.1 for o in outcomes for turn in o.transcript.turns)
 
 
 async def test_a_failed_attempt_does_not_stop_the_others():
@@ -61,13 +81,15 @@ async def test_a_failed_attempt_does_not_stop_the_others():
     assert [o.stop for o in outcomes] == ["agent_failure"] * 4
 
 
-@pytest.mark.parametrize(
-    ("values", "error"),
-    [({"attempts": 0}, "attempts must be at least 1, got 0"), ({"parallel": 0}, "parallel")],
-)
-def test_a_bench_rejects_values_it_cannot_run(values: dict[str, int], error: str):
-    with pytest.raises(ValueError, match=error):
-        Bench(SCENARIOS, MODELS, **values)
+def test_a_bench_rejects_values_it_cannot_run():
+    with pytest.raises(ValueError, match="attempts must be at least 1, got 0"):
+        Bench(SCENARIOS, MODELS, attempts=0)
+
+
+@pytest.mark.parametrize("name", ["agent", "user", "judge"])
+def test_a_limit_below_1_is_rejected(name: str):
+    with pytest.raises(ValueError, match=f"the {name}'s limit must be at least 1, got 0"):
+        Limits(**{name: 0})
 
 
 def outcome(verdict: Verdict | NoVerdict, scenario: str = "a") -> Outcome:
@@ -98,7 +120,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(3, SPEC, Running())
+    assert file == RunFile(4, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()
@@ -271,7 +293,7 @@ def test_a_changed_label_is_a_reason_not_to_resume(now: tuple[str, str, str], re
 @pytest.mark.parametrize("trust", [-0.5, 1.5])
 def test_a_run_spec_rejects_a_trust_outside_0_to_1(trust: float):
     with pytest.raises(ValueError, match="trust must be from 0 to 1"):
-        RunSpec("r", "bot", "1", "fake", "fake", 2, 4, 600, SCENARIOS, STARTED, trust=trust)
+        RunSpec("r", "bot", "1", "fake", "fake", 2, 600, SCENARIOS, STARTED, trust=trust)
 
 
 def test_an_old_run_file_reads_with_trust_0():

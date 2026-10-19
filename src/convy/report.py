@@ -12,7 +12,7 @@ import msgspec
 from msgspec import Struct
 
 from convy.agent import NoThinking, NoUsage, Thinking, Usage
-from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
+from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
     Confidence,
@@ -53,6 +53,19 @@ class FormatTwo(Struct, frozen=True):
                 return claim
 
 
+class SharedLimit(Struct, frozen=True):
+    """What the specification of a `run.json` of format 2 or 3 held instead of `limits`: one
+    `parallel`, which held all three participants."""
+
+    parallel: int
+
+
+class FormatThree(Struct, frozen=True):
+    """A `run.json` of format 2 or 3, as far as format 4 changed it."""
+
+    spec: SharedLimit
+
+
 class Run(Struct, frozen=True):
     """A run's folder read back: where it is under the results directory, its specification and
     status, the outcomes it could read, how many lines it could not, and the format it was written
@@ -63,7 +76,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3] = 3
+    format: Literal[2, 3, 4] = 4
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -105,7 +118,14 @@ class Runs(Struct, frozen=True):
         return sorted(path.parent for path in self.directory.glob("*/*/run.json"))
 
     def read(self, folder: Path) -> Run:
-        file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+        raw = (folder / "run.json").read_bytes()
+        file = msgspec.json.decode(raw, type=RunFile)
+        if file.format < 4:
+            shared = msgspec.json.decode(raw, type=FormatThree).spec.parallel
+            limits = Limits(shared, shared, shared)
+            file = msgspec.structs.replace(
+                file, spec=msgspec.structs.replace(file.spec, limits=limits)
+            )
         attempts = folder / "attempts.jsonl"
         lines = attempts.read_bytes().splitlines() if attempts.exists() else []
         claims = {scenario.id: len(scenario.claims) for scenario in file.spec.scenarios}
@@ -115,7 +135,7 @@ class Runs(Struct, frozen=True):
             try:
                 outcome = (
                     msgspec.json.decode(line, type=Outcome)
-                    if file.format == 3
+                    if file.format >= 3
                     else FormatTwo(line).outcome()
                 )
             except UNREADABLE:  # a line cut short by a crash, say
@@ -642,13 +662,15 @@ class Comparison(Struct, frozen=True):
         return Template("compare.html").html(self.page())
 
     def differences(self) -> tuple[str, ...]:
-        """What differs between the runs besides the agent, as `judge: a → b`: the models, then
-        the convy that made them; a run that does not say which convy made it shows `unknown`."""
+        """What differs between the runs besides the agent, as `judge: a → b`: the models, the
+        convy that made them, and the agent's limit, since its load can change its answer time; a
+        run that does not say which convy made it shows `unknown`."""
         before, after = self.before.spec, self.after.spec
         pairs = (
             ("user", before.user, after.user),
             ("judge", before.judge, after.judge),
             ("convy", before.convy or "unknown", after.convy or "unknown"),
+            ("agent limit", before.limits.agent, after.limits.agent),
         )
         return tuple(f"{name}: {was} → {now}" for name, was, now in pairs if was != now)
 

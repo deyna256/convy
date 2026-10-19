@@ -33,8 +33,11 @@ interrupted: 12 of 30 attempts recorded
 resume with: convy resume a3f9
 ```
 
-`convy resume` takes the run's id or its random part. It plays the missing attempts with exactly the
-run's settings: the same scenarios, `k`, `--parallel`, `--turn-timeout` and `--trust`.
+`convy resume` takes the run's id or its random part. It plays the missing attempts with the run's
+settings: the same scenarios, `k`, `--turn-timeout` and `--trust`. The
+[limits](#how-much-runs-at-once) are the project's current ones, so a run that hit rate limits can
+go on slower. When the agent's limit changed, convy says so: the run's answer times then mix two
+loads.
 
 It refuses, and says why, if the agent's file, `models.py`, the agent's `version`, a model name or
 the convy version has changed. The run would no longer measure one thing. It checks the files and
@@ -55,6 +58,46 @@ is still playing, before it plays anything; once that process has ended, however
 resumes. On Windows the lock can stay a few seconds after a crash; run `convy resume` again. The
 lock is kept by one machine: a results folder synced between machines, for example by Dropbox or
 git, does not carry it, so a run played on another machine is not seen.
+
+## How much runs at once
+
+Each participant has its own limit on work at the same time:
+
+- the agent: conversations open at once. A conversation holds its place from opening to closing;
+  the judge decides after it has let the place go.
+- the simulated user: messages at once.
+- the judge: decisions at once.
+
+Set them in the project's `pyproject.toml`. A limit not given is 4:
+
+```toml
+[tool.convy]
+agent_parallel = 4     # conversations at once with each agent
+user_parallel = 8      # messages of the simulated user at once
+judge_parallel = 2     # decisions of the judge at once
+
+[tool.convy.agents.support_bot]
+parallel = 20          # conversations at once with this agent, instead of agent_parallel
+```
+
+To change a limit for one run or on one machine, such as in CI, set a variable: `CONVY_` and the
+key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`:
+
+```sh
+CONVY_JUDGE_PARALLEL=1 uv run convy run support_bot
+CONVY_AGENTS__SUPPORT_BOT__PARALLEL=5 uv run convy run support_bot
+```
+
+`pyproject.toml` comes first, then `.env`, then the environment; each wins over the one before.
+convy reads them in the folder it runs in. A key it does not know in `[tool.convy]` is an error, so
+a typo does not leave a limit at 4 unnoticed.
+
+The wait for a place counts neither in the time per answer nor against `--turn-timeout`. Keep the
+user's limit at least as high as the agent's: a conversation that waits for the user's message keeps
+its place, and the agent waits with it.
+
+A run records the limits it started with. `convy compare` says when two runs had different agent
+limits, since an agent under more load may answer slower.
 
 ## Forget a run
 
