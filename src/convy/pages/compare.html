@@ -52,7 +52,7 @@ function header() {
     themeButton());
 }
 
-const percentagePoints = v => v < 1 ? `${v.toFixed(1)} percentage points` : plural(Math.round(v), "percentage point");
+const percentagePoints = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} percentage points`;
 
 // A change: an arrow and a number in the metric's own unit; colour and "~" come from the data.
 function change(delta, unit) {

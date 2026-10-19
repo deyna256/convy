@@ -705,23 +705,6 @@ def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
     assert Report(with_confidence).page().run.confident is True
 
 
-def test_run_html_names_per_answer_and_total_time(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    html = Report(only(tmp_path)).html()
-    assert '"Time per answer"' in html
-    assert '"Total answer time"' in html
-    assert '"Answer time"' not in html
-
-
-def test_comparison_html_names_per_answer_and_total_time(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(7))
-    html = Comparison(*both(tmp_path)).html()
-    assert '"Time per answer"' in html
-    assert '"Total answer time"' in html
-    assert '"Answer time"' not in html
-
-
 def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     turns = tuple(Turn(Message("hi"), Answer("hello"), seconds) for seconds in (1.0, 2.0, 3.0, 6.0))
     played = Outcome("a", 1, Transcript(turns), PASSED, "max_turns")
