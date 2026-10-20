@@ -184,7 +184,6 @@ class ClockedModel(Clock):
 
 class ClockedJudge(Clock):
     name = "clocked"
-    reviews_agent_thinking = False
 
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
@@ -262,7 +261,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(4, SPEC, Running())
+    assert file == RunFile(5, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()

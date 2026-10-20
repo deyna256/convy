@@ -66,8 +66,8 @@ uv run convy run support_bot --turn-timeout 60
 uv run convy run support_bot --trust 0.8           # leave out unsure verdicts
 ```
 
-`--turn-timeout` (600 by default) is the seconds for each step of the agent: opening a conversation,
-a turn, closing it. A step that takes longer fails the attempt as an agent error.
+`--turn-timeout` (600 by default) is the seconds the agent has to open a conversation, to answer
+each turn, and to close it. Taking longer fails the attempt as an agent error.
 
 How many conversations, messages and decisions run at once is set in the project's
 `pyproject.toml`; see [How much runs at once](runs.md#how-much-runs-at-once).

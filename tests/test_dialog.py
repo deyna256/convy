@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from typing import Any
 
 import msgspec
 import pytest
 
-from convy.agent import Answer, Message, Thinking
+from convy.agent import Answer, Call, Message, Reported, Thought
 from convy.dialog import (
     ChatJudge,
     Checked,
@@ -25,7 +26,20 @@ from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
 TRANSCRIPT = Transcript().with_turn(Turn(Message("hi"), Answer("hello"), 1.0))
-THOUGHT = Transcript((Turn(Message("hi"), Answer("hello", thinking=Thinking("be warm")), 1.0),))
+LOOKED_UP = Answer(
+    "hello",
+    steps=(
+        Thought("greet back"),
+        Call(
+            name="crm",
+            started=datetime(2026, 10, 20, 12, 0, tzinfo=UTC),
+            seconds=1,
+            sent=Reported("customer 7"),
+            received=Reported("vip"),
+        ),
+    ),
+)
+THOUGHT = Transcript((Turn(Message("hi"), LOOKED_UP, 1.0),))
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.5, float("nan")])
@@ -140,7 +154,6 @@ class Answers:
     """A judge whose answer is given as is, right or wrong."""
 
     name = "answers"
-    reviews_agent_thinking = False
 
     def __init__(self, answer: Any):  # Any: wrong answers on purpose
         self.answer = answer
@@ -290,45 +303,17 @@ async def test_checked_refuses_a_grade_the_scenario_does_not_allow(
         await Checked(Answers((decision,))).decide(TRANSCRIPT, (claim,))
 
 
-def test_as_text_shows_the_thinking_the_transcript_has():
-    assert THOUGHT.as_text() == "User: hi\nAgent (thinking): be warm\nAgent: hello"
-    assert THOUGHT.without_thinking().as_text() == "User: hi\nAgent: hello"
+def test_as_text_has_only_what_was_said():
+    assert THOUGHT.as_text() == "User: hi\nAgent: hello"
 
 
-def test_a_chat_judge_that_reviews_the_thinking_has_another_name():
-    """The setting changes what the judge reads, so resume and compare must see it in the name."""
-    model = FakeModel("{}")
-    assert ChatJudge(model).name == model.name
-    assert ChatJudge(model, reviews_agent_thinking=True).name == f"{model.name} + agent thinking"
+async def test_checked_gives_a_judge_only_what_was_said():
+    judge = FakeJudge((Claim(True, Reason("ok")),))
+    await Checked(judge).decide(THOUGHT, ("greets",))
+    assert judge.calls == [(TRANSCRIPT, ("greets",))]
 
 
-async def test_simulated_user_never_sees_the_thinking():
+async def test_simulated_user_never_sees_the_steps():
     model = FakeModel("next")
     await SimulatedUser(model, "Be brief.").next(THOUGHT)
-    assert "be warm" not in str(model.calls[0])
-
-
-@pytest.mark.parametrize("reviews", [False, True])
-async def test_checked_gives_a_judge_the_thinking_only_if_it_reviews_it(reviews: bool):
-    judge = FakeJudge((Claim(True, Reason("ok")),), reviews_agent_thinking=reviews)
-    await Checked(judge).decide(THOUGHT, ("greets",))
-    ((seen, _),) = judge.calls
-    assert ("be warm" in seen.as_text()) is reviews
-
-
-async def test_a_judge_that_does_not_say_whether_it_reviews_the_thinking_fails():
-    class Silent:
-        name = "silent"
-
-        async def decide(self, transcript: Transcript, claims: tuple) -> tuple[Claim, ...]:
-            return (Claim(True, Reason("ok")),)
-
-    silent: Any = Silent()  # Any: a judge without the property on purpose
-    with pytest.raises(ModelFailure, match="silent: AttributeError"):
-        await Checked(silent).decide(THOUGHT, ("greets",))
-
-
-async def test_a_chat_judge_that_reviews_the_thinking_shows_it_to_its_model():
-    model = FakeModel('{"claims": [{"pass": true}]}')
-    await Checked(ChatJudge(model, reviews_agent_thinking=True)).decide(THOUGHT, ("greets",))
-    assert "Agent (thinking): be warm" in model.calls[0][0]["content"]
+    assert [s for s in ("greet back", "crm", "customer 7", "vip") if s in str(model.calls)] == []

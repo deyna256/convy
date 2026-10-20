@@ -11,7 +11,7 @@ from typing import Literal
 import msgspec
 from msgspec import Struct
 
-from convy.agent import NoThinking, NoUsage, Thinking, Usage
+from convy.agent import Call, NotReported, NoUsage, Reported, Thought, Usage
 from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
@@ -32,8 +32,10 @@ from convy.scenario import Outcome, Scenario, Stop
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
-class FormatTwo(Struct, frozen=True):
-    """An attempt line of format 2, where a claim's reason was a string, read as format 3."""
+class OlderLine(Struct, frozen=True):
+    """An attempt line of an older format, read as format 5: format 2 kept a claim's reason as a
+    string, and formats before 5 kept the agent's thinking apart from the steps of its answer.
+    Reading drops the old `thinking` field, as fields an `Outcome` does not have."""
 
     line: bytes
 
@@ -42,7 +44,17 @@ class FormatTwo(Struct, frozen=True):
         match data:
             case {"verdict": {"type": "verdict", "claims": list() as claims}}:
                 data["verdict"]["claims"] = [self.claim(claim) for claim in claims]
+        match data:
+            case {"transcript": {"turns": list() as turns}}:
+                data["transcript"]["turns"] = [self.turn(turn) for turn in turns]
         return msgspec.convert(data, Outcome)
+
+    def turn(self, turn: object) -> object:
+        match turn:
+            case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
+                return {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+            case _:
+                return turn
 
     def claim(self, claim: object) -> object:
         match claim:
@@ -76,7 +88,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4] = 4
+    format: Literal[2, 3, 4, 5] = 5
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -135,8 +147,8 @@ class Runs(Struct, frozen=True):
             try:
                 outcome = (
                     msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 3
-                    else FormatTwo(line).outcome()
+                    if file.format >= 5
+                    else OlderLine(line).outcome()
                 )
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
@@ -199,6 +211,20 @@ class ClaimView(Struct, frozen=True):
     grade: str | None = None  # None: the claim is not graded
 
 
+class ThoughtView(Struct, frozen=True, tag="thought"):
+    text: str
+
+
+class CallView(Struct, frozen=True, tag="call", kw_only=True):
+    name: str
+    seconds: float
+    left: float  # where its bar starts on the answer's time line of calls, 0..1
+    width: float  # how much of that line it takes, 0..1
+    tokens: int | None  # input + output; None: not reported
+    sent: str | None  # None: not reported; "" was reported empty
+    received: str | None
+
+
 class TurnView(Struct, frozen=True):
     user: str
     agent: str
@@ -207,7 +233,9 @@ class TurnView(Struct, frozen=True):
     output: int | None
     tokens: int | None
     thinking_tokens: int | None  # part of output
-    thinking: str  # "": the agent gave none
+    steps: tuple[ThoughtView | CallView, ...]
+    thoughts: int  # how many of the steps are thoughts
+    calls: int  # and how many are calls
 
 
 class AttemptView(Struct, frozen=True):
@@ -416,8 +444,8 @@ class Template(Struct, frozen=True):
     name: str
 
     def html(self, data: Struct) -> str:
-        # ponytail: every dialogue of a run is in its page (~5 KB per attempt); load
-        # attempts.jsonl lazily when pages get heavy
+        # ponytail: every dialogue of a run is in its page (~5 KB per attempt, more with what the
+        # agent's calls sent and received); load attempts.jsonl lazily when pages get heavy
         encoded = msgspec.json.encode(data).decode().replace("<", "\\u003c")
         folder = files("convy").joinpath("pages")
         page = re.sub(
@@ -605,12 +633,67 @@ class Summary(Struct, frozen=True):
                 )
             case NoUsage():
                 tokens = (None, None, None, None)
-        match turn.answer.thinking:
-            case Thinking(text=text):
-                thinking = text
-            case NoThinking():
-                thinking = ""
-        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens, thinking)
+        first, length = self.line(turn.answer.steps)
+        thoughts = calls = 0
+        for step in turn.answer.steps:
+            match step:
+                case Thought():
+                    thoughts += 1
+                case Call():
+                    calls += 1
+        steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
+        return TurnView(
+            turn.message.text, turn.answer.text, turn.seconds, *tokens, steps, thoughts, calls
+        )
+
+    def line(self, steps: tuple[Thought | Call, ...]) -> tuple[float, float]:
+        """Where an answer's calls start and how long they last, from the earliest start to the
+        latest end, in float seconds by the agent's clock. `timestamp()` of an aware time does not
+        overflow, and no `datetime` is made from the agent's numbers."""
+        starts: list[float] = []
+        ends: list[float] = []
+        for step in steps:
+            match step:
+                case Call(started=started, seconds=seconds):
+                    start = started.timestamp()
+                    starts.append(start)
+                    ends.append(start + seconds)
+                case Thought():
+                    pass
+        first = min(starts, default=0.0)
+        return first, max(ends, default=first) - first
+
+    def step(self, step: Thought | Call, first: float, length: float) -> ThoughtView | CallView:
+        """A step for the page; a call's bar as shares of the line, 0 on a line of no length."""
+        match step:
+            case Thought(text=text):
+                return ThoughtView(text)
+            case Call():
+                offset = step.started.timestamp() - first
+                return CallView(
+                    name=step.name,
+                    seconds=step.seconds,
+                    left=offset / length if length else 0.0,
+                    width=step.seconds / length if length else 0.0,
+                    tokens=self.tokens(step.usage),
+                    sent=self.reported(step.sent),
+                    received=self.reported(step.received),
+                )
+
+    def tokens(self, usage: Usage | NoUsage) -> int | None:
+        """Input and output tokens together; None when the agent did not report them."""
+        match usage:
+            case Usage(input=spent, output=produced):
+                return spent + produced
+            case NoUsage():
+                return None
+
+    def reported(self, text: Reported | NotReported) -> str | None:
+        match text:
+            case Reported(text=said):
+                return said
+            case NotReported():
+                return None
 
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]

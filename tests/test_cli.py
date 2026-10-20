@@ -353,14 +353,14 @@ def test_a_run_of_an_older_format_is_not_resumed(
     before = recorded(folder)
     capsys.readouterr()
     data = json.loads((folder / "run.json").read_text())
-    older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 1}}
+    older = {**data, "format": 4}
     (folder / "run.json").write_text(json.dumps(older))
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err == (
         f"error: run {folder.name} was written by an older convy; start a new run\n"
     )
     assert recorded(folder) == before
-    assert json.loads((folder / "run.json").read_text())["format"] == 2
+    assert json.loads((folder / "run.json").read_text())["format"] == 4
 
 
 def test_after_an_upgrade_resume_says_so_without_running_the_project(
@@ -502,21 +502,6 @@ def test_resume_with_the_same_agent_limit_says_nothing_of_it(
     assert capsys.readouterr().err == ""
 
 
-def test_a_run_of_format_3_is_resumed_with_its_limit_as_every_limit(
-    project: Path, monkeypatch: pytest.MonkeyPatch
-):
-    folder = started_run(project, monkeypatch)
-    data = json.loads((folder / "run.json").read_text())
-    spec = {key: value for key, value in data["spec"].items() if key != "limits"}
-    (folder / "run.json").write_text(
-        json.dumps({**data, "format": 3, "spec": {**spec, "parallel": 1}})
-    )
-    assert convy("resume", folder.name) == 0
-    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
-    assert (file.format, file.status.__class__) == (4, Finished)
-    assert file.spec.limits == Limits(agent=1, user=1, judge=1)
-
-
 def test_a_wrong_limit_resumes_nothing(project: Path, monkeypatch: pytest.MonkeyPatch, capsys):
     folder = started_run(project, monkeypatch)
     before = recorded(folder)
@@ -623,7 +608,6 @@ from convy.fakes import FakeModel
 
 class ByAnswer:
     name = "by-answer"
-    reviews_agent_thinking = False
 
     async def decide(self, transcript, claims):
         return tuple(Claim("good" in transcript.as_text()) for _ in claims)

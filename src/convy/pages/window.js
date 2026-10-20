@@ -92,10 +92,29 @@ function dialogue(attempt) {
         el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
         el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
           : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${count(t.input)} in · ${count(t.output)} out${thought(t.thinking_tokens)}`)])),
-      t.thinking && el("details", {className: "thinking"}, el("summary", {}, "Thinking"), el("div", {}, t.thinking)),
+      steps(t),
       markdown(t.agent))),
   ]);
 }
+// An answer's steps, in their order: thoughts as text, calls on a time line of their own.
+function steps(t) {
+  if (!t.steps.length) return null;
+  const counts = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call")].filter(Boolean).join(", ");
+  return el("details", {className: "steps"}, el("summary", {}, `Steps · ${counts}`),
+    t.steps.map(s => s.type === "thought" ? el("div", {className: "thought"}, s.text) : callRow(s)));
+}
+function callRow(c) {
+  return el("div", {className: "call"},
+    el("span", {className: "name"}, c.name),
+    el("span", {className: "track"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: ${c.width * 100}%`})),
+    el("span", {className: "m"}, secs(c.seconds), " · ", c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`),
+    el("details", {className: "io"}, el("summary", {}, "Sent and received"),
+      el("div", {className: "sec"}, "Sent"), reported(c.sent),
+      el("div", {className: "sec"}, "Received"), reported(c.received)));
+}
+// Text the agent reported: "not reported" when it did not say, "empty" when it was empty.
+const reported = text => text == null ? el("div", {className: "muted"}, "not reported")
+  : text === "" ? el("div", {className: "muted"}, "empty") : el("div", {className: "said"}, text);
 
 // The address keeps the open window: #<scenario>&attempt=<n>.
 function address(id, attempt) {

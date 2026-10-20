@@ -1,12 +1,12 @@
 import json
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import msgspec
 import pytest
 
-from convy.agent import Answer, Message, NoUsage, Thinking, Usage
+from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
@@ -21,7 +21,18 @@ from convy.dialog import (
     Turn,
     Verdict,
 )
-from convy.report import Comparison, Evidence, Index, Report, Run, Runs, Tally
+from convy.report import (
+    CallView,
+    Comparison,
+    Evidence,
+    Index,
+    Report,
+    Run,
+    Runs,
+    Tally,
+    ThoughtView,
+    TurnView,
+)
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
@@ -98,7 +109,7 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     written = journal(tmp_path, "bot", "1", 2)
     folder = written.folder()
     data = json.loads((folder / "run.json").read_text())
-    assert data["format"] == 4
+    assert data["format"] == 5
     older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 4}}
     (folder / "run.json").write_text(json.dumps(older))
     line = {
@@ -122,6 +133,35 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     assert run.unreadable == 0
 
 
+@pytest.mark.parametrize(
+    ("answer", "steps"),
+    [
+        ({"text": "hi", "thinking": {"type": "thinking", "text": "plan"}}, (Thought("plan"),)),
+        ({"text": "hi", "thinking": {"type": "no_thinking"}}, ()),
+        ({"text": "hi"}, ()),
+    ],
+    ids=["thinking", "no thinking", "before thinking"],
+)
+def test_an_older_line_reads_its_thinking_as_a_step(
+    tmp_path, answer: dict, steps: tuple[Thought, ...]
+):
+    folder = journal(tmp_path, "bot", "1", 1).folder()
+    data = json.loads((folder / "run.json").read_text())
+    (folder / "run.json").write_text(json.dumps({**data, "format": 4}))
+    turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
+    line = {
+        "scenario": "a",
+        "attempt": 1,
+        "transcript": {"turns": [turn]},
+        "verdict": {"type": "verdict", "claims": [{"pass": True}]},
+        "stop": "max_turns",
+    }
+    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n")
+    (run,) = Runs(tmp_path)
+    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", steps=steps)
+    assert run.unreadable == 0
+
+
 @pytest.mark.parametrize("format", [2, 3])
 def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, format: int):
     folder = journal(tmp_path, "bot", "1", 1).folder()
@@ -135,7 +175,9 @@ def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, fo
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
-    written = outcome("a", NoVerdict("judge down"))
+    steps = (Thought("plan"), Call(name="search", started=DAY, seconds=1.5, received=Reported("")))
+    turn = Turn(Message("hi"), Answer("hello", steps=steps), 2.0)
+    written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     run_journal = journal(tmp_path, "bot", "1", 1, written)
     run_journal.write(Finished(datetime.now(UTC)))
     (run,) = Runs(tmp_path)
@@ -340,22 +382,114 @@ def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
     assert (attempt.passed, attempt.error) == (None, "judge down")
 
 
-def test_a_turn_shows_the_agent_thinking_and_its_tokens(tmp_path):
+def test_a_turn_shows_its_thinking_tokens(tmp_path):
     turns = (
-        Turn(Message("hi"), Answer("a", Usage(10, 30, 20), Thinking("plan")), 1.0),
+        Turn(Message("hi"), Answer("a", Usage(10, 30, 20)), 1.0),
         Turn(Message("and?"), Answer("b", Usage(5, 10)), 1.0),  # no thinking
-        Turn(Message("ok"), Answer("c", thinking=Thinking("only text")), 1.0),  # no usage
+        Turn(Message("ok"), Answer("c"), 1.0),  # no usage
     )
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
     page = Report(only(tmp_path)).page()
     (attempt,) = page.scenarios[0].attempts
-    assert [(t.thinking, t.thinking_tokens) for t in attempt.turns] == [
-        ("plan", 20),
-        ("", 0),
-        ("only text", None),
-    ]
+    assert [t.thinking_tokens for t in attempt.turns] == [20, 0, None]
     assert (attempt.output, attempt.thinking_tokens) == (40, 20)  # thinking is part of output
     assert page.metrics.thinking_tokens == 20
+
+
+AGENT_CLOCK = datetime(2001, 1, 1, tzinfo=UTC)  # far from the time convy measures
+
+
+NO_USAGE = NoUsage()
+
+
+def call(name: str, at: float, seconds: float, usage: Usage | NoUsage = NO_USAGE) -> Call:
+    """A call `at` seconds after the agent's first, by the agent's clock."""
+    return Call(
+        name=name, started=AGENT_CLOCK + timedelta(seconds=at), seconds=seconds, usage=usage
+    )
+
+
+def shown(tmp_path: Path, *steps: Thought | Call) -> TurnView:
+    """How the run's page shows one answer with `steps`."""
+    turn = Turn(Message("hi"), Answer("hello", steps=steps), 2.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    return Report(only(tmp_path)).page().scenarios[0].attempts[0].turns[0]
+
+
+def bar(
+    name: str,
+    seconds: float,
+    left: float,
+    width: float,
+    tokens: int | None = None,
+    sent: str | None = None,
+    received: str | None = None,
+) -> CallView:
+    return CallView(
+        name=name,
+        seconds=seconds,
+        left=left,
+        width=width,
+        tokens=tokens,
+        sent=sent,
+        received=received,
+    )
+
+
+def test_calls_sit_on_their_own_time_line(tmp_path):
+    turn = shown(tmp_path, call("search", 0, 1), call("gpt", 2, 2))
+    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5))
+
+
+def test_overlapping_calls_share_the_time_line(tmp_path):
+    turn = shown(tmp_path, call("search", 0, 4), call("embed", 1, 1))
+    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25))
+
+
+def test_an_instant_call_has_a_time_line(tmp_path):
+    assert shown(tmp_path, call("cache", 0, 0)).steps == (bar("cache", 0, 0, 0),)
+
+
+def test_a_huge_call_does_not_break_the_report(tmp_path):
+    """A time in ms given as seconds: no `datetime` is made from it, so nothing overflows."""
+    assert shown(tmp_path, call("search", 0, 1.7e12)).steps == (bar("search", 1.7e12, 0, 1),)
+
+
+def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
+    searched = Call(
+        name="search",
+        started=AGENT_CLOCK,
+        seconds=1,
+        sent=Reported("refund rules"),
+        received=Reported(""),
+    )
+    turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2)))
+    assert turn.steps == (
+        bar("search", 1, 0, 0.5, sent="refund rules", received=""),
+        bar("gpt", 1, 0.5, 0.5, tokens=7),
+    )
+
+
+def test_steps_keep_their_order_and_counts(tmp_path):
+    turn = shown(tmp_path, Thought("look it up"), call("search", 0, 1), Thought("found it"))
+    assert turn.steps == (
+        ThoughtView("look it up"),
+        bar("search", 1, 0, 1),
+        ThoughtView("found it"),
+    )
+    assert (turn.thoughts, turn.calls) == (2, 1)
+
+
+def test_an_answer_without_steps_counts_none(tmp_path):
+    turn = shown(tmp_path)
+    assert (turn.steps, turn.thoughts, turn.calls) == ((), 0, 0)
+
+
+def test_calls_in_other_time_zones_share_the_time_line(tmp_path):
+    moment = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+    utc = Call(name="a", started=moment, seconds=1)
+    plus3 = Call(name="b", started=moment.astimezone(timezone(timedelta(hours=3))), seconds=1)
+    assert shown(tmp_path, utc, plus3).steps == (bar("a", 1, 0, 1), bar("b", 1, 0, 1))
 
 
 def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):

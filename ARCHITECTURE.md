@@ -26,12 +26,12 @@ All code is in `src/convy/`.
 
 | module | what is there |
 |---|---|
-| `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `Thinking`, `NoThinking`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
+| `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, an answer's steps `Thought` and `Call`, `Reported`, `NotReported`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
 | `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge the agent's thinking only if it reviews it; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
+| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
@@ -68,8 +68,9 @@ in all of `src/convy/`.
 3. **An interface (`typing.Protocol`) exists only where there are two implementations or more.** There
    are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
 4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
-   with a time limit on each step: opening a conversation, a turn, closing. Only exceptions inherit, from `Exception`.
-5. **"No value" is an empty object, not `None`:** `NoUsage`, `NoThinking`, `NoReason`, `NoVerdict`.
+   with a time limit on opening a conversation, on each turn, and on closing. Only exceptions
+   inherit, from `Exception`.
+5. **"No value" is an empty object, not `None`:** `NoUsage`, `NotReported`, `NoReason`, `NoVerdict`.
    It is stored and read like the real value, with no type checks: msgspec tags it
    (`{"type": "no_usage"}`) and restores the right class. `None` is allowed only for an optional
    constructor argument that was not given, and for `null` in a type that mirrors outside JSON
@@ -86,9 +87,8 @@ in all of `src/convy/`.
    model's reply: read into the shape of an OpenAI chat completion. The judge model's reply: each
    decision read into the type its claim needs. A judge's own answer: `Checked` encodes and
    decodes it as the run's folder will, and wants one `Claim` per claim, a graded claim with one
-   of its grades and the `pass` the scenario gives that grade; a judge gets the agent's thinking
-   only if its `reviews_agent_thinking` is true. `[tool.convy]` of `pyproject.toml`:
-   `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
+   of its grades and the `pass` the scenario gives that grade; a judge gets only what was said.
+   `[tool.convy]` of `pyproject.toml`: `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
    pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
    entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
    that mirrors outside JSON may hold `None` for its `null`, and is turned into domain types at
@@ -101,10 +101,10 @@ in all of `src/convy/`.
 9. **The library does not print or log.** It returns what the command needs to show, such as
    `Runs.broken()`. Only `cli.py` prints and picks the exit code.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
-    `Message | Finished`, `Usage | NoUsage`, `Thinking | NoThinking`, `Reason | NoReason`,
-    `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status — and records such as
-    `Outcome`. Data from outside is read into such types where it enters (rule 7), so this holds
-    for it too.
+    `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
+    `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
+    and records such as `Outcome`. Data from outside is read into such types where it enters
+    (rule 7), so this holds for it too.
     Objects with behaviour are called through their interface, not checked for type. There are two
     exceptions, both where convy meets the outside: `Project` checks the type of what a project file
     defines (`isinstance(models, Models)`), as outside data is checked where it enters; and `main`

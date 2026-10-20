@@ -52,11 +52,6 @@ async def test_failure_is_model_failure(make):
         await make().decide(Transcript(), CLAIMS)
 
 
-@pytest.mark.parametrize("make", JUDGES.values(), ids=JUDGES)
-def test_a_judge_says_whether_it_reviews_the_agent_thinking(make):
-    assert make().reviews_agent_thinking is False
-
-
 @pytest.mark.parametrize("make", BUSY.values(), ids=BUSY)
 async def test_a_busy_service_is_busy(make):
     """A decision the service refused because it is busy raises `Busy`, which convy waits on."""

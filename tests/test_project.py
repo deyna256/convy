@@ -123,17 +123,6 @@ def test_a_model_given_as_the_judge_is_named(tmp_path: Path):
         Project(tmp_path).models()
 
 
-def test_a_judge_must_say_whether_it_reviews_the_agent_thinking(tmp_path: Path):
-    write(
-        tmp_path / "models.py",
-        "from convy import Models\nfrom convy.fakes import FakeModel\n"
-        "class Judge:\n    name = 'j'\n    async def decide(self, transcript, claims): ...\n"
-        "models = Models(user=FakeModel('hi'), judge=Judge())\n",
-    )
-    with pytest.raises(ValueError, match="reviews_agent_thinking"):
-        Project(tmp_path).models()
-
-
 def test_project_files_import_a_module_of_the_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

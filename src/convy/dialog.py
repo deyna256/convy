@@ -6,7 +6,7 @@ from typing import Protocol
 import msgspec
 from msgspec import Struct, field
 
-from convy.agent import Answer, Message, NoThinking, Thinking
+from convy.agent import Answer, Message
 from convy.busy import Places
 from convy.model import Model, ModelFailure
 
@@ -30,8 +30,6 @@ Instructions:
 
 JUDGE_PROMPT = """Below are a dialogue between a user and an agent, and a numbered list of claims
 about it. Check every claim strictly against the text of the dialogue.
-Lines marked "Agent (thinking)" are what the agent thought; the user did not see them. Judge what
-the agent said, unless a claim is about what it thought.
 Answer with JSON only: {{"claims": [{{"pass": true or false, "reason": "a short explanation"}}, …]}}
 Give one entry per claim, in the order of the list. "pass" is true only if the claim holds.
 A claim that ends with "(grades: …)" is graded: instead of "pass", give "grade", exactly one of
@@ -53,14 +51,8 @@ class Turn(Struct, frozen=True):
     seconds: float
 
     def as_text(self) -> str:
-        """The turn as text, for the judge: the agent's thinking, if the turn has it, on a line
-        before what it said."""
-        match self.answer.thinking:
-            case Thinking(text=text):
-                thought = f"Agent (thinking): {text}\n"
-            case NoThinking():
-                thought = ""
-        return f"User: {self.message.text}\n{thought}Agent: {self.answer.text}"
+        """The turn as text, for the judge: only what was said."""
+        return f"User: {self.message.text}\nAgent: {self.answer.text}"
 
 
 class Transcript(Struct, frozen=True):
@@ -71,13 +63,11 @@ class Transcript(Struct, frozen=True):
     def with_turn(self, turn: Turn) -> "Transcript":
         return Transcript((*self.turns, turn))
 
-    def without_thinking(self) -> "Transcript":
-        """The same dialogue with only what the agent said."""
+    def without_steps(self) -> "Transcript":
+        """The same dialogue with only what was said, without the steps of the answers."""
         return Transcript(
             tuple(
-                msgspec.structs.replace(
-                    turn, answer=msgspec.structs.replace(turn.answer, thinking=NoThinking())
-                )
+                msgspec.structs.replace(turn, answer=msgspec.structs.replace(turn.answer, steps=()))
                 for turn in self.turns
             )
         )
@@ -251,14 +241,9 @@ class Judge(Protocol):
 
     @property
     def name(self) -> str:
-        """The judge's name, written to the run instead of the judge itself."""
-        ...
-
-    @property
-    def reviews_agent_thinking(self) -> bool:
-        """Whether the judge reviews the agent's thinking; if not, it gets only what the agent
-        said. A judge whose verdicts it changes should change its `name` with it, so `convy
-        resume` and `convy compare` see it."""
+        """The judge's name, written to the run instead of the judge itself. A judge whose verdicts
+        a setting changes should change its `name` with it, so `convy resume` and `convy compare`
+        see it."""
         ...
 
     async def decide(
@@ -273,16 +258,11 @@ class ChatJudge(Struct, frozen=True):
     """A chat model that judges: it reads the dialogue and decides each claim, with a reason."""
 
     model: Model
-    reviews_agent_thinking: bool = False
 
     @property
     def name(self) -> str:
-        """The model's name, marked when the judge reviews the agent's thinking."""
-        return (
-            f"{self.model.name} + agent thinking"
-            if self.reviews_agent_thinking
-            else self.model.name
-        )
+        """The model's name."""
+        return self.model.name
 
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
@@ -373,10 +353,6 @@ class PatientJudge(Struct, frozen=True):
     def name(self) -> str:
         return self.judge.name
 
-    @property
-    def reviews_agent_thinking(self) -> bool:
-        return self.judge.reviews_agent_thinking
-
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
@@ -386,8 +362,8 @@ class PatientJudge(Struct, frozen=True):
 class Checked(Struct, frozen=True):
     """The same judge, whose answer is checked where it enters: any error of `decide` is
     `ModelFailure`, and so is an answer the run's folder could not hold or that does not give one
-    decision per claim. A judge's bug is never blamed on the agent and never stops a run. It
-    gives a judge the agent's thinking only if the judge reviews it."""
+    decision per claim. A judge's bug is never blamed on the agent and never stops a run. A judge
+    gets only what was said."""
 
     judge: Judge
 
@@ -399,10 +375,7 @@ class Checked(Struct, frozen=True):
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
         try:
-            seen = (
-                transcript if self.judge.reviews_agent_thinking else transcript.without_thinking()
-            )
-            answer = await self.judge.decide(seen, claims)
+            answer = await self.judge.decide(transcript.without_steps(), claims)
         except ModelFailure:
             raise
         except Exception as error:  # a judge is user code: any bug is a failed model

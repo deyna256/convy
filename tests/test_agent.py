@@ -1,17 +1,20 @@
 import asyncio
+import math
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import pytest
 
 from convy.agent import (
     AgentFailure,
     Answer,
+    Call,
     Conversation,
     Message,
     NoUsage,
     QueuedAgent,
-    Thinking,
+    Thought,
     TimeLimited,
     Usage,
 )
@@ -118,10 +121,32 @@ def test_thinking_tokens_are_part_of_the_output(thinking: int):
         Usage(10, 30, thinking)
 
 
+WHEN = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+
+
 @pytest.mark.parametrize("text", ["", "  "])
-def test_thinking_needs_text(text: str):
-    with pytest.raises(ValueError, match=r"thinking needs text; give NoThinking\(\) instead"):
-        Thinking(text)
+def test_a_thought_needs_text(text: str):
+    with pytest.raises(ValueError, match="a thought needs text"):
+        Thought(text)
+
+
+@pytest.mark.parametrize("name", ["", "  "])
+def test_a_call_needs_a_name(name: str):
+    with pytest.raises(ValueError, match="a call needs a name"):
+        Call(name=name, started=WHEN, seconds=1)
+
+
+@pytest.mark.parametrize("seconds", [-1, math.nan, math.inf])
+def test_a_call_lasts_0_seconds_or_more(seconds: float):
+    with pytest.raises(
+        ValueError, match="call 'search': seconds must be a finite number, 0 or more"
+    ):
+        Call(name="search", started=WHEN, seconds=seconds)
+
+
+def test_a_call_starts_at_a_time_with_a_zone():
+    with pytest.raises(ValueError, match="call 'search': started needs a time zone"):
+        Call(name="search", started=datetime(2026, 10, 20, 12, 0), seconds=1)
 
 
 async def test_an_agent_busy_when_a_conversation_opens_gets_fewer_conversations():
