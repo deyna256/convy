@@ -666,14 +666,16 @@ class Comparison(Struct, frozen=True):
 
     def differences(self) -> tuple[str, ...]:
         """What differs between the runs besides the agent, as `judge: a → b`: the models, the
-        convy that made them, and the agent's limit, since its load can change its answer time; a
+        convy that made them, and the agent's limits, since its load can change its answer time; a
         run that does not say which convy made it shows `unknown`."""
         before, after = self.before.spec, self.after.spec
+        was, now = before.limits, after.limits
         pairs = (
             ("user", before.user, after.user),
             ("judge", before.judge, after.judge),
             ("convy", before.convy or "unknown", after.convy or "unknown"),
-            ("agent limit", before.limits.agent, after.limits.agent),
+            ("agent limit", f"{was.agent}", f"{now.agent}"),
+            ("agent limit per minute", f"{was.agent_per_minute:g}", f"{now.agent_per_minute:g}"),
         )
         return tuple(f"{name}: {was} → {now}" for name, was, now in pairs if was != now)
 

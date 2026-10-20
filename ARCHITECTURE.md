@@ -27,7 +27,7 @@ All code is in `src/convy/`.
 | module | what is there |
 |---|---|
 | `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `Thinking`, `NoThinking`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
-| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once, fewer while its service is busy, and per minute, which sends and retries them as its patience allows |
+| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |

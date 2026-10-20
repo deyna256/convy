@@ -617,7 +617,7 @@ def test_a_comparison_names_another_agent_limit_but_not_other_limits(tmp_path):
         1,
         outcome("a", PASSED),
         started=at(5),
-        limits=Limits(agent=4, user=1, judge=1),
+        limits=Limits(agent=4, user=1, judge=1, judge_per_minute=60),
     )
     journal(
         tmp_path,
@@ -626,9 +626,12 @@ def test_a_comparison_names_another_agent_limit_but_not_other_limits(tmp_path):
         1,
         outcome("a", PASSED),
         started=at(6),
-        limits=Limits(agent=20, user=8, judge=2),
+        limits=Limits(agent=20, user=8, judge=2, agent_per_minute=600, user_per_minute=60),
     )
-    assert Comparison(*both(tmp_path)).page().differences == ("agent limit: 4 → 20",)
+    assert Comparison(*both(tmp_path)).page().differences == (
+        "agent limit: 4 → 20",
+        "agent limit per minute: 0 → 600",
+    )
 
 
 @pytest.mark.parametrize(("then", "shown"), [("0.1.0", "0.1.0"), ("", "unknown")])

@@ -11,4 +11,4 @@ dependencies = ["convy==0.3.0"]
 agent_parallel = 4  # conversations at once with each agent
 user_parallel = 4   # messages of the simulated user at once
 judge_parallel = 4  # decisions of the judge at once
-# judge_per_minute = 500  # requests per minute the provider allows, if it limits them
+# judge_per_minute = 450  # a little below the provider's limit of requests per minute, if any

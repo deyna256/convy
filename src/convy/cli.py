@@ -295,12 +295,16 @@ class ResumeCommand(BaseModel):
             f"{spec.agent}: resuming run {spec.id}, "
             f"{len(run.done())} of {len(spec.pairs())} attempts recorded"
         )
-        if limits.agent != spec.limits.agent:
-            print(
-                f"{spec.agent}: the agent's limit is {limits.agent}, the run started with "
-                f"{spec.limits.agent}; its answer times will mix two loads",
-                file=sys.stderr,
-            )
+        for name, now, then in (
+            ("limit", limits.agent, spec.limits.agent),
+            ("limit per minute", limits.agent_per_minute, spec.limits.agent_per_minute),
+        ):
+            if now != then:
+                print(
+                    f"{spec.agent}: the agent's {name} is {now:g}, the run started with "
+                    f"{then:g}; its answer times will mix two loads",
+                    file=sys.stderr,
+                )
         bench = Bench(spec.scenarios, models, spec.k, limits)
         agent = TimeLimited(loaded.agent, spec.turn_timeout)
         journal = RunJournal(project.results(), spec)

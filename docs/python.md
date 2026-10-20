@@ -21,7 +21,8 @@ models = Models(  # fakes: nothing is called; use OpenAiModel and ChatJudge for 
     user=FakeModel("Hello!", "Thank you!", "###STOP###"),
     judge=FakeJudge((Claim(True, Reason("it answered")),)),
 )
-bench = Bench((scenario,), models, limits=Limits(agent=2, user=4, judge=1))  # at once
+limits = Limits(agent=2, user=4, judge=1, judge_per_minute=50)  # at once; the judge per minute too
+bench = Bench((scenario,), models, limits=limits)
 spec = RunSpec(
     id="first",  # the run's folder: results/echo/first/
     agent="echo",

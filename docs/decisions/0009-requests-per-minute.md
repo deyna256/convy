@@ -23,6 +23,10 @@ exceed the limit" ([Anthropic, Rate limits](https://platform.claude.com/docs/en/
   minute may be enforced per second.
 - **Every try counts,** a try again after `Busy` too. The wait for its turn counts neither in the
   time per answer nor against `--turn-timeout`, like the wait for a place.
+- **Patience counts from the first refusal,** not from the first try as in
+  [0008](0008-busy-services.md), so that a request waiting for its turn or a place keeps all of it.
+- **`convy compare` and `convy resume` name another agent limit per minute,** as they do its limit
+  at once: both change the agent's load.
 
 ## Alternatives
 
