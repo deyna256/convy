@@ -34,8 +34,15 @@ how often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`).
 see the judge's decision on every claim with its grade, if it has one, and its reason, and the
 dialogue with the time and tokens of each answer; **Total answer time** adds them up for the
 attempt. An answer's tokens say how many went to thinking, such as `300 out, 200 thinking`: they are
-part of the output, not added to it. If the judge says how sure it is, each decision shows that too, or "sure: not given"
-where it did not say. The address keeps the open scenario, so you can send a link to it.
+part of the output, not added to it.
+
+An answer that gives its [steps](agents.md#steps) has them folded under "Steps": its thoughts as
+text, and its calls on a time line of their own, each with its time, its tokens and what it sent
+and received ("not reported" or "empty"). The line is the agent's clock, from its first call to its
+last.
+
+If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
+did not say. The address keeps the open scenario, so you can send a link to it.
 
 `results/index.html` lists every run, newest first, with a link to its report.
 

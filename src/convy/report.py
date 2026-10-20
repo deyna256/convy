@@ -11,7 +11,7 @@ from typing import Literal
 import msgspec
 from msgspec import Struct
 
-from convy.agent import NoUsage, Usage
+from convy.agent import Call, NotReported, NoUsage, Reported, Thought, Usage
 from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
@@ -207,6 +207,20 @@ class ClaimView(Struct, frozen=True):
     grade: str | None = None  # None: the claim is not graded
 
 
+class ThoughtView(Struct, frozen=True, tag="thought"):
+    text: str
+
+
+class CallView(Struct, frozen=True, tag="call", kw_only=True):
+    name: str
+    seconds: float
+    left: float  # where its bar starts on the answer's time line of calls, 0..1
+    width: float  # how much of that line it takes, 0..1
+    tokens: int | None  # input + output; None: not reported
+    sent: str | None  # None: not reported; "" was reported empty
+    received: str | None
+
+
 class TurnView(Struct, frozen=True):
     user: str
     agent: str
@@ -215,6 +229,7 @@ class TurnView(Struct, frozen=True):
     output: int | None
     tokens: int | None
     thinking_tokens: int | None  # part of output
+    steps: tuple[ThoughtView | CallView, ...]
 
 
 class AttemptView(Struct, frozen=True):
@@ -423,8 +438,8 @@ class Template(Struct, frozen=True):
     name: str
 
     def html(self, data: Struct) -> str:
-        # ponytail: every dialogue of a run is in its page (~5 KB per attempt); load
-        # attempts.jsonl lazily when pages get heavy
+        # ponytail: every dialogue of a run is in its page (~5 KB per attempt, more with what the
+        # agent's calls sent and received); load attempts.jsonl lazily when pages get heavy
         encoded = msgspec.json.encode(data).decode().replace("<", "\\u003c")
         folder = files("convy").joinpath("pages")
         page = re.sub(
@@ -612,7 +627,54 @@ class Summary(Struct, frozen=True):
                 )
             case NoUsage():
                 tokens = (None, None, None, None)
-        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens)
+        first, length = self.line(turn.answer.steps)
+        steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
+        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens, steps)
+
+    def line(self, steps: tuple[Thought | Call, ...]) -> tuple[float, float]:
+        """Where an answer's calls start and how long they last, from the earliest start to the
+        latest end, in float seconds by the agent's clock. `timestamp()` of an aware time does not
+        overflow, and no `datetime` is made from the agent's numbers."""
+        starts: list[float] = []
+        ends: list[float] = []
+        for step in steps:
+            match step:
+                case Call(started=started, seconds=seconds):
+                    starts.append(started.timestamp())
+                    ends.append(started.timestamp() + seconds)
+                case Thought():
+                    pass
+        first = min(starts, default=0.0)
+        return first, max(ends, default=first) - first
+
+    def step(self, step: Thought | Call, first: float, length: float) -> ThoughtView | CallView:
+        """A step for the page; a call's bar as shares of the line, 0 on a line of no length."""
+        match step:
+            case Thought(text=text):
+                return ThoughtView(text)
+            case Call():
+                match step.usage:
+                    case Usage(input=spent, output=produced):
+                        tokens: int | None = spent + produced
+                    case NoUsage():
+                        tokens = None
+                offset = step.started.timestamp() - first
+                return CallView(
+                    name=step.name,
+                    seconds=step.seconds,
+                    left=offset / length if length else 0.0,
+                    width=step.seconds / length if length else 0.0,
+                    tokens=tokens,
+                    sent=self.reported(step.sent),
+                    received=self.reported(step.received),
+                )
+
+    def reported(self, text: Reported | NotReported) -> str | None:
+        match text:
+            case Reported(text=said):
+                return said
+            case NotReported():
+                return None
 
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]
