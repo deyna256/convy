@@ -43,9 +43,31 @@ def runs(project: Path, agent: str) -> list[Path]:
 
 
 def convy(*argv: str) -> int:
-    with pytest.raises(SystemExit) as exit:
+    try:
         main(list(argv))
-    return int(exit.value.code or 0)
+    except SystemExit as exit:
+        return int(exit.code or 0)
+    return 0
+
+
+def comparison_runs(
+    project: Path,
+    old_models: str,
+    new_models: str,
+    k: int = 10,
+    scenario_id: str = "clarify-backup",
+    options: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    for i, models in enumerate((old_models, new_models)):
+        (project / "models.py").write_text(models)
+        selected, extra = "clarify-backup", ()
+        if i == 1:
+            scenario = project / "scenarios" / "clarify-backup.yaml"
+            scenario.write_text(scenario.read_text().replace("clarify-backup", scenario_id))
+            selected, extra = scenario_id, options
+        with time_machine.travel(f"2026-10-13 10:00:0{i}+00:00", tick=False):
+            assert convy("run", "echo", "--scenarios", selected, "-k", str(k), *extra) == 0
+    return tuple(folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
 
 
 @pytest.fixture
@@ -636,3 +658,73 @@ def test_a_wrong_bar_runs_nothing(project: Path, capsys, argv: tuple[str, ...], 
     assert convy("run", "echo", *argv) == 2
     assert error in capsys.readouterr().err
     assert not (project / "results" / "echo").exists()
+
+
+@pytest.mark.parametrize(
+    ("old_models", "new_models", "code", "expected"),
+    [
+        (FAKE_MODELS, FAILING_MODELS, 3, "pass rate 100% → 0%: worse"),
+        (FAILING_MODELS, FAKE_MODELS, 0, "pass rate 0% → 100%: better"),
+        (FAKE_MODELS, FAKE_MODELS, 0, "pass rate 100% → 100%: same"),
+    ],
+    ids=["worse", "better", "same"],
+)
+def test_compare_can_fail_ci_on_a_regression(
+    project: Path, capsys, old_models: str, new_models: str, code: int, expected: str
+):
+    before, after = comparison_runs(project, old_models, new_models)
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == code
+    out = capsys.readouterr().out
+    assert "comparison:" in out
+    assert expected in out
+    assert (project / "results" / "compare" / f"{before}-vs-{after}.html").is_file()
+
+
+def test_compare_still_succeeds_on_regression_without_the_flag(project: Path):
+    before, after = comparison_runs(project, FAKE_MODELS, FAILING_MODELS)
+    assert convy("compare", before, after) == 0
+
+
+def test_compare_lists_a_noisy_drop_without_failing_ci(project: Path, capsys):
+    before, after = comparison_runs(project, FAKE_MODELS, FAILING_MODELS, k=1)
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == 0
+    out = capsys.readouterr().out
+    assert "pass rate 100% → 0%: may be chance" in out
+    assert "lower pass rate: clarify-backup" in out
+    assert "regressed" not in out
+
+
+@pytest.mark.parametrize(
+    ("new_models", "scenario_id", "options"),
+    [
+        (FAILING_MODELS, "changed-backup", ()),
+        (UNSURE_MODELS, "clarify-backup", ("--trust", "0.8")),
+    ],
+)
+def test_compare_refuses_a_ci_verdict_when_nothing_can_be_compared(
+    project: Path, capsys, new_models: str, scenario_id: str, options: tuple[str, ...]
+):
+    before, after = comparison_runs(
+        project, FAKE_MODELS, new_models, scenario_id=scenario_id, options=options
+    )
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == 3
+    captured = capsys.readouterr()
+    assert "no scenario can be compared" in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize("status", ["running", "interrupted"])
+@pytest.mark.parametrize("run_index", [0, 1], ids=["before", "after"])
+def test_compare_refuses_unfinished_runs(project: Path, capsys, status: str, run_index: int):
+    before, after = comparison_runs(project, FAKE_MODELS, FAKE_MODELS)
+    path = runs(project, "echo")[run_index] / "run.json"
+    data = json.loads(path.read_text())
+    data["status"]["type"] = status
+    path.write_text(json.dumps(data))
+    capsys.readouterr()
+    assert convy("compare", before, after, "--fail-on-regression") == 3
+    assert "both runs must be finished" in capsys.readouterr().out
+    assert convy("compare", before, after) == 0

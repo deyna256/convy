@@ -140,11 +140,13 @@ Delete its folder and run `convy report`.
   does not measure quality.
 - `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
   resumed, also when another process is playing it.
-- `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged.
+- `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged. With
+  `--fail-on-regression`, the pass rate tile is red, or no scenario can be compared.
 - `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
 
 Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
-with `2` when it cannot find a run it names, else with `0`.
+with `2` when it cannot find a run it names, else with `0` unless you give
+`--fail-on-regression`.
 
 In CI, fail the build when the pass rate is below 90%:
 
@@ -154,3 +156,16 @@ uv run convy run support_bot --fail-under 0.9
 
 convy prints each agent's pass rate against the bar, such as
 `support_bot: pass rate 449 of 500 (89.8%), below 90%`.
+
+## Fail CI when the pass rate regresses
+
+Compare a baseline run with the new build:
+
+```sh
+uv run convy compare <before> <after> --fail-on-regression
+```
+
+The page is written first. The command prints the pass rate verdict and lists scenarios with lower
+rates, as explained in [Compare two runs](report.md#compare-two-runs). Both runs must be finished;
+an unfinished run or no comparable scenarios exits with 3.
+Use enough attempts and the same models and settings for a meaningful baseline.

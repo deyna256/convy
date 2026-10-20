@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from convy.agent import Agent
 from convy.bench import Files, Limits, RunSpec
 from convy.model import Models
-from convy.report import Comparison, Index, Report, Run, Runs
+from convy.report import ComparePage, Comparison, Index, Report, Run, Runs, Template
 from convy.scenario import Scenarios
 
 # Files in the template whose names would otherwise be hidden from the package.
@@ -203,10 +203,10 @@ class Project(Struct, frozen=True):
         self.write(self.index(), Index(read).html())
         return runs.broken(read)
 
-    def compare(self, before: Run, after: Run) -> Path:
+    def compare(self, before: Run, after: Run, page: ComparePage | None = None) -> Path:
         """Write the comparison of two runs, `compare/<before>-vs-<after>.html`."""
         path = self.results() / "compare" / f"{before.spec.short()}-vs-{after.spec.short()}.html"
-        self.write(path, Comparison(before, after).html())
+        self.write(path, Template("compare.html").html(page or Comparison(before, after).page()))
         return path
 
     def write(self, path: Path, html: str) -> None:
