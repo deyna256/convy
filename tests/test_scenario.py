@@ -131,7 +131,7 @@ async def test_a_step_convy_cannot_store_fails_the_turn_not_the_run():
 
     outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1, places=alone())
     assert outcome.stop == "agent_failure"
-    assert "call 'search': seconds must be 0 or more" in str(outcome.verdict)
+    assert "call 'search': seconds must be a finite number, 0 or more" in str(outcome.verdict)
 
 
 async def test_waiting_for_a_busy_agent_is_not_answer_time():

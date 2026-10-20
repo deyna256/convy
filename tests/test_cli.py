@@ -353,7 +353,7 @@ def test_a_run_of_an_older_format_is_not_resumed(
     before = recorded(folder)
     capsys.readouterr()
     data = json.loads((folder / "run.json").read_text())
-    older = {**data, "format": 4, "spec": {**data["spec"], "parallel": 1}}
+    older = {**data, "format": 4}
     (folder / "run.json").write_text(json.dumps(older))
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err == (

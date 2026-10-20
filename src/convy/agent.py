@@ -78,7 +78,10 @@ class Call(Struct, frozen=True, tag="call", kw_only=True):
                 f"call {self.name!r}: started needs a time zone, such as datetime.now(UTC)"
             )
         if not 0 <= self.seconds < math.inf:  # NaN fails too
-            raise ValueError(f"call {self.name!r}: seconds must be 0 or more, got {self.seconds}")
+            raise ValueError(
+                f"call {self.name!r}: seconds must be a finite number, 0 or more, "
+                f"got {self.seconds}"
+            )
 
 
 class Answer(Struct, frozen=True):

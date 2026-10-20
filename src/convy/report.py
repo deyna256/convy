@@ -46,11 +46,15 @@ class OlderLine(Struct, frozen=True):
                 data["verdict"]["claims"] = [self.claim(claim) for claim in claims]
         match data:
             case {"transcript": {"turns": list() as turns}}:
-                for turn in turns:
-                    match turn:
-                        case {"answer": {"thinking": {"type": "thinking", "text": str() as text}}}:
-                            turn["answer"]["steps"] = [{"type": "thought", "text": text}]
+                data["transcript"]["turns"] = [self.turn(turn) for turn in turns]
         return msgspec.convert(data, Outcome)
+
+    def turn(self, turn: object) -> object:
+        match turn:
+            case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
+                return {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+            case _:
+                return turn
 
     def claim(self, claim: object) -> object:
         match claim:
@@ -651,8 +655,9 @@ class Summary(Struct, frozen=True):
         for step in steps:
             match step:
                 case Call(started=started, seconds=seconds):
-                    starts.append(started.timestamp())
-                    ends.append(started.timestamp() + seconds)
+                    start = started.timestamp()
+                    starts.append(start)
+                    ends.append(start + seconds)
                 case Thought():
                     pass
         first = min(starts, default=0.0)
@@ -664,21 +669,24 @@ class Summary(Struct, frozen=True):
             case Thought(text=text):
                 return ThoughtView(text)
             case Call():
-                match step.usage:
-                    case Usage(input=spent, output=produced):
-                        tokens: int | None = spent + produced
-                    case NoUsage():
-                        tokens = None
                 offset = step.started.timestamp() - first
                 return CallView(
                     name=step.name,
                     seconds=step.seconds,
                     left=offset / length if length else 0.0,
                     width=step.seconds / length if length else 0.0,
-                    tokens=tokens,
+                    tokens=self.tokens(step.usage),
                     sent=self.reported(step.sent),
                     received=self.reported(step.received),
                 )
+
+    def tokens(self, usage: Usage | NoUsage) -> int | None:
+        """Input and output tokens together; None when the agent did not report them."""
+        match usage:
+            case Usage(input=spent, output=produced):
+                return spent + produced
+            case NoUsage():
+                return None
 
     def reported(self, text: Reported | NotReported) -> str | None:
         match text:

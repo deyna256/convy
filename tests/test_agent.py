@@ -138,7 +138,9 @@ def test_a_call_needs_a_name(name: str):
 
 @pytest.mark.parametrize("seconds", [-1, math.nan, math.inf])
 def test_a_call_lasts_0_seconds_or_more(seconds: float):
-    with pytest.raises(ValueError, match="call 'search': seconds must be 0 or more"):
+    with pytest.raises(
+        ValueError, match="call 'search': seconds must be a finite number, 0 or more"
+    ):
         Call(name="search", started=WHEN, seconds=seconds)
 
 

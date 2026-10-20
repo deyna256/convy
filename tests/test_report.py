@@ -1,6 +1,6 @@
 import json
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import msgspec
@@ -456,9 +456,12 @@ def test_a_huge_call_does_not_break_the_report(tmp_path):
 
 
 def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
-    searched = call("search", 0, 1)
-    searched = msgspec.structs.replace(
-        searched, sent=Reported("refund rules"), received=Reported("")
+    searched = Call(
+        name="search",
+        started=AGENT_CLOCK,
+        seconds=1,
+        sent=Reported("refund rules"),
+        received=Reported(""),
     )
     turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2)))
     assert turn.steps == (
@@ -480,6 +483,13 @@ def test_steps_keep_their_order_and_counts(tmp_path):
 def test_an_answer_without_steps_counts_none(tmp_path):
     turn = shown(tmp_path)
     assert (turn.steps, turn.thoughts, turn.calls) == ((), 0, 0)
+
+
+def test_calls_in_other_time_zones_share_the_time_line(tmp_path):
+    moment = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+    utc = Call(name="a", started=moment, seconds=1)
+    plus3 = Call(name="b", started=moment.astimezone(timezone(timedelta(hours=3))), seconds=1)
+    assert shown(tmp_path, utc, plus3).steps == (bar("a", 1, 0, 1), bar("b", 1, 0, 1))
 
 
 def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
