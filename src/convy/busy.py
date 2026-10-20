@@ -2,8 +2,8 @@
 and how long convy waits for it."""
 
 import asyncio
+import math
 import random
-import time
 from collections.abc import Awaitable, Callable
 from types import TracebackType
 
@@ -32,12 +32,15 @@ class Patience(Struct, frozen=True, kw_only=True):
 
 class Places:
     """A participant's requests under way at once: up to `most`, half as many each time its service
-    is busy, and one more again after as many answers as there are places; and its `patience` with
-    a busy service. Made in the event loop that waits for it."""
+    is busy, and one more again after as many answers as there are places; sent no faster than
+    `per_minute`, evenly, or as fast as they come at 0; and its `patience` with a busy service.
+    Made in the event loop that waits for it."""
 
-    def __init__(self, most: int, patience: Patience):
+    def __init__(self, most: int, patience: Patience, per_minute: float = 0):
         self.most = most
         self.patience = patience
+        self.per_minute = per_minute
+        self.next = 0.0  # when the next request may go, by the event loop's clock that sleeps keep
         self.allowed = most
         self.taken = 0
         self.answers = 0  # since the last change of `allowed`
@@ -59,29 +62,46 @@ class Places:
             self.changed.notify_all()
 
     async def call[T](self, request: Callable[[], Awaitable[T]]) -> T:
-        """What `request` gives, each try sent in a place, so no place is held while waiting."""
+        """What `request` gives, each try sent in a place, so no place is held while waiting, and
+        in its turn once in the place, so that a place taken late does not shorten the spacing."""
 
         async def placed() -> T:
             async with self:
-                return await request()
+                return await self.paced(request)
 
-        return await self.retry(placed)
+        return await self.tries(placed)
 
     async def retry[T](self, request: Callable[[], Awaitable[T]]) -> T:
-        """What `request` gives once its service is not busy, tried as often as `patience` allows;
-        `Busy` when the service asks for longer than is left, or is still busy when the time is
+        """What `request` gives, each try in its turn, with no place: for a turn of a conversation
+        that already holds one."""
+        return await self.tries(lambda: self.paced(request))
+
+    async def paced[T](self, request: Callable[[], Awaitable[T]]) -> T:
+        if self.per_minute:
+            now = asyncio.get_running_loop().time()
+            turn = max(now, self.next)
+            self.next = turn + 60 / self.per_minute  # taken before waiting, so no two share it
+            await asyncio.sleep(turn - now)
+        return await request()
+
+    async def tries[T](self, request: Callable[[], Awaitable[T]]) -> T:
+        """What `request` gives once its service is not busy, tried as often as `patience` allows
+        from the first time the service is busy, so that waiting for a place or a turn takes none of
+        it; `Busy` when the service asks for longer than is left, or is still busy when the time is
         up."""
-        deadline = time.monotonic() + self.patience.seconds
+        deadline = math.inf
         window = self.patience.first
         while True:
             try:
                 answer = await request()
             except Busy as busy:
                 self.busy()
-                left = deadline - time.monotonic()
+                now = asyncio.get_running_loop().time()
+                deadline = min(deadline, now + self.patience.seconds)
+                left = deadline - now
                 if left <= 0 or busy.retry_after > left:
                     raise Busy(
-                        f"{busy}; convy waits up to {self.patience.seconds:g} s from the first try",
+                        f"{busy}; convy waits up to {self.patience.seconds:g} s for a busy service",
                         busy.retry_after,
                     ) from busy
                 if busy.retry_after:

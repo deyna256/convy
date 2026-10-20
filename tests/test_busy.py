@@ -1,11 +1,16 @@
 import asyncio
 import re
-import time
 from itertools import pairwise
 
 import pytest
 
 from convy.busy import Busy, Patience, Places
+
+pytestmark = pytest.mark.looptime  # the event loop's time goes on at once over every wait
+
+
+def now() -> float:
+    return asyncio.get_running_loop().time()
 
 
 class Service:
@@ -17,33 +22,32 @@ class Service:
         self.times: list[float] = []
 
     async def request(self) -> str:
-        self.times.append(time.monotonic())
+        self.times.append(now())
         if self.refusals:
             raise self.refusals.pop(0)
         return "done"
 
 
 async def test_a_request_waits_at_least_as_long_as_the_service_asks():
-    service = Service(Busy("429", 0.1))
-    assert await Places(1, Patience(first=0.01)).retry(service.request) == "done"
-    assert 0.1 <= service.times[1] - service.times[0] < 0.2
+    service = Service(Busy("429", 10))
+    assert await Places(1, Patience()).retry(service.request) == "done"
+    assert 10 <= service.times[1] - service.times[0] <= 10 + 1  # up to `first` more
 
 
 async def test_without_a_wait_asked_the_waits_stay_within_a_window_up_to_longest():
     service = Service(*[Busy("503")] * 6)
-    assert await Places(1, Patience(first=0.01, longest=0.04)).retry(service.request) == "done"
+    assert await Places(1, Patience(first=1, longest=4)).retry(service.request) == "done"
     gaps = [later - earlier for earlier, later in pairwise(service.times)]
     assert len(gaps) == 6
-    assert max(gaps) < 0.04 + 0.02  # a little for the event loop
+    assert max(gaps) <= 4
 
 
 async def test_a_service_still_busy_when_the_time_is_up_is_busy():
-    service = Service(*[Busy("503")] * 100)
-    places = Places(1, Patience(seconds=0.1, first=0.02, longest=0.02))
-    start = time.monotonic()
-    with pytest.raises(Busy, match=re.escape("503; convy waits up to 0.1 s from the first try")):
-        await places.retry(service.request)
-    assert time.monotonic() - start < 0.2
+    service = Service(*[Busy("503")] * 1000)
+    start = now()
+    with pytest.raises(Busy, match=re.escape("503; convy waits up to 120 s for a busy service")):
+        await Places(1, Patience()).retry(service.request)
+    assert now() - start == pytest.approx(120)  # a random wait is cut to the time left
 
 
 async def test_a_wait_longer_than_the_time_left_gives_up_at_once():
@@ -132,10 +136,24 @@ async def test_a_place_that_comes_back_lets_a_waiting_request_in_at_once():
     await asyncio.gather(holder, waiter, return_exceptions=True)
 
 
-async def test_without_a_wait_asked_convy_keeps_trying_until_the_time_is_up():
-    places = Places(1, Patience(seconds=0.3, first=0.3, longest=0.3))
-    service = Service(*[Busy("503")] * 1000)
-    start = time.monotonic()
-    with pytest.raises(Busy):
-        await places.retry(service.request)
-    assert 0.28 <= time.monotonic() - start < 0.4  # a random wait is cut to the time left
+async def test_requests_are_spaced_evenly_to_keep_a_limit_per_minute():
+    places = Places(4, Patience(), per_minute=60)  # one request a second
+    service = Service()
+    await asyncio.gather(*(places.call(service.request) for _ in range(4)))
+    gaps = [later - earlier for earlier, later in pairwise(service.times)]
+    assert gaps == pytest.approx([1, 1, 1])
+
+
+async def test_tries_again_after_a_busy_service_keep_the_limit_per_minute_too():
+    places = Places(1, Patience(first=0.5), per_minute=60)  # a random wait is shorter than 1 s
+    service = Service(Busy("503"), Busy("503"))
+    assert await places.retry(service.request) == "done"
+    gaps = [later - earlier for earlier, later in pairwise(service.times)]
+    assert gaps == pytest.approx([1, 1])
+
+
+async def test_waiting_for_a_turn_takes_nothing_from_the_patience():
+    places = Places(4, Patience(seconds=2), per_minute=60)
+    services = [Service(Busy("503")) for _ in range(4)]
+    answers = await asyncio.gather(*(places.retry(service.request) for service in services))
+    assert answers == ["done"] * 4  # the last waited 3 s for its first turn

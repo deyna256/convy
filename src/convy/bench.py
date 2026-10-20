@@ -38,16 +38,27 @@ class Files(Struct, frozen=True):
 
 class Limits(Struct, frozen=True, kw_only=True):
     """How much each participant does at once: conversations with the agent, messages of the
-    simulated user, decisions of the judge. Given by name, since the three are easy to swap."""
+    simulated user, decisions of the judge; and how many requests it sends per minute, 0 for no
+    limit. Given by name, since they are easy to swap."""
 
     agent: int = 4
     user: int = 4
     judge: int = 4
+    agent_per_minute: float = 0
+    user_per_minute: float = 0
+    judge_per_minute: float = 0
 
     def __post_init__(self) -> None:
         for name, value in (("agent", self.agent), ("user", self.user), ("judge", self.judge)):
             if value < 1:
                 raise ValueError(f"the {name}'s limit must be at least 1, got {value}")
+        for name, value in (
+            ("agent", self.agent_per_minute),
+            ("user", self.user_per_minute),
+            ("judge", self.judge_per_minute),
+        ):
+            if value < 0:
+                raise ValueError(f"the {name}'s limit per minute must be at least 0, got {value}")
 
 
 class RunSpec(Struct, frozen=True, kw_only=True):
@@ -168,11 +179,16 @@ class Bench(Struct, frozen=True):
         """Play every scenario `attempts` times, each participant within its limit, fewer at once
         while its service is busy, and waiting for it as `patience` allows; skip the attempts in
         `done`. The places are made here, in the event loop that waits for them."""
-        conversations = Places(self.limits.agent, self.patience)
+        limits = self.limits
+        conversations = Places(limits.agent, self.patience, limits.agent_per_minute)
         queued = QueuedAgent(agent, conversations)
         models = Models(
-            PatientModel(self.models.user, Places(self.limits.user, self.patience)),
-            PatientJudge(self.models.judge, Places(self.limits.judge, self.patience)),
+            PatientModel(
+                self.models.user, Places(limits.user, self.patience, limits.user_per_minute)
+            ),
+            PatientJudge(
+                self.models.judge, Places(limits.judge, self.patience, limits.judge_per_minute)
+            ),
         )
         async with asyncio.TaskGroup() as group:
             tasks = [

@@ -83,7 +83,7 @@ parallel = 20          # conversations at once with this agent, instead of agent
 ```
 
 To change a limit for one run or on one machine, such as in CI, set a variable: `CONVY_` and the
-key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`:
+key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`, or `__PER_MINUTE`:
 
 ```sh
 CONVY_JUDGE_PARALLEL=1 uv run convy run support_bot
@@ -94,10 +94,39 @@ The environment wins over `.env` in the project's folder, and both win over `pyp
 convy does not know in `[tool.convy]` is an error. Agent names are matched in any case, so
 `Support_Bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` mean one agent.
 
-The wait for a place counts neither in the time per answer nor against `--turn-timeout`. Keep the
-user's limit at least as high as the agent's: a conversation that waits for the user's message keeps
-its place. `convy compare` says when two runs had different agent limits, since an agent under more
-load may answer slower.
+Hosted models also limit requests per minute. Give a participant that limit, and convy sends its
+requests no faster, spaced evenly, since a limit per minute may be enforced per second; 0, the
+default, is no limit. The two limits do not overlap: one is how many requests are under way, the
+other how often one starts, and the slower of them sets the pace. So leave a limit per minute
+enough places: at 120 a minute, 2 a second, and 3 seconds per answer, 6 requests are under way,
+and 4 places would hold the pace to 80 a minute.
+
+Set it a little below the provider's limit, such as 90%: at the limit itself, small delays on the
+way bring two requests closer and the service refuses one. It counts requests, not tokens: a limit
+on tokens is met by waiting, as for any busy service.
+
+The user and the judge on one key share its limit. The user writes each turn and the judge decides
+once per attempt, so the user needs most of it. For a key of 100 requests a minute:
+
+```toml
+[tool.convy]
+user_parallel = 8
+user_per_minute = 70   # with the judge's 20, 90 of the key's 100
+judge_per_minute = 20
+```
+
+The agent gets about as many messages as the user writes, so its own limit matters when it is
+lower, such as for a test service of 30 a minute:
+
+```sh
+CONVY_AGENTS__SUPPORT_BOT__PER_MINUTE=27 uv run convy run support_bot
+```
+
+The wait for a place or for its moment to send counts neither in the time per answer, nor against
+`--turn-timeout`, nor against the wait for a busy service. Keep the user's limits at least as high
+as the agent's: a conversation that waits for the user's message keeps its place. `convy compare`
+and `convy resume` say when the agent's limits changed, since an agent under more load may answer
+slower.
 
 ## Forget a run
 

@@ -97,12 +97,12 @@ if response.status_code == 429:
     raise Busy("429")
 ```
 
-convy then sends the message again, within 2 minutes of the first try, and the wait counts neither
-in the time per answer nor against `--turn-timeout`. While the service is busy, convy also opens
-fewer conversations at once. If it stays busy, the attempt has no verdict and is left out of the
-pass rate: convy sent too much, the agent did nothing wrong. Raise `Busy` only when the service did
-not act on the message, or the agent may get it twice. A model or a judge of your own raises `Busy`
-the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
+convy then sends the message again, for up to 2 minutes after the first refusal, and the wait counts
+neither in the time per answer nor against `--turn-timeout`. While the service is busy, convy also
+opens fewer conversations at once. If it stays busy, the attempt has no verdict and is left out of
+the pass rate: convy sent too much, the agent did nothing wrong. Raise `Busy` only when the service
+did not act on the message, or the agent may get it twice. A model or a judge of your own raises
+`Busy` the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
 
 ## A client without async
 

@@ -451,16 +451,22 @@ def test_resume_plays_with_the_current_limits(
     assert file.spec.limits.agent == 1  # the run keeps the limits it started with
 
 
-def test_resume_says_when_the_agent_limit_changed(
-    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+@pytest.mark.parametrize(
+    ("variable", "value", "change"),
+    [
+        ("CONVY_AGENT_PARALLEL", "2", "limit is 2, the run started with 1"),
+        ("CONVY_AGENT_PER_MINUTE", "6000", "limit per minute is 6000, the run started with 0"),
+    ],
+)
+def test_resume_says_when_an_agent_limit_changed(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys, variable: str, value: str, change: str
 ):
     folder = started_run(project, monkeypatch)
     capsys.readouterr()
-    monkeypatch.setenv("CONVY_AGENT_PARALLEL", "2")
+    monkeypatch.setenv(variable, value)
     assert convy("resume", folder.name) == 0
     assert capsys.readouterr().err == (
-        "slow: the agent's limit is 2, the run started with 1; "
-        "its answer times will mix two loads\n"
+        f"slow: the agent's {change}; its answer times will mix two loads\n"
     )
 
 

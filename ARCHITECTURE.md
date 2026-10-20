@@ -27,7 +27,7 @@ All code is in `src/convy/`.
 | module | what is there |
 |---|---|
 | `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `Thinking`, `NoThinking`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
-| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once, fewer while its service is busy, which sends and retries them as its patience allows |
+| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
@@ -142,15 +142,17 @@ run's folder; see [decision 5](docs/decisions/0005-runs.md).
 **Concurrency.** Conversations run at the same time, so the whole path is `async`: `asyncio.timeout`
 for time limits, `asyncio.TaskGroup` for concurrent work, and `Places` per participant for how much
 it does at once ([decision 7](docs/decisions/0007-participant-limits.md)), fewer while its service
-is busy ([decision 8](docs/decisions/0008-busy-services.md)). `Bench.run` makes them in the event
-loop that waits for them and hands them to `QueuedAgent`, `PatientModel` and `PatientJudge`: the
-agent's place is held while a conversation is open, the user's and the judge's for one try of a
-request, so none is held while waiting for a busy service, and the judge decides after the agent's
-is let go. Nothing blocks the event loop except the run's append of one short line per attempt and
-the rewrite of its small `run.json`. Durations are measured with `time.monotonic`. One process plays
-a run's folder at a time: `RunJournal.play` holds `run.lock`, which the system frees when the
-process ends, however it ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench;
-`RunJournal.play` marks the run `interrupted` on that, or on any other error, and re-raises it.
+is busy ([decision 8](docs/decisions/0008-busy-services.md)), and how often it sends ([decision
+9](docs/decisions/0009-requests-per-minute.md)). `Bench.run` makes them in the event loop that waits
+for them and hands them to `QueuedAgent`, `PatientModel` and `PatientJudge`: the agent's place is
+held while a conversation is open, the user's and the judge's for one try of a request, so none is
+held while waiting for a busy service, and the judge decides after the agent's is let go. Nothing
+blocks the event loop except the run's append of one short line per attempt and the rewrite of its
+small `run.json`. Durations are measured with `time.monotonic`; `Places` keeps its moments in the
+event loop's time, which its sleeps follow. One process plays a run's folder at a time:
+`RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it ends;
+taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the
+run `interrupted` on that, or on any other error, and re-raises it.
 
 **Failure.** Four kinds, one rule each:
 

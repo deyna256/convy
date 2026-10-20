@@ -151,9 +151,11 @@ LIMITS = """
 [tool.convy]
 agent_parallel = 3
 judge_parallel = 2
+judge_per_minute = 120
 
 [tool.convy.agents.fast]
 parallel = 20
+per_minute = 600
 
 [tool.convy.agents.Bot]
 parallel = 9
@@ -171,8 +173,21 @@ def limited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Project:
 
 
 def test_limits_come_from_the_project_table(limited: Project):
-    assert limited.limits("fast") == Limits(agent=20, user=4, judge=2)
-    assert limited.limits("other") == Limits(agent=3, user=4, judge=2)
+    assert limited.limits("fast") == Limits(
+        agent=20, user=4, judge=2, agent_per_minute=600, judge_per_minute=120
+    )
+    assert limited.limits("other") == Limits(agent=3, user=4, judge=2, judge_per_minute=120)
+
+
+def test_a_limit_per_minute_comes_from_the_environment_too(
+    limited: Project, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("CONVY_USER_PER_MINUTE", "30")
+    monkeypatch.setenv("CONVY_AGENT_PER_MINUTE", "60")
+    monkeypatch.setenv("CONVY_AGENTS__FAST__PER_MINUTE", "90")
+    assert limited.limits("fast").agent_per_minute == 90
+    assert limited.limits("other").agent_per_minute == 60
+    assert limited.limits("other").user_per_minute == 30
 
 
 def test_the_environment_wins_over_env_file_and_table(
@@ -182,7 +197,9 @@ def test_the_environment_wins_over_env_file_and_table(
     write(limited.directory / ".env", env)
     monkeypatch.setenv("CONVY_USER_PARALLEL", "7")
     monkeypatch.setenv("CONVY_AGENTS__FAST__PARALLEL", "1")
-    assert limited.limits("fast") == Limits(agent=1, user=7, judge=5)
+    assert limited.limits("fast") == Limits(
+        agent=1, user=7, judge=5, agent_per_minute=600, judge_per_minute=120
+    )
 
 
 def test_agents_are_matched_in_any_case(limited: Project, monkeypatch: pytest.MonkeyPatch):
@@ -204,6 +221,7 @@ def test_limits_default_to_4_without_a_table(tmp_path: Path):
         ),
         ("[tool.convy.agents.bot]\nparalel = 2\n", "unknown field `paralel`"),
         ("[tool.convy]\nagent_parallel = 0\n", "`int` >= 1 - at `$.tool.convy.agent_parallel`"),
+        ("[tool.convy]\njudge_per_minute = -1\n", ">= 0.0 - at `$.tool.convy.judge_per_minute`"),
         ("[tool.convy]\nagents = 5\n", "Expected `object`, got `int` - at `$.tool.convy.agents`"),
         ("[tool.convy\n", "Expected ']'"),
     ],

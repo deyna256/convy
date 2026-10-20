@@ -119,6 +119,9 @@ to `main` and pushes to `main`. It fails when `uv.lock` is out of date.
   (pytest-timeout).
 - Use time-machine to set the current date and time. It leaves `time.monotonic` alone, so asyncio
   works as usual; durations in tests use short real waits.
+- A test of waits, such as for a limit per minute or a busy service, is marked `looptime`: the event
+  loop's time goes on at once over every wait, so the test runs in no time and checks exact times.
+  The code under it reads the event loop's time, `asyncio.get_running_loop().time()`.
 
 ## Changelog
 

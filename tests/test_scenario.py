@@ -131,7 +131,7 @@ async def test_an_agent_whose_service_stays_busy_is_not_judged():
     assert outcome.stop == "agent_busy"
     assert outcome.failed()
     assert outcome.verdict == NoVerdict(
-        "the agent's service stayed busy: 503; convy waits up to 0.05 s from the first try"
+        "the agent's service stayed busy: 503; convy waits up to 0.05 s for a busy service"
     )
     assert judge.calls == []
 

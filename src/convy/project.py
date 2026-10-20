@@ -10,7 +10,7 @@ from types import ModuleType
 from typing import Annotated
 
 import msgspec
-from msgspec import Meta, Struct
+from msgspec import UNSET, Meta, Struct, UnsetType
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
 from convy.agent import Agent
@@ -25,32 +25,43 @@ COMPILED = "__pycache__"  # pip compiles the installed template; a project does 
 
 
 type Places = Annotated[int, Meta(ge=1)]  # how much a participant does at once
+type PerMinute = Annotated[float, Meta(ge=0)]  # how many requests it sends per minute; 0: any
 
 
 class AgentSettings(Struct, frozen=True, forbid_unknown_fields=True):
-    """An agent's own table, `[tool.convy.agents.<agent>]`."""
+    """An agent's own table, `[tool.convy.agents.<agent>]`: each limit given there instead of the
+    project's."""
 
-    parallel: Places
+    parallel: Places | UnsetType = UNSET
+    per_minute: PerMinute | UnsetType = UNSET
 
 
 class Settings(Struct, frozen=True, forbid_unknown_fields=True):
     """The project's settings, as `[tool.convy]` holds them: how much each participant does at
-    once, and an agent's own limit."""
+    once and per minute, and an agent's own limits."""
 
     agent_parallel: Places = 4
     user_parallel: Places = 4
     judge_parallel: Places = 4
+    agent_per_minute: PerMinute = 0
+    user_per_minute: PerMinute = 0
+    judge_per_minute: PerMinute = 0
     agents: dict[str, AgentSettings] = {}
 
     def limits(self, agent: str) -> Limits:
-        """The limits a run of the agent plays with: its own, else `agent_parallel`. Agents are
+        """The limits a run of the agent plays with: its own, else the project's. Agents are
         matched in lower case, since the environment gives their names so; of two names alike, the
         later wins, and the environment's come after the file's."""
-        own = {name.lower(): found for name, found in self.agents.items()}
+        own = {name.lower(): found for name, found in self.agents.items()}.get(
+            agent.lower(), AgentSettings()
+        )
         return Limits(
-            agent=own.get(agent.lower(), AgentSettings(self.agent_parallel)).parallel,
+            agent=self.agent_parallel if own.parallel is UNSET else own.parallel,
             user=self.user_parallel,
             judge=self.judge_parallel,
+            agent_per_minute=self.agent_per_minute if own.per_minute is UNSET else own.per_minute,
+            user_per_minute=self.user_per_minute,
+            judge_per_minute=self.judge_per_minute,
         )
 
 
@@ -82,7 +93,10 @@ class Variables(BaseSettings):
     agent_parallel: int
     user_parallel: int
     judge_parallel: int
-    agents: dict[str, dict[str, int]]
+    agent_per_minute: float
+    user_per_minute: float
+    judge_per_minute: float
+    agents: dict[str, dict[str, int | float]]
 
     @classmethod
     def settings_customise_sources(

@@ -140,6 +140,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "looptime" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -161,6 +162,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "looptime", specifier = ">=0.9" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
@@ -410,6 +412,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
+]
+
+[[package]]
+name = "looptime"
+version = "0.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/e1/307c060c3ea3f9659f2937b29d21981fc2510c8bda8f361578489cc4bda5/looptime-0.9.tar.gz", hash = "sha256:3d9c8b3a5b539e63c596491e8fbd30c3c99990cf2e24c98cade08f54178524d4", size = 41305, upload-time = "2026-10-14T14:22:28.296Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/2f/a1f91a698965f187e13eac7ef9eb15ef83d69183434ce82e1981d59ec3a4/looptime-0.9-py3-none-any.whl", hash = "sha256:5cae7abe4572366d2914cc001fb39d4401b124373cb5ef8e06015dcf241afb9a", size = 21812, upload-time = "2026-10-14T14:22:26.784Z" },
 ]
 
 [[package]]
