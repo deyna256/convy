@@ -25,8 +25,8 @@ How sure a judge is cannot be measured well in one way that fits everyone:
 ## Decision
 
 - **The judge is an interface,** like the agent ([0002](0002-agent-interface.md)): an object with a
-  `name`, a `reviews_agent_thinking` that says whether it reads the agent's thinking, and
-  `async decide(transcript, claims)` that returns one `Claim` per claim. convy ships
+  `name` and `async decide(transcript, claims)` that returns one `Claim` per claim. It gets only
+  what was said ([0010](0010-answer-steps.md)). convy ships
   `ChatJudge`, a chat model with a prompt, which does not say how sure it is.
 - **A decision may carry a `Confidence` from 0 to 1, or `NoConfidence`.** convy does not check that
   the number is calibrated; that is the judge's owner's job.

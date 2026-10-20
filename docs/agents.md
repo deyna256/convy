@@ -220,8 +220,8 @@ An agent that puts it inside the text, as some open models do with `<think>…</
         return Answer(said.strip(), thinking=Thinking(thought) if thought else NoThinking())
 ```
 
-The simulated user never sees the thinking. A judge sees it only if it reviews it; see
-[the judge](judge.md#the-agents-thinking). The report shows it folded next to the answer.
+The simulated user and the judge never see the thinking. The report shows it folded next to the
+answer.
 
 ## Corporate certificates
 

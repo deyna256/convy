@@ -623,7 +623,6 @@ from convy.fakes import FakeModel
 
 class ByAnswer:
     name = "by-answer"
-    reviews_agent_thinking = False
 
     async def decide(self, transcript, claims):
         return tuple(Claim("good" in transcript.as_text()) for _ in claims)

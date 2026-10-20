@@ -118,9 +118,8 @@ class FakeJudge:
     """A judge that decides from a list: a step is the claims to return, or `ModelFailure` or `Busy`
     to raise.
 
-    The list runs across all calls, and the last step repeats. Its `name` is `"fake"`;
-    `reviews_agent_thinking` is `False` unless given. Each decision takes `delay` seconds; `peak`
-    is the most decisions that were under way at once.
+    The list runs across all calls, and the last step repeats. Its `name` is `"fake"`. Each
+    decision takes `delay` seconds; `peak` is the most decisions that were under way at once.
     """
 
     name = "fake"
@@ -128,13 +127,11 @@ class FakeJudge:
     def __init__(
         self,
         *steps: tuple[Claim, ...] | ModelFailure | Busy,
-        reviews_agent_thinking: bool = False,
         delay: float = 0,
     ):
         if not steps:
             raise ValueError("FakeJudge needs at least one step")
         self.steps = steps
-        self.reviews_agent_thinking = reviews_agent_thinking
         self.delay = delay
         self.calls: list[tuple[Transcript, tuple[str | Graded, ...]]] = []
         self.peak = 0

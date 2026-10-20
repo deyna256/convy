@@ -184,7 +184,6 @@ class ClockedModel(Clock):
 
 class ClockedJudge(Clock):
     name = "clocked"
-    reviews_agent_thinking = False
 
     async def decide(
         self, transcript: Transcript, claims: tuple[str | Graded, ...]

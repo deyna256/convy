@@ -31,7 +31,7 @@ All code is in `src/convy/`.
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge the agent's thinking only if it reviews it; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
+| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
@@ -86,8 +86,8 @@ in all of `src/convy/`.
    model's reply: read into the shape of an OpenAI chat completion. The judge model's reply: each
    decision read into the type its claim needs. A judge's own answer: `Checked` encodes and
    decodes it as the run's folder will, and wants one `Claim` per claim, a graded claim with one
-   of its grades and the `pass` the scenario gives that grade; a judge gets the agent's thinking
-   only if its `reviews_agent_thinking` is true. `[tool.convy]` of `pyproject.toml`:
+   of its grades and the `pass` the scenario gives that grade; a judge gets only what
+   was said. `[tool.convy]` of `pyproject.toml`:
    `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
    pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
    entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
