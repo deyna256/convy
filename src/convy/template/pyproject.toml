@@ -2,7 +2,7 @@
 name = "convy-project"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["convy==0.3.0"]
+dependencies = ["convy==0.4.0"]
 
 # How much convy does at once; a limit not given is 4. CONVY_AGENT_PARALLEL and the like override
 # these for one run. See

@@ -1,6 +1,6 @@
 [project]
 name = "convy"
-version = "0.3.0"
+version = "0.4.0"
 description = "Conversation tests for AI agents: a simulated user talks to your agent through its API, a judge checks every claim, and convy reports pass rate, tokens, time and what changed between builds."
 keywords = [
     "llm", "agents", "ai-agents", "evaluation", "llm-evaluation", "agent-evaluation", "testing",
