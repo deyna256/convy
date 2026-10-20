@@ -7,6 +7,10 @@ import pytest
 
 from convy.busy import Busy, Patience, Places
 
+# a gap of 0.1 s as measured: asyncio wakes a timer up to a tick of the clock early, 15.6 ms on
+# Windows
+GAP = 0.1 - 0.005 - time.get_clock_info("monotonic").resolution
+
 
 class Service:
     """A service that refuses its first requests as busy, then answers; it keeps when each request
@@ -146,7 +150,7 @@ async def test_requests_are_spaced_evenly_to_keep_a_limit_per_minute():
     service = Service()
     await asyncio.gather(*(places.call(service.request) for _ in range(4)))
     gaps = [later - earlier for earlier, later in pairwise(service.times)]
-    assert min(gaps) >= 0.095
+    assert min(gaps) >= GAP
 
 
 async def test_tries_again_after_a_busy_service_keep_the_limit_per_minute_too():
@@ -154,7 +158,7 @@ async def test_tries_again_after_a_busy_service_keep_the_limit_per_minute_too():
     service = Service(Busy("503"), Busy("503"))
     assert await places.retry(service.request) == "done"
     gaps = [later - earlier for earlier, later in pairwise(service.times)]
-    assert min(gaps) >= 0.095
+    assert min(gaps) >= GAP
 
 
 async def test_waiting_for_a_turn_takes_nothing_from_the_patience():
