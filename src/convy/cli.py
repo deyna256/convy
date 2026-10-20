@@ -149,7 +149,9 @@ class RunCommand(BaseModel):
     turn_timeout: float = Field(
         600,
         gt=0,
-        description="seconds for each step of the agent: opening a conversation, a turn, closing",
+        description=(
+            "seconds the agent has to open a conversation, to answer each turn, and to close it"
+        ),
     )
     trust: float = Field(
         0.0,
@@ -276,7 +278,7 @@ class ResumeCommand(BaseModel):
             match run.status:
                 case Finished():
                     raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
-            if run.format < 3:  # resuming would write format 3 lines over lines of an older one
+            if run.format < 5:  # resuming would write format 5 lines over lines of an older one
                 raise ValueError(f"run {spec.id} was written by an older convy; start a new run")
             if changes := spec.code_changes(project.files(spec.agent), CONVY):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")

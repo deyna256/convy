@@ -33,9 +33,8 @@ many attempts it held in and how many of its decisions were not trusted. A grade
 how often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you
 see the judge's decision on every claim with its grade, if it has one, and its reason, and the
 dialogue with the time and tokens of each answer; **Total answer time** adds them up for the
-attempt. An answer with the agent's thinking has it folded above, under "Thinking", and its tokens
-say how many went to thinking, such as `300 out, 200 thinking`: they are part of the output, not
-added to it. If the judge says how sure it is, each decision shows that too, or "sure: not given"
+attempt. An answer's tokens say how many went to thinking, such as `300 out, 200 thinking`: they are
+part of the output, not added to it. If the judge says how sure it is, each decision shows that too, or "sure: not given"
 where it did not say. The address keeps the open scenario, so you can send a link to it.
 
 `results/index.html` lists every run, newest first, with a link to its report.

@@ -3,13 +3,14 @@ import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx2
 import msgspec
 import pytest
 from pydantic_settings import SettingsConfigDict
 
-from convy.agent import AgentFailure, Answer, NoThinking, Usage
+from convy.agent import AgentFailure, Answer, Usage
 from convy.bench import RunJournal, RunSpec
 from convy.busy import Busy, Patience, Places
 from convy.dialog import ChatJudge, Claim, Failed, Graded, NoVerdict, Reason, Verdict
@@ -109,10 +110,28 @@ async def test_thinking_tokens_above_the_output_fail_the_turn_not_the_run(build)
     assert "thinking tokens must be from 0 to the output's 2" in str(outcome.verdict)
 
 
-def test_an_answer_written_before_thinking_reads_without_it():
-    old = b'{"text": "hi", "usage": {"type": "usage", "input": 1, "output": 2}}'
-    answer = msgspec.json.decode(old, type=Answer)
-    assert (answer.thinking, answer.usage) == (NoThinking(), Usage(1, 2, 0))
+class LikeCall(msgspec.Struct, frozen=True, tag="call", kw_only=True):
+    """The shape of `Call` without its checks, as an agent's own class might send it."""
+
+    name: str = "search"
+    started: datetime = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
+    seconds: float = -1
+
+
+async def test_a_step_convy_cannot_store_fails_the_turn_not_the_run():
+    class Talking:
+        async def answer(self, message: object) -> Answer:
+            steps: Any = (LikeCall(),)
+            return Answer("x", steps=steps)
+
+    class Agent:
+        @asynccontextmanager
+        async def conversation(self):
+            yield Talking()
+
+    outcome = await SCENARIO.outcome(Agent(), models("hi"), attempt=1, places=alone())
+    assert outcome.stop == "agent_failure"
+    assert "call 'search': seconds must be 0 or more" in str(outcome.verdict)
 
 
 async def test_waiting_for_a_busy_agent_is_not_answer_time():

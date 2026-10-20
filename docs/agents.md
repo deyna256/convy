@@ -182,19 +182,50 @@ time mixes their tokens. Give such an agent a limit of 1, `parallel = 1` under
 If your agent does not report tokens, the report shows time and results without them. To get them,
 add them to the agent's answer, or read them from the model gateway the agent uses.
 
-## Thinking
+## Steps
 
-Some agents think before they answer. Give the thinking apart from the answer, so the simulated user
-and the judge read only what the agent said:
+An answer can say how the agent got there: what it thought and what it called, in order. The
+report shows the steps next to the answer; the simulated user and the judge never see them.
 
 ```python
-return Answer(text, Usage(input=120, output=300, thinking=200), Thinking(thought))
+from datetime import UTC, datetime
+
+from convy import Answer, Call, Reported, Thought, Usage
+
+return Answer(
+    text,
+    Usage(input=3100, output=530),
+    steps=(
+        Thought("The order number comes first."),
+        Call(
+            name="get_order",
+            started=datetime(2026, 10, 20, 12, 0, 1, tzinfo=UTC),
+            seconds=1.2,
+            sent=Reported("1042"),
+            received=Reported('{"status": "damaged"}'),
+        ),
+    ),
+)
 ```
 
-`thinking` in `Usage` is the part of `output` spent on thinking. OpenAI and Anthropic report it that
-way, so pass their numbers as they are. If a provider counts thinking apart from the answer, as
-Gemini does, add the two: `output` is the answer's tokens plus the thinking's. Leave out what your
-agent does not report.
+- `started` is when a call started, by the agent's own clock, with a time zone:
+  `datetime.now(UTC)`, or the start of a span from your tracer. `seconds` is how long it took.
+- `usage`, `sent` and `received` are optional. `Reported("")` is text that was empty, such as a
+  search that found nothing; `NotReported()`, the default, is text you did not give.
+- convy shows the steps as you give them and checks them against nothing; see
+  [why](decisions/0010-answer-steps.md). A call without a name or a time zone, or with seconds
+  below 0, fails the turn as an agent error.
+
+### Thinking
+
+The agent's thinking is a `Thought`. Its tokens go in `Usage`: `thinking` is the part of `output`
+spent on thinking. OpenAI and Anthropic report it that way, so pass their numbers as they are. If a
+provider counts thinking apart from the answer, as Gemini does, add the two: `output` is the
+answer's tokens plus the thinking's.
+
+```python
+return Answer(text, Usage(input=120, output=300, thinking=200), steps=(Thought(thought),))
+```
 
 convy does not guess where an agent keeps its thinking; your `answer` knows. An agent that sends it
 in a field of its own:
@@ -204,7 +235,7 @@ in a field of its own:
         response = await self.http.post("/chat", json={"text": message.text})
         data = response.raise_for_status().json()["message"]
         thought = (data.get("reasoning_content") or "").strip()
-        return Answer(data["content"], thinking=Thinking(thought) if thought else NoThinking())
+        return Answer(data["content"], steps=(Thought(thought),) if thought else ())
 ```
 
 An agent that puts it inside the text, as some open models do with `<think>…</think>`:
@@ -217,11 +248,8 @@ An agent that puts it inside the text, as some open models do with `<think>…</
         if not mark:  # cut off while thinking, or no thinking at all
             thought, said = (text, "") if text.startswith("<think>") else ("", text)
         thought = thought.removeprefix("<think>").strip()
-        return Answer(said.strip(), thinking=Thinking(thought) if thought else NoThinking())
+        return Answer(said.strip(), steps=(Thought(thought),) if thought else ())
 ```
-
-The simulated user and the judge never see the thinking. The report shows it folded next to the
-answer.
 
 ## Corporate certificates
 

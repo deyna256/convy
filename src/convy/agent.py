@@ -1,9 +1,11 @@
-"""What convy needs from an agent, and the wrappers that limit the time of each of its steps and
-the conversations it holds at once."""
+"""What convy needs from an agent, and the wrappers that limit the time it has to open a
+conversation, to answer each turn and to close it, and the conversations it holds at once."""
 
 import asyncio
+import math
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from datetime import datetime
 from typing import Protocol
 
 from msgspec import Struct
@@ -36,26 +38,56 @@ class NoUsage(Struct, frozen=True, tag="no_usage"):
     """The agent did not report the tokens it spent."""
 
 
-class Thinking(Struct, frozen=True, tag="thinking"):
-    """What the agent thought before it answered, kept apart from the answer."""
+class Reported(Struct, frozen=True, tag="reported"):
+    """Text the agent reported; it may be empty, as a search that found nothing."""
+
+    text: str
+
+
+class NotReported(Struct, frozen=True, tag="not_reported"):
+    """The agent did not report this text."""
+
+
+class Thought(Struct, frozen=True, tag="thought"):
+    """Something the agent thought, in its place among the steps of an answer."""
 
     text: str
 
     def __post_init__(self) -> None:
         if not self.text.strip():
-            raise ValueError("thinking needs text; give NoThinking() instead")
+            raise ValueError("a thought needs text")
 
 
-class NoThinking(Struct, frozen=True, tag="no_thinking"):
-    """The agent did not give its thinking."""
+class Call(Struct, frozen=True, tag="call", kw_only=True):
+    """Something the agent called to give an answer: a model, a tool, a search. `started` is by
+    the agent's own clock, with a time zone; `sent` and `received` are the text it sent and got
+    back."""
+
+    name: str
+    started: datetime
+    seconds: float
+    usage: Usage | NoUsage = NoUsage()
+    sent: Reported | NotReported = NotReported()
+    received: Reported | NotReported = NotReported()
+
+    def __post_init__(self) -> None:
+        if not self.name.strip():
+            raise ValueError("a call needs a name")
+        if self.started.utcoffset() is None:
+            raise ValueError(
+                f"call {self.name!r}: started needs a time zone, such as datetime.now(UTC)"
+            )
+        if not 0 <= self.seconds < math.inf:  # NaN fails too
+            raise ValueError(f"call {self.name!r}: seconds must be 0 or more, got {self.seconds}")
 
 
 class Answer(Struct, frozen=True):
-    """The agent's answer to a message: `text` is what it said, `thinking` what it thought."""
+    """The agent's answer to a message: `text` is what it said, `usage` what it spent in all, and
+    `steps` how it got there, in order: what it thought and what it called."""
 
     text: str
     usage: Usage | NoUsage = NoUsage()
-    thinking: Thinking | NoThinking = NoThinking()
+    steps: tuple[Thought | Call, ...] = ()
 
 
 class AgentFailure(Exception):
@@ -79,8 +111,8 @@ class Agent(Protocol):
 
 
 class TimeLimited(Struct, frozen=True):
-    """The same agent, with a limit on the time of each step: opening a conversation, a turn,
-    closing it."""
+    """The same agent, with a limit on the time it has to open a conversation, to answer each
+    turn, and to close it."""
 
     agent: Agent
     seconds: float

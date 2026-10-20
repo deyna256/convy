@@ -1,9 +1,10 @@
+from datetime import UTC, datetime
 from typing import Any
 
 import msgspec
 import pytest
 
-from convy.agent import Answer, Message, Thinking
+from convy.agent import Answer, Call, Message, Reported, Thought
 from convy.dialog import (
     ChatJudge,
     Checked,
@@ -25,7 +26,20 @@ from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
 TRANSCRIPT = Transcript().with_turn(Turn(Message("hi"), Answer("hello"), 1.0))
-THOUGHT = Transcript((Turn(Message("hi"), Answer("hello", thinking=Thinking("be warm")), 1.0),))
+LOOKED_UP = Answer(
+    "hello",
+    steps=(
+        Thought("greet back"),
+        Call(
+            name="crm",
+            started=datetime(2026, 10, 20, 12, 0, tzinfo=UTC),
+            seconds=1,
+            sent=Reported("customer 7"),
+            received=Reported("vip"),
+        ),
+    ),
+)
+THOUGHT = Transcript((Turn(Message("hi"), LOOKED_UP, 1.0),))
 
 
 @pytest.mark.parametrize("value", [-0.1, 1.5, float("nan")])
@@ -299,7 +313,7 @@ async def test_checked_gives_a_judge_only_what_was_said():
     assert judge.calls == [(TRANSCRIPT, ("greets",))]
 
 
-async def test_simulated_user_never_sees_the_thinking():
+async def test_simulated_user_never_sees_the_steps():
     model = FakeModel("next")
     await SimulatedUser(model, "Be brief.").next(THOUGHT)
-    assert "be warm" not in str(model.calls[0])
+    assert [s for s in ("greet back", "crm", "customer 7", "vip") if s in str(model.calls)] == []

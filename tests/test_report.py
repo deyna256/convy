@@ -6,7 +6,7 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from convy.agent import Answer, Message, NoUsage, Thinking, Usage
+from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
@@ -98,7 +98,7 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     written = journal(tmp_path, "bot", "1", 2)
     folder = written.folder()
     data = json.loads((folder / "run.json").read_text())
-    assert data["format"] == 4
+    assert data["format"] == 5
     older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 4}}
     (folder / "run.json").write_text(json.dumps(older))
     line = {
@@ -122,6 +122,35 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     assert run.unreadable == 0
 
 
+@pytest.mark.parametrize(
+    ("answer", "steps"),
+    [
+        ({"text": "hi", "thinking": {"type": "thinking", "text": "plan"}}, (Thought("plan"),)),
+        ({"text": "hi", "thinking": {"type": "no_thinking"}}, ()),
+        ({"text": "hi"}, ()),
+    ],
+    ids=["thinking", "no thinking", "before thinking"],
+)
+def test_an_older_line_reads_its_thinking_as_a_step(
+    tmp_path, answer: dict, steps: tuple[Thought, ...]
+):
+    folder = journal(tmp_path, "bot", "1", 1).folder()
+    data = json.loads((folder / "run.json").read_text())
+    (folder / "run.json").write_text(json.dumps({**data, "format": 4}))
+    turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
+    line = {
+        "scenario": "a",
+        "attempt": 1,
+        "transcript": {"turns": [turn]},
+        "verdict": {"type": "verdict", "claims": [{"pass": True}]},
+        "stop": "max_turns",
+    }
+    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n")
+    (run,) = Runs(tmp_path)
+    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", steps=steps)
+    assert run.unreadable == 0
+
+
 @pytest.mark.parametrize("format", [2, 3])
 def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, format: int):
     folder = journal(tmp_path, "bot", "1", 1).folder()
@@ -135,7 +164,9 @@ def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, fo
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
-    written = outcome("a", NoVerdict("judge down"))
+    steps = (Thought("plan"), Call(name="search", started=DAY, seconds=1.5, received=Reported("")))
+    turn = Turn(Message("hi"), Answer("hello", steps=steps), 2.0)
+    written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     run_journal = journal(tmp_path, "bot", "1", 1, written)
     run_journal.write(Finished(datetime.now(UTC)))
     (run,) = Runs(tmp_path)
@@ -340,20 +371,16 @@ def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
     assert (attempt.passed, attempt.error) == (None, "judge down")
 
 
-def test_a_turn_shows_the_agent_thinking_and_its_tokens(tmp_path):
+def test_a_turn_shows_its_thinking_tokens(tmp_path):
     turns = (
-        Turn(Message("hi"), Answer("a", Usage(10, 30, 20), Thinking("plan")), 1.0),
+        Turn(Message("hi"), Answer("a", Usage(10, 30, 20)), 1.0),
         Turn(Message("and?"), Answer("b", Usage(5, 10)), 1.0),  # no thinking
-        Turn(Message("ok"), Answer("c", thinking=Thinking("only text")), 1.0),  # no usage
+        Turn(Message("ok"), Answer("c"), 1.0),  # no usage
     )
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
     page = Report(only(tmp_path)).page()
     (attempt,) = page.scenarios[0].attempts
-    assert [(t.thinking, t.thinking_tokens) for t in attempt.turns] == [
-        ("plan", 20),
-        ("", 0),
-        ("only text", None),
-    ]
+    assert [t.thinking_tokens for t in attempt.turns] == [20, 0, None]
     assert (attempt.output, attempt.thinking_tokens) == (40, 20)  # thinking is part of output
     assert page.metrics.thinking_tokens == 20
 

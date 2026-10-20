@@ -92,7 +92,6 @@ function dialogue(attempt) {
         el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
         el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
           : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${count(t.input)} in · ${count(t.output)} out${thought(t.thinking_tokens)}`)])),
-      t.thinking && el("details", {className: "thinking"}, el("summary", {}, "Thinking"), el("div", {}, t.thinking)),
       markdown(t.agent))),
   ]);
 }

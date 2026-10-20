@@ -11,7 +11,7 @@ from typing import Literal
 import msgspec
 from msgspec import Struct
 
-from convy.agent import NoThinking, NoUsage, Thinking, Usage
+from convy.agent import NoUsage, Usage
 from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
@@ -32,8 +32,10 @@ from convy.scenario import Outcome, Scenario, Stop
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
-class FormatTwo(Struct, frozen=True):
-    """An attempt line of format 2, where a claim's reason was a string, read as format 3."""
+class OlderLine(Struct, frozen=True):
+    """An attempt line of an older format, read as format 5: format 2 kept a claim's reason as a
+    string, and formats before 5 kept the agent's thinking apart from the steps of its answer.
+    Reading drops the old `thinking` field, as fields an `Outcome` does not have."""
 
     line: bytes
 
@@ -42,6 +44,12 @@ class FormatTwo(Struct, frozen=True):
         match data:
             case {"verdict": {"type": "verdict", "claims": list() as claims}}:
                 data["verdict"]["claims"] = [self.claim(claim) for claim in claims]
+        match data:
+            case {"transcript": {"turns": list() as turns}}:
+                for turn in turns:
+                    match turn:
+                        case {"answer": {"thinking": {"type": "thinking", "text": str() as text}}}:
+                            turn["answer"]["steps"] = [{"type": "thought", "text": text}]
         return msgspec.convert(data, Outcome)
 
     def claim(self, claim: object) -> object:
@@ -76,7 +84,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4] = 4
+    format: Literal[2, 3, 4, 5] = 5
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -135,8 +143,8 @@ class Runs(Struct, frozen=True):
             try:
                 outcome = (
                     msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 3
-                    else FormatTwo(line).outcome()
+                    if file.format >= 5
+                    else OlderLine(line).outcome()
                 )
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
@@ -207,7 +215,6 @@ class TurnView(Struct, frozen=True):
     output: int | None
     tokens: int | None
     thinking_tokens: int | None  # part of output
-    thinking: str  # "": the agent gave none
 
 
 class AttemptView(Struct, frozen=True):
@@ -605,12 +612,7 @@ class Summary(Struct, frozen=True):
                 )
             case NoUsage():
                 tokens = (None, None, None, None)
-        match turn.answer.thinking:
-            case Thinking(text=text):
-                thinking = text
-            case NoThinking():
-                thinking = ""
-        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens, thinking)
+        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens)
 
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]

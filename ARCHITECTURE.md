@@ -26,7 +26,7 @@ All code is in `src/convy/`.
 
 | module | what is there |
 |---|---|
-| `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, `Thinking`, `NoThinking`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
+| `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, an answer's steps `Thought` and `Call`, `Reported`, `NotReported`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
 | `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
@@ -68,8 +68,8 @@ in all of `src/convy/`.
 3. **An interface (`typing.Protocol`) exists only where there are two implementations or more.** There
    are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
 4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
-   with a time limit on each step: opening a conversation, a turn, closing. Only exceptions inherit, from `Exception`.
-5. **"No value" is an empty object, not `None`:** `NoUsage`, `NoThinking`, `NoReason`, `NoVerdict`.
+   with a time limit on opening a conversation, on each turn, and on closing. Only exceptions inherit, from `Exception`.
+5. **"No value" is an empty object, not `None`:** `NoUsage`, `NotReported`, `NoReason`, `NoVerdict`.
    It is stored and read like the real value, with no type checks: msgspec tags it
    (`{"type": "no_usage"}`) and restores the right class. `None` is allowed only for an optional
    constructor argument that was not given, and for `null` in a type that mirrors outside JSON
@@ -101,9 +101,9 @@ in all of `src/convy/`.
 9. **The library does not print or log.** It returns what the command needs to show, such as
    `Runs.broken()`. Only `cli.py` prints and picks the exit code.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
-    `Message | Finished`, `Usage | NoUsage`, `Thinking | NoThinking`, `Reason | NoReason`,
-    `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status — and records such as
-    `Outcome`. Data from outside is read into such types where it enters (rule 7), so this holds
+    `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
+    `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
+    and records such as `Outcome`. Data from outside is read into such types where it enters (rule 7), so this holds
     for it too.
     Objects with behaviour are called through their interface, not checked for type. There are two
     exceptions, both where convy meets the outside: `Project` checks the type of what a project file

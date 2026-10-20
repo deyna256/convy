@@ -6,7 +6,7 @@ from typing import Protocol
 import msgspec
 from msgspec import Struct, field
 
-from convy.agent import Answer, Message, NoThinking
+from convy.agent import Answer, Message
 from convy.busy import Places
 from convy.model import Model, ModelFailure
 
@@ -63,13 +63,11 @@ class Transcript(Struct, frozen=True):
     def with_turn(self, turn: Turn) -> "Transcript":
         return Transcript((*self.turns, turn))
 
-    def without_thinking(self) -> "Transcript":
-        """The same dialogue with only what the agent said."""
+    def without_steps(self) -> "Transcript":
+        """The same dialogue with only what was said, without the steps of the answers."""
         return Transcript(
             tuple(
-                msgspec.structs.replace(
-                    turn, answer=msgspec.structs.replace(turn.answer, thinking=NoThinking())
-                )
+                msgspec.structs.replace(turn, answer=msgspec.structs.replace(turn.answer, steps=()))
                 for turn in self.turns
             )
         )
@@ -377,7 +375,7 @@ class Checked(Struct, frozen=True):
         self, transcript: Transcript, claims: tuple[str | Graded, ...]
     ) -> tuple[Claim, ...]:
         try:
-            answer = await self.judge.decide(transcript.without_thinking(), claims)
+            answer = await self.judge.decide(transcript.without_steps(), claims)
         except ModelFailure:
             raise
         except Exception as error:  # a judge is user code: any bug is a failed model
