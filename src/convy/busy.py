@@ -4,7 +4,6 @@ and how long convy waits for it."""
 import asyncio
 import math
 import random
-import time
 from collections.abc import Awaitable, Callable
 from types import TracebackType
 
@@ -41,7 +40,7 @@ class Places:
         self.most = most
         self.patience = patience
         self.per_minute = per_minute
-        self.next = 0.0  # time.monotonic() at which the next request may go
+        self.next = 0.0  # when the next request may go, by the event loop's clock that sleeps keep
         self.allowed = most
         self.taken = 0
         self.answers = 0  # since the last change of `allowed`
@@ -79,7 +78,7 @@ class Places:
 
     async def paced[T](self, request: Callable[[], Awaitable[T]]) -> T:
         if self.per_minute:
-            now = time.monotonic()
+            now = asyncio.get_running_loop().time()
             turn = max(now, self.next)
             self.next = turn + 60 / self.per_minute  # taken before waiting, so no two share it
             await asyncio.sleep(turn - now)
@@ -97,7 +96,7 @@ class Places:
                 answer = await request()
             except Busy as busy:
                 self.busy()
-                now = time.monotonic()
+                now = asyncio.get_running_loop().time()
                 deadline = min(deadline, now + self.patience.seconds)
                 left = deadline - now
                 if left <= 0 or busy.retry_after > left:

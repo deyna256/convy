@@ -30,10 +30,6 @@ from convy.fakes import FakeAgent, FakeJudge, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
 
-# a gap of 0.1 s as measured: asyncio wakes a timer up to a tick of the clock early, 15.6 ms on
-# Windows
-GAP = 0.1 - 0.005 - time.get_clock_info("monotonic").resolution
-
 MODELS = Models(user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}')))
 SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
 STARTED = datetime(2026, 10, 6, 14, 5, tzinfo=UTC)
@@ -172,7 +168,7 @@ class Clock:
         self.times: list[float] = []
 
     def tick(self) -> None:
-        self.times.append(time.monotonic())
+        self.times.append(asyncio.get_running_loop().time())
 
     def gaps(self) -> list[float]:
         return [later - earlier for earlier, later in pairwise(sorted(self.times))]
@@ -207,16 +203,16 @@ class ClockedAgent(Clock):
         return Answer("hello")
 
 
+@pytest.mark.looptime  # the event loop's time goes on at once over every wait
 @pytest.mark.parametrize("participant", ["agent", "user", "judge"])
 async def test_a_participant_keeps_to_its_limit_per_minute(participant: str):
     """Only one participant is limited, so the others do not space its requests for it."""
     clocks = {"agent": ClockedAgent(), "user": ClockedModel(), "judge": ClockedJudge()}
-    limits = Limits(**{f"{participant}_per_minute": 600})  # one request every 0.1 s
+    limits = Limits(**{f"{participant}_per_minute": 60})  # one request a second
     models = Models(clocks["user"], clocks["judge"])
     await Bench(SCENARIOS, models, 2, limits).run(clocks["agent"], MemoryJournal())
     gaps = clocks[participant].gaps()
-    assert len(gaps) == 3
-    assert min(gaps) >= GAP
+    assert gaps == pytest.approx([1, 1, 1])
 
 
 def test_a_bench_rejects_fewer_than_one_attempt():

@@ -148,10 +148,11 @@ for them and hands them to `QueuedAgent`, `PatientModel` and `PatientJudge`: the
 held while a conversation is open, the user's and the judge's for one try of a request, so none is
 held while waiting for a busy service, and the judge decides after the agent's is let go. Nothing
 blocks the event loop except the run's append of one short line per attempt and the rewrite of its
-small `run.json`. Durations are measured with `time.monotonic`. One process plays a run's folder at
-a time: `RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it
-ends; taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks
-the run `interrupted` on that, or on any other error, and re-raises it.
+small `run.json`. Durations are measured with `time.monotonic`; `Places` keeps its moments in the
+event loop's time, which its sleeps follow. One process plays a run's folder at a time:
+`RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it ends;
+taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the
+run `interrupted` on that, or on any other error, and re-raises it.
 
 **Failure.** Four kinds, one rule each:
 
