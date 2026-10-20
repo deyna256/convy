@@ -10,6 +10,22 @@ This file is built from fragments in `changelog.d/` when a release is made; see
 
 <!-- towncrier release notes start -->
 
+## [0.5.0] - 2026-10-20
+
+### Added
+
+- `convy compare --fail-on-regression` exits with 3 when the pass rate got worse and the change is not chance, so CI can fail the build. ([#33](https://github.com/deyna256/convy/issues/33))
+- An agent can give the steps behind an answer: its thoughts and the calls it made, with when each call started, how long it took, its tokens and what it sent and received. The report shows them folded under the answer, the calls on a time line. ([#45](https://github.com/deyna256/convy/issues/45))
+
+### Changed
+
+- `Answer` takes `steps` instead of `thinking`: give the agent's thinking as a `Thought` among them. Runs are written in format 5; older runs still open in the report, with their thinking as a thought, but cannot be resumed. ([#45](https://github.com/deyna256/convy/issues/45))
+
+### Removed
+
+- `reviews_agent_thinking` is gone from `ChatJudge` and from the judge interface: a judge sees only what the user and the agent said. Remove the setting from `models.py` and from judges of your own. `Thinking` and `NoThinking` are gone too. ([#45](https://github.com/deyna256/convy/issues/45))
+
+
 ## [0.4.0] - 2026-10-20
 
 ### Added
