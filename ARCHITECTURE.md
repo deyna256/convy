@@ -68,7 +68,8 @@ in all of `src/convy/`.
 3. **An interface (`typing.Protocol`) exists only where there are two implementations or more.** There
    are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
 4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
-   with a time limit on opening a conversation, on each turn, and on closing. Only exceptions inherit, from `Exception`.
+   with a time limit on opening a conversation, on each turn, and on closing. Only exceptions
+   inherit, from `Exception`.
 5. **"No value" is an empty object, not `None`:** `NoUsage`, `NotReported`, `NoReason`, `NoVerdict`.
    It is stored and read like the real value, with no type checks: msgspec tags it
    (`{"type": "no_usage"}`) and restores the right class. `None` is allowed only for an optional
@@ -86,9 +87,8 @@ in all of `src/convy/`.
    model's reply: read into the shape of an OpenAI chat completion. The judge model's reply: each
    decision read into the type its claim needs. A judge's own answer: `Checked` encodes and
    decodes it as the run's folder will, and wants one `Claim` per claim, a graded claim with one
-   of its grades and the `pass` the scenario gives that grade; a judge gets only what
-   was said. `[tool.convy]` of `pyproject.toml`:
-   `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
+   of its grades and the `pass` the scenario gives that grade; a judge gets only what was said.
+   `[tool.convy]` of `pyproject.toml`: `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
    pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
    entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
    that mirrors outside JSON may hold `None` for its `null`, and is turned into domain types at
@@ -103,8 +103,8 @@ in all of `src/convy/`.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
     `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
     `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
-    and records such as `Outcome`. Data from outside is read into such types where it enters (rule 7), so this holds
-    for it too.
+    and records such as `Outcome`. Data from outside is read into such types where it enters
+    (rule 7), so this holds for it too.
     Objects with behaviour are called through their interface, not checked for type. There are two
     exceptions, both where convy meets the outside: `Project` checks the type of what a project file
     defines (`isinstance(models, Models)`), as outside data is checked where it enters; and `main`

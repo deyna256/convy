@@ -121,7 +121,7 @@ class LikeCall(msgspec.Struct, frozen=True, tag="call", kw_only=True):
 async def test_a_step_convy_cannot_store_fails_the_turn_not_the_run():
     class Talking:
         async def answer(self, message: object) -> Answer:
-            steps: Any = (LikeCall(),)
+            steps: Any = (LikeCall(),)  # Any: a step without Call's checks on purpose
             return Answer("x", steps=steps)
 
     class Agent:
