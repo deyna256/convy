@@ -10,6 +10,30 @@ This file is built from fragments in `changelog.d/` when a release is made; see
 
 <!-- towncrier release notes start -->
 
+## [0.4.0] - 2026-10-20
+
+### Added
+
+- The agent, the simulated user and the judge each have their own limit on work at once, and each agent can have its own. Set them under `[tool.convy]` in `pyproject.toml`, or with `CONVY_AGENT_PARALLEL` and the like for one run. The judge no longer holds a conversation's place, `convy resume` can go on with other limits, and `convy compare` says when two runs had different agent limits. ([#38](https://github.com/deyna256/convy/issues/38))
+- An agent, model or judge of one's own raises `Busy` when its service refuses a request because it is busy, and convy waits for it as for `JsonAgent` and `OpenAiModel`. `Bench` takes a `Patience`; OpenAI's `retry-after-ms` is read. ([#40](https://github.com/deyna256/convy/issues/40))
+- The agent, the simulated user and the judge can each keep to a limit of requests per minute: `agent_per_minute`, `user_per_minute` and `judge_per_minute` under `[tool.convy]`, or `per_minute` in an agent's own table. convy spaces their requests evenly, so a known limit meets almost no 429; `convy compare` and `convy resume` say when the agent's limit per minute changed. ([#42](https://github.com/deyna256/convy/issues/42))
+
+### Changed
+
+- `RunSpec` and `Limits` take their fields by name only, so a call written for an older order fails instead of mixing them up. `FakeModel` and `FakeJudge` take a `delay` and count in `peak` the most calls under way at once, as `FakeAgent` does. ([#38](https://github.com/deyna256/convy/issues/38))
+
+### Removed
+
+- `--parallel` is gone: set `agent_parallel` under `[tool.convy]` in `pyproject.toml` instead. `Bench` and `RunSpec` take `limits=Limits(...)` instead of `parallel`, and runs are written in format 4; older runs are still read and resumed. ([#38](https://github.com/deyna256/convy/issues/38))
+- `JsonEndpoint` no longer takes `pauses` and repeats nothing itself; `Retry-After` is no longer cut to 60 seconds. A service that cannot be reached now fails at once instead of being tried again. `Scenario.outcome` takes the agent's `Places`. ([#40](https://github.com/deyna256/convy/issues/40))
+
+### Fixed
+
+- Reports distinguish time per answer from total answer time, and pass-rate changes show their percentage-point unit. ([#7](https://github.com/deyna256/convy/issues/7))
+- convy waits for a busy service up to 2 minutes, at least as long as it asks, with a random delay, and sends it fewer requests at once until it answers again. An agent whose service stays busy has no verdict and no longer lowers the pass rate; waiting is not counted in the time per answer. ([#40](https://github.com/deyna256/convy/issues/40))
+- A pass-rate change under 10 percentage points shows one decimal, as times do: `1.5`, not `2`.
+
+
 ## [0.3.0] - 2026-10-12
 
 ### Added
