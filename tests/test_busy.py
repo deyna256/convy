@@ -41,7 +41,7 @@ async def test_a_service_still_busy_when_the_time_is_up_is_busy():
     service = Service(*[Busy("503")] * 100)
     places = Places(1, Patience(seconds=0.1, first=0.02, longest=0.02))
     start = time.monotonic()
-    with pytest.raises(Busy, match=re.escape("503; convy waits up to 0.1 s from the first try")):
+    with pytest.raises(Busy, match=re.escape("503; convy waits up to 0.1 s for a busy service")):
         await places.retry(service.request)
     assert time.monotonic() - start < 0.2
 
@@ -155,3 +155,10 @@ async def test_tries_again_after_a_busy_service_keep_the_limit_per_minute_too():
     assert await places.retry(service.request) == "done"
     gaps = [later - earlier for earlier, later in pairwise(service.times)]
     assert min(gaps) >= 0.095
+
+
+async def test_waiting_for_a_turn_takes_nothing_from_the_patience():
+    places = Places(4, Patience(seconds=0.2, first=0.001), per_minute=600)  # one every 0.1 s
+    services = [Service(Busy("503")) for _ in range(4)]
+    answers = await asyncio.gather(*(places.retry(service.request) for service in services))
+    assert answers == ["done"] * 4  # the last waited 0.3 s for its first turn

@@ -2,6 +2,7 @@
 and how long convy waits for it."""
 
 import asyncio
+import math
 import random
 import time
 from collections.abc import Awaitable, Callable
@@ -85,20 +86,23 @@ class Places:
         return await request()
 
     async def tries[T](self, request: Callable[[], Awaitable[T]]) -> T:
-        """What `request` gives once its service is not busy, tried as often as `patience` allows;
-        `Busy` when the service asks for longer than is left, or is still busy when the time is
+        """What `request` gives once its service is not busy, tried as often as `patience` allows
+        from the first time the service is busy, so that waiting for a place or a turn takes none of
+        it; `Busy` when the service asks for longer than is left, or is still busy when the time is
         up."""
-        deadline = time.monotonic() + self.patience.seconds
+        deadline = math.inf
         window = self.patience.first
         while True:
             try:
                 answer = await request()
             except Busy as busy:
                 self.busy()
-                left = deadline - time.monotonic()
+                now = time.monotonic()
+                deadline = min(deadline, now + self.patience.seconds)
+                left = deadline - now
                 if left <= 0 or busy.retry_after > left:
                     raise Busy(
-                        f"{busy}; convy waits up to {self.patience.seconds:g} s from the first try",
+                        f"{busy}; convy waits up to {self.patience.seconds:g} s for a busy service",
                         busy.retry_after,
                     ) from busy
                 if busy.retry_after:
