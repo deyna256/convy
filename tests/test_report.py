@@ -467,13 +467,19 @@ def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
     )
 
 
-def test_steps_keep_their_order(tmp_path):
+def test_steps_keep_their_order_and_counts(tmp_path):
     turn = shown(tmp_path, Thought("look it up"), call("search", 0, 1), Thought("found it"))
     assert turn.steps == (
         ThoughtView("look it up"),
         bar("search", 1, 0, 1),
         ThoughtView("found it"),
     )
+    assert (turn.thoughts, turn.calls) == (2, 1)
+
+
+def test_an_answer_without_steps_counts_none(tmp_path):
+    turn = shown(tmp_path)
+    assert (turn.steps, turn.thoughts, turn.calls) == ((), 0, 0)
 
 
 def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):

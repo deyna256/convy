@@ -99,15 +99,14 @@ function dialogue(attempt) {
 // An answer's steps, in their order: thoughts as text, calls on a time line of their own.
 function steps(t) {
   if (!t.steps.length) return null;
-  const calls = t.steps.filter(s => s.type === "call").length, thoughts = t.steps.length - calls;
-  const counts = [thoughts && plural(thoughts, "thought"), calls && plural(calls, "call")].filter(Boolean).join(", ");
+  const counts = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call")].filter(Boolean).join(", ");
   return el("details", {className: "steps"}, el("summary", {}, `Steps · ${counts}`),
     t.steps.map(s => s.type === "thought" ? el("div", {className: "thought"}, s.text) : callRow(s)));
 }
 function callRow(c) {
   return el("div", {className: "call"},
     el("span", {className: "name"}, c.name),
-    el("span", {className: "track"}, el("span", {className: "bar", style: `left: ${c.left * 100}%; width: ${c.width * 100}%`})),
+    el("span", {className: "track"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: ${c.width * 100}%`})),
     el("span", {className: "m"}, secs(c.seconds), " · ", c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`),
     el("details", {className: "io"}, el("summary", {}, "Sent and received"),
       el("div", {className: "sec"}, "Sent"), reported(c.sent),

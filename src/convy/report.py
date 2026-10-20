@@ -230,6 +230,8 @@ class TurnView(Struct, frozen=True):
     tokens: int | None
     thinking_tokens: int | None  # part of output
     steps: tuple[ThoughtView | CallView, ...]
+    thoughts: int  # how many of the steps are thoughts
+    calls: int  # and how many are calls
 
 
 class AttemptView(Struct, frozen=True):
@@ -628,8 +630,17 @@ class Summary(Struct, frozen=True):
             case NoUsage():
                 tokens = (None, None, None, None)
         first, length = self.line(turn.answer.steps)
+        thoughts = calls = 0
+        for step in turn.answer.steps:
+            match step:
+                case Thought():
+                    thoughts += 1
+                case Call():
+                    calls += 1
         steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
-        return TurnView(turn.message.text, turn.answer.text, turn.seconds, *tokens, steps)
+        return TurnView(
+            turn.message.text, turn.answer.text, turn.seconds, *tokens, steps, thoughts, calls
+        )
 
     def line(self, steps: tuple[Thought | Call, ...]) -> tuple[float, float]:
         """Where an answer's calls start and how long they last, from the earliest start to the
