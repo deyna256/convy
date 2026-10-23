@@ -68,7 +68,7 @@ function attemptTiles(attempt) {
 }
 // The part of the output spent on thinking: a reported 0 too, nothing when it was not reported.
 function thought(tokens) {
-  return tokens == null ? "" : `, ${count(tokens)} thinking` : "";
+  return tokens == null ? "" : `, ${count(tokens)} thinking`;
 }
 // How sure the judge was of a decision, at the run's trust; nothing when the run's judge never says.
 function sure(claim, run) {
