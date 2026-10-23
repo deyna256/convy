@@ -147,38 +147,6 @@ agent = SupportBot()
 When a turn runs out of time, convy stops waiting. But a thread cannot be stopped: the call goes on
 until it returns. Give the client its own timeout if it has one.
 
-## Tokens counted from the start
-
-Some agents report only the tokens spent so far, not those of one answer. Read the counter before
-and after the turn. The difference is the turn's tokens:
-
-```python
-import httpx2
-
-from convy import Answer, Message, Usage
-
-
-class SupportChat:
-    def __init__(self, http: httpx2.AsyncClient):
-        self.http = http
-
-    async def answer(self, message: Message) -> Answer:
-        before = await self.spent()
-        response = await self.http.post("/chat", json={"text": message.text})
-        after = await self.spent()
-        text = response.raise_for_status().json()["text"]
-        return Answer(text, Usage(input=after[0] - before[0], output=after[1] - before[1]))
-
-    async def spent(self) -> tuple[int, int]:
-        """The tokens this conversation has spent so far: input and output."""
-        usage = (await self.http.get("/usage")).raise_for_status().json()
-        return usage["input_tokens"], usage["output_tokens"]
-```
-
-The counter must belong to the conversation. A counter shared by conversations that run at the same
-time mixes their tokens. Give such an agent a limit of 1, `parallel = 1` under
-`[tool.convy.agents.<agent>]`; see [How much runs at once](runs.md#how-much-runs-at-once).
-
 ## Tokens
 
 An answer's `Usage` has its input and output tokens, and the parts of them you can report:
@@ -221,6 +189,38 @@ tokens = TokenPaths(
 The path of `input` and of `output`, or the first of their tuple, must be in the answer, so a typo
 fails the turn at once. The other paths may be missing or `null`: providers leave them out when
 there is nothing to count.
+
+## Tokens counted from the start
+
+Some agents report only the tokens spent so far, not those of one answer. Read the counter before
+and after the turn. The difference is the turn's tokens:
+
+```python
+import httpx2
+
+from convy import Answer, Message, Usage
+
+
+class SupportChat:
+    def __init__(self, http: httpx2.AsyncClient):
+        self.http = http
+
+    async def answer(self, message: Message) -> Answer:
+        before = await self.spent()
+        response = await self.http.post("/chat", json={"text": message.text})
+        after = await self.spent()
+        text = response.raise_for_status().json()["text"]
+        return Answer(text, Usage(input=after[0] - before[0], output=after[1] - before[1]))
+
+    async def spent(self) -> tuple[int, int]:
+        """The tokens this conversation has spent so far: input and output."""
+        usage = (await self.http.get("/usage")).raise_for_status().json()
+        return usage["input_tokens"], usage["output_tokens"]
+```
+
+The counter must belong to the conversation. A counter shared by conversations that run at the same
+time mixes their tokens. Give such an agent a limit of 1, `parallel = 1` under
+`[tool.convy.agents.<agent>]`; see [How much runs at once](runs.md#how-much-runs-at-once).
 
 ## No tokens at all
 

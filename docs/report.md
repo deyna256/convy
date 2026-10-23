@@ -35,9 +35,10 @@ many attempts it held in and how many of its decisions were not trusted. A grade
 how often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you
 see the judge's decision on every claim with its grade, if it has one, and its reason, and the
 dialogue with the time and tokens of each answer; **Total answer time** adds them up for the
-attempt. An answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`:
-cached tokens are part of the input, and thinking part of the output, not added to them. A part
-the agent does not report is left out; a 0 it reports is shown.
+attempt. An answer's tokens show their parts, such as
+`1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached tokens are part of the input, and
+thinking part of the output, not added to them. A part the agent does not report is left out; a 0
+it reports is shown.
 
 An answer that gives its [steps](agents.md#steps) has them folded under "Steps": its thoughts as
 text, and its calls on a time line of their own, each with its time, its tokens and what it sent
