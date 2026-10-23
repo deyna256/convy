@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -751,6 +752,13 @@ def test_export_of_a_folder_and_a_run_in_it_writes_the_run_once(project: Path):
     first, second = two_runs(project)
     assert convy("export", "results", first) == 0
     assert exported(project) == [first, second]
+
+
+def test_export_of_a_folder_keeps_two_agents_runs_of_the_same_id(project: Path):
+    first, second = two_runs(project)
+    shutil.copytree(project / "results" / "echo" / first, project / "results" / "copy" / first)
+    assert convy("export", "results") == 0
+    assert sorted(exported(project)) == [first, first, second]
 
 
 def test_a_folder_outside_results_does_not_hide_a_run_of_its_name(project: Path):

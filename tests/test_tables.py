@@ -1,6 +1,8 @@
 import json
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from statistics import mean
 
 import msgspec
 import pytest
@@ -31,7 +33,6 @@ from convy.dialog import (
     Turn,
     Verdict,
 )
-from convy.project import Project
 from convy.report import Run
 from convy.scenario import Outcome, Scenario
 
@@ -129,17 +130,28 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         (Finished(DAY), "finished", DAY),
         (Interrupted(DAY), "interrupted", DAY),
     ],
+    ids=["running", "finished", "interrupted"],
 )
 def test_a_run_row_says_how_the_run_ended(status, shown, ended):
     (row,) = Tables((msgspec.structs.replace(RUN, status=status),)).runs().rows
     assert (row.status, row.ended) == (shown, ended)
 
 
-def test_scenarios_and_claims_come_in_the_order_of_the_spec():
+def test_runs_come_by_start_time_then_id():
+    early = msgspec.structs.replace(RUN, spec=msgspec.structs.replace(SPEC, id="z"))
+    tie = msgspec.structs.replace(RUN, spec=msgspec.structs.replace(SPEC, id="b"))
+    late = msgspec.structs.replace(LIVE, spec=msgspec.structs.replace(LIVE.spec, id="a"))
+    assert [row.run for row in Tables((late, early, tie)).runs().rows] == ["b", "z", "a"]
+
+
+def test_scenarios_come_in_the_order_of_the_spec():
     assert TABLES.scenarios().rows[:2] == (
         ScenarioRow(run=RUN_ID, scenario="refund", instructions="Ask for a refund.", max_turns=4),
         ScenarioRow(run=RUN_ID, scenario="hello", instructions="Say hi.", max_turns=2),
     )
+
+
+def test_claims_come_in_the_order_of_their_scenario():
     assert TABLES.claims().rows[:3] == (
         ClaimRow(
             run=RUN_ID,
@@ -323,10 +335,13 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
 
 
 def test_every_row_finds_its_parent_by_its_keys():
+    runs = {r.run for r in TABLES.runs().rows}
     scenarios = {(r.run, r.scenario) for r in TABLES.scenarios().rows}
     attempts = {(r.run, r.scenario, r.attempt) for r in TABLES.attempts().rows}
     turns = {(r.run, r.scenario, r.attempt, r.turn) for r in TABLES.answers().rows}
     claims = {(r.run, r.scenario, r.claim) for r in TABLES.claims().rows}
+    assert {r.run for r in TABLES.scenarios().rows} <= runs
+    assert {(r.run, r.scenario) for r in TABLES.claims().rows} <= scenarios
     assert {(r.run, r.scenario) for r in TABLES.attempts().rows} <= scenarios
     assert {(r.run, r.scenario, r.attempt) for r in TABLES.decisions().rows} <= attempts
     assert {(r.run, r.scenario, r.claim) for r in TABLES.decisions().rows} <= claims
@@ -483,25 +498,27 @@ KEYS = {  # copied from the parent row, or a position from 1: no field of their 
 }
 
 
-def fields(kind: msgspec.inspect.Type, seen: set[str]) -> set[tuple[str, str]]:
+def reachable_fields(kind: msgspec.inspect.Type, seen: set[str]) -> set[tuple[str, str]]:
     """Every (class, field) reachable from `kind`."""
     match kind:
         case msgspec.inspect.StructType(cls=cls, fields=found) if cls.__name__ not in seen:
             seen.add(cls.__name__)
             own = {(cls.__name__, field.name) for field in found}
-            return own.union(*(fields(field.type, seen) for field in found))
-        case msgspec.inspect.UnionType(types=types):
-            return set().union(*(fields(item, seen) for item in types))
+            return own.union(*(reachable_fields(field.type, seen) for field in found))
+        case msgspec.inspect.UnionType(types=items) | msgspec.inspect.TupleType(item_types=items):
+            return set().union(*(reachable_fields(item, seen) for item in items))
         case (
-            msgspec.inspect.VarTupleType(item_type=item) | msgspec.inspect.ListType(item_type=item)
+            msgspec.inspect.VarTupleType(item_type=item)
+            | msgspec.inspect.ListType(item_type=item)
+            | msgspec.inspect.DictType(value_type=item)
         ):
-            return fields(item, seen)
+            return reachable_fields(item, seen)
         case _:
             return set()
 
 
 def test_every_field_of_a_run_has_a_column():
-    assert fields(msgspec.inspect.type_info(Run), set()) == set(COLUMNS)
+    assert reachable_fields(msgspec.inspect.type_info(Run), set()) == set(COLUMNS)
 
 
 def test_every_column_but_the_keys_holds_a_field_of_a_run():
@@ -527,7 +544,7 @@ CELLS = Table(
         Cells(text='two\nlines, "quoted"', flag=True, grades=("a", "b"), at=DAY, number=0.5),
         Cells(text="", flag=False, grades=None, at=None, number=2),
     ),
-)  # Table("cells", Cells, (...)): the row type comes second
+)
 
 
 def test_csv_quotes_every_value_writes_what_is_not_text_as_json_and_leaves_a_missing_one_empty():
@@ -557,131 +574,190 @@ def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
     ]
 
 
-def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
-    folder = Project(tmp_path).export(TABLES)
-    for table in TABLES:
-        csv, jsonl = folder / f"{table.name}.csv", folder / f"{table.name}.jsonl"
-        assert csv.read_bytes() == b"\xef\xbb\xbf" + table.csv().encode()
-        assert jsonl.read_bytes() == table.jsonl().encode()
+def trusted(decision: DecisionRow, trust: float) -> bool:
+    """Pass rate: a decision without a confidence is trusted; else it is trusted at `trust`."""
+    return decision.confidence is None or decision.confidence >= trust
 
 
-def numbers_run() -> Run:
-    def played(attempt: int, verdict, usage=None, seconds: float = 1.0) -> Outcome:
-        turns = () if usage is None else (Turn(Message("hi"), Answer("a", usage), seconds),)
-        return Outcome("s", attempt, Transcript(turns), verdict, "user_stop")
-
-    def sure(passed: bool, value: float) -> Claim:
-        return Claim(passed, confidence=Confidence(value))
-
-    scenario = Scenario("s", 2, "Ask.", ("one", "two"))
-    spec = msgspec.structs.replace(SPEC, k=6, trust=0.8, scenarios=(scenario,))
-    outcomes = (
-        played(1, Verdict((sure(True, 0.9), sure(True, 0.9))), Usage(100, 10, cache_read=80), 1.0),
-        played(2, Verdict((sure(True, 0.9), sure(True, 0.5))), Usage(100, 10), 2.0),
-        played(
-            3, Verdict((sure(False, 0.5), sure(False, 0.9))), Usage(200, 10, cache_read=20), 3.0
-        ),
-        played(4, Verdict((Claim(True), Claim(True))), NoUsage(), 1.0),
-        played(5, Failed("down")),
-        played(6, NoVerdict("judge down")),
-    )
-    return Run(Path("bot/numbers"), spec, Finished(DAY), outcomes)
+def counted(tables: Tables, trust: float) -> dict[tuple[str, int], bool]:
+    """Pass rate: the counted attempts and whether each passed. One counts when the agent failed,
+    or when every decision is trusted or a trusted decision failed."""
+    decisions: defaultdict[tuple[str, int], list[DecisionRow]] = defaultdict(list)
+    for d in tables.decisions().rows:
+        decisions[d.scenario, d.attempt].append(d)
+    found: dict[tuple[str, int], bool] = {}
+    for a in tables.attempts().rows:
+        made = decisions[a.scenario, a.attempt]
+        sure = [d for d in made if trusted(d, trust)]
+        match a.verdict:
+            case "failed":
+                found[a.scenario, a.attempt] = False
+            case "verdict" if len(sure) == len(made) or any(not d.passed for d in sure):
+                found[a.scenario, a.attempt] = all(d.passed for d in made)
+    return found
 
 
-def test_the_rules_in_the_docs_give_the_report_s_numbers():
-    run = numbers_run()
-    tables = Tables((run,))
-    attempts, decisions, answers = (
-        tables.attempts().rows,
-        tables.decisions().rows,
-        tables.answers().rows,
-    )
-    trust = run.spec.trust
-    by_attempt: dict[int, list[DecisionRow]] = {}
-    for d in decisions:
-        by_attempt.setdefault(d.attempt, []).append(d)
-    counted = []  # whether each counted attempt passed
-    for a in attempts:
-        if a.verdict == "failed":
-            counted.append(False)
-        elif a.verdict == "verdict":
-            ds = by_attempt[a.attempt]
-            trusted = [d for d in ds if d.confidence is None or d.confidence >= trust]
-            if len(trusted) == len(ds) or any(not d.passed for d in trusted):
-                counted.append(all(d.passed for d in ds))
-    stable = len(attempts) == run.spec.k and len(counted) == len(attempts) and all(counted)
-    tokens: dict[int, int] = {}
-    for a in answers:
+def stable(tables: Tables, k: int, trust: float) -> int:
+    """Stable scenarios: those whose `k` attempts were all played, counted and passed."""
+    passed = counted(tables, trust)
+    played: defaultdict[str, list[bool | None]] = defaultdict(list)
+    for a in tables.attempts().rows:
+        played[a.scenario].append(passed.get((a.scenario, a.attempt)))
+    return sum(len(said) == k and all(said) for said in played.values())
+
+
+def seconds_per_answer(tables: Tables) -> float:
+    """Time per answer: the mean of the answers' seconds."""
+    return mean(a.seconds for a in tables.answers().rows)
+
+
+def tokens_per_attempt(tables: Tables) -> float:
+    """Tokens per attempt: the mean, over the attempts that report them, of the sum of their
+    answers' input and output."""
+    tokens: defaultdict[tuple[str, int], int] = defaultdict(int)
+    for a in tables.answers().rows:
         if a.input is not None and a.output is not None:
-            tokens[a.attempt] = tokens.get(a.attempt, 0) + a.input + a.output
-    cache = [(a.cache_read or 0, a.input or 0) for a in answers if a.cache_read is not None]
-    claims = [
-        [
-            d.passed
-            for d in decisions
-            if d.claim == n and (d.confidence is None or d.confidence >= trust)
-        ]
-        for n in (1, 2)
-    ]
+            tokens[a.scenario, a.attempt] += a.input + a.output
+    return mean(tokens.values())
 
-    page = Report(run).page()
-    metrics, (scenario,) = page.metrics, page.scenarios
-    assert (sum(counted), len(counted)) == (metrics.passed, metrics.judged) == (2, 4)
-    assert int(stable) == metrics.stable == 0
-    assert sum(a.seconds for a in answers) / len(answers) == metrics.seconds == 1.75
-    assert sum(tokens.values()) / len(tokens) == metrics.tokens == 430 / 3
-    assert sum(r for r, _ in cache) / sum(i for _, i in cache) == metrics.cached == 100 / 300
+
+def cache_share(tables: Tables) -> float:
+    """Tokens per attempt: the sum of `cache_read` over the sum of input, both over the answers
+    that report `cache_read`."""
+    pairs = [
+        (a.cache_read, a.input)
+        for a in tables.answers().rows
+        if a.cache_read is not None and a.input is not None
+    ]
+    return sum(read for read, _ in pairs) / sum(spent for _, spent in pairs)
+
+
+def claim_counts(tables: Tables, trust: float) -> list[tuple[int, int]]:
+    """Scenarios: a claim's count, held of judged, is over its trusted decisions."""
+    counts = []
+    for c in tables.claims().rows:
+        made = [
+            d.passed
+            for d in tables.decisions().rows
+            if (d.scenario, d.claim) == (c.scenario, c.claim) and trusted(d, trust)
+        ]
+        counts.append((sum(made), len(made)))
+    return counts
+
+
+def typical_grade(tables: Tables, trust: float, scenario: str) -> str | None:
+    """Scenarios: a claim's typical grade is the middle one of its trusted grades, in the claim's
+    order; with two in the middle, the worse."""
+    ((number, levels),) = [
+        (c.claim, c.grades)
+        for c in tables.claims().rows
+        if c.scenario == scenario and c.grades is not None
+    ]
+    grades = sorted(
+        (
+            d.grade
+            for d in tables.decisions().rows
+            if (d.scenario, d.claim) == (scenario, number)
+            and trusted(d, trust)
+            and d.grade is not None
+        ),
+        key=levels.index,
+    )
+    return grades[(len(grades) - 1) // 2] if grades else None
+
+
+def answered(usage: Usage | NoUsage, seconds: float) -> Turn:
+    return Turn(Message("hi"), Answer("a", usage), seconds)
+
+
+def played(
+    scenario: str, attempt: int, verdict: Verdict | Failed | NoVerdict, *turns: Turn
+) -> Outcome:
+    return Outcome(scenario, attempt, Transcript(turns), verdict, "user_stop")
+
+
+def sure(passed: bool, value: float) -> Claim:
+    return Claim(passed, confidence=Confidence(value))
+
+
+NUMBERS = Run(
+    Path("bot/numbers"),
+    msgspec.structs.replace(
+        SPEC, k=6, trust=0.8, scenarios=(Scenario("s", 2, "Ask.", ("one", "two")),)
+    ),
+    Finished(DAY),
+    (  # 0.8 is the trust: trusted at >=, so attempt 1 counts and claim one holds 3 of 3
+        played(
+            "s",
+            1,
+            Verdict((sure(True, 0.8), sure(True, 0.9))),
+            answered(Usage(100, 10, cache_read=80), 1.0),
+        ),
+        played("s", 2, Verdict((sure(True, 0.9), sure(True, 0.5))), answered(Usage(100, 10), 2.0)),
+        played(
+            "s",
+            3,
+            Verdict((sure(False, 0.5), sure(False, 0.9))),
+            answered(Usage(200, 10, cache_read=20), 3.0),
+        ),
+        played("s", 4, Verdict((Claim(True), Claim(True))), answered(NoUsage(), 1.0)),
+        played("s", 5, Failed("down")),
+        played("s", 6, NoVerdict("judge down")),
+    ),
+)
+NUMBERS_PAGE = Report(NUMBERS).page()
+NUMBERS_TABLES = Tables((NUMBERS,))
+GRADES = Run(
+    Path("bot/grades"),
+    msgspec.structs.replace(
+        SPEC,
+        k=2,
+        trust=0.5,
+        scenarios=(Scenario("a", 2, "Ask.", ("one",)), Scenario("b", 2, "Ask.", (GRADED,))),
+    ),
+    Finished(DAY),
+    (
+        played("a", 1, Verdict((Claim(True),))),
+        played("a", 2, Verdict((Claim(True),))),
+        played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9), grade=Grade("full")),))),
+        played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1), grade=Grade("none")),))),
+    ),  # with the unsure grade, b's grades are none and full, and the worse of two is none
+)
+GRADES_PAGE = Report(GRADES).page()
+GRADES_TABLES = Tables((GRADES,))
+
+
+def test_the_pass_rate_is_the_share_of_counted_attempts_that_passed():
+    passed = list(counted(NUMBERS_TABLES, 0.8).values())
+    metrics = NUMBERS_PAGE.metrics
+    assert (sum(passed), len(passed)) == (metrics.passed, metrics.judged) == (2, 4)
+
+
+def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
+    assert stable(GRADES_TABLES, 2, 0.5) == GRADES_PAGE.metrics.stable == 1
+
+
+def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
+    assert seconds_per_answer(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.seconds == 1.75
+
+
+def test_the_tokens_per_attempt_are_the_mean_over_the_attempts_that_report_them():
+    assert tokens_per_attempt(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.tokens == 430 / 3
+
+
+def test_the_cache_share_is_over_the_answers_that_report_a_cache_read():
+    assert cache_share(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.cached == 100 / 300
+
+
+def test_a_claim_s_count_is_over_its_trusted_decisions():
+    (scenario,) = NUMBERS_PAGE.scenarios
     assert (
-        [(sum(c), len(c)) for c in claims]
+        claim_counts(NUMBERS_TABLES, 0.8)
         == [(c.held, c.judged) for c in scenario.claims]
         == [(3, 3), (2, 3)]
     )
 
 
-def grades_run() -> Run:
-    def played(scenario: str, attempt: int, *claims: Claim) -> Outcome:
-        return Outcome(scenario, attempt, Transcript(()), Verdict(claims), "user_stop")
-
-    spec = msgspec.structs.replace(
-        SPEC,
-        k=2,
-        trust=0.0,
-        scenarios=(Scenario("a", 2, "Ask.", ("one",)), Scenario("b", 2, "Ask.", (GRADED,))),
-    )
-    outcomes = (
-        played("a", 1, Claim(True)),
-        played("a", 2, Claim(True)),
-        played("b", 1, Claim(True, grade=Grade("full"))),
-        played("b", 2, Claim(False, grade=Grade("none"))),
-    )
-    return Run(Path("bot/grades"), spec, Finished(DAY), outcomes)
-
-
-def test_the_rules_in_the_docs_give_stable_scenarios_and_typical_grades():
-    run = grades_run()
-    tables = Tables((run,))
-    attempts, decisions = tables.attempts().rows, tables.decisions().rows
-    (graded,) = (c for c in tables.claims().rows if c.grades is not None)
-    stable = 0
-    for scenario in run.spec.scenarios:
-        played = [a for a in attempts if a.scenario == scenario.id]
-        passed = [
-            all(d.passed for d in decisions if d.scenario == a.scenario and d.attempt == a.attempt)
-            for a in played
-        ]  # trust is 0: every attempt is counted
-        stable += len(played) == run.spec.k and all(passed)
-    levels = list(graded.grades or ())
-    trusted = sorted(
-        (
-            d.grade
-            for d in decisions
-            if d.scenario == graded.scenario and d.claim == graded.claim and d.grade
-        ),
-        key=levels.index,
-    )
-    typical = trusted[(len(trusted) - 1) // 2]  # the middle; the worse of two
-
-    page = Report(run).page()
-    b = next(s for s in page.scenarios if s.id == "b")
-    assert stable == page.metrics.stable == 1
-    assert typical == b.claims[0].typical == "none"
+def test_a_claim_s_typical_grade_is_the_middle_of_its_trusted_grades():
+    (_, b) = GRADES_PAGE.scenarios
+    assert typical_grade(GRADES_TABLES, 0.5, "b") == b.claims[0].typical == "full"

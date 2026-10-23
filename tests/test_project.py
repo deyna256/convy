@@ -1,16 +1,19 @@
 import re
 import sys
 import tomllib
+from datetime import UTC, datetime
 from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
 from convy import Tables
-from convy.bench import Limits
+from convy.bench import Limits, Running, RunSpec
 from convy.fakes import Echo
 from convy.model import Models
 from convy.project import Project
+from convy.report import Run
+from convy.scenario import Scenario
 
 
 def write(path: Path, text: str) -> Path:
@@ -253,15 +256,47 @@ def test_a_wrong_variable_is_an_error_that_names_the_variables(
         Project(tmp_path).limits("bot")
 
 
-def test_export_writes_both_files_of_every_table_and_replaces_them(tmp_path: Path):
+TABLE_NAMES = ("runs", "scenarios", "claims", "attempts", "decisions", "answers", "steps")
+SAID = Run(
+    Path("bot/r"),
+    RunSpec(
+        id="r",
+        agent="bot",
+        version="1",
+        user="u",
+        judge="j",
+        k=1,
+        turn_timeout=1,
+        scenarios=(Scenario("s", 1, 'Say\nhi, "café".', ("greets",)),),
+        started=datetime(2026, 10, 6, tzinfo=UTC),
+    ),
+    Running(),
+    (),
+)
+
+
+def test_export_writes_a_csv_and_a_json_lines_file_for_every_table(tmp_path: Path):
     folder = Project(tmp_path).export(Tables(()))
     assert folder == tmp_path / "results" / "export"
-    names = {"runs", "scenarios", "claims", "attempts", "decisions", "answers", "steps"}
     assert {path.name for path in folder.iterdir()} == {
-        f"{n}.{x}" for n in names for x in ("csv", "jsonl")
+        f"{name}.{suffix}" for name in TABLE_NAMES for suffix in ("csv", "jsonl")
     }
-    assert (folder / "runs.csv").read_bytes().startswith(b'\xef\xbb\xbf"run",')  # utf-8-sig
+
+
+def test_export_replaces_the_files_of_an_earlier_export(tmp_path: Path):
+    folder = Project(tmp_path).export(Tables(()))
+    (folder / "runs.jsonl").write_text("old", encoding="utf-8")
+    Project(tmp_path).export(Tables(()))
     assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""
+
+
+def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
+    tables = Tables((SAID,))
+    folder = Project(tmp_path).export(tables)
+    for table in tables:
+        csv, jsonl = folder / f"{table.name}.csv", folder / f"{table.name}.jsonl"
+        assert csv.read_bytes() == b"\xef\xbb\xbf" + table.csv().encode()  # utf-8-sig
+        assert jsonl.read_bytes() == table.jsonl().encode()
     (folder / "runs.jsonl").write_text("old", encoding="utf-8")
     Project(tmp_path).export(Tables(()))
     assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""
