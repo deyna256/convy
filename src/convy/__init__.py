@@ -45,7 +45,7 @@ from convy.dialog import (
     Verdict,
 )
 from convy.env import Env
-from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
+from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls, TokenPaths
 from convy.model import Model, ModelFailure, Models, OpenAiModel
 from convy.report import Comparison, Index, Report, Run, Runs
 from convy.scenario import Matching, Outcome, Scenario, Scenarios
@@ -105,6 +105,7 @@ __all__ = [
     "Thought",
     "TimeLimited",
     "Tls",
+    "TokenPaths",
     "Transcript",
     "Turn",
     "Usage",
