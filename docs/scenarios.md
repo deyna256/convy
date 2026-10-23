@@ -53,8 +53,8 @@ The judge decides each claim on its own and gives a reason, so the report shows 
 - If one of convy's own models fails, the attempt gets no verdict and does not count in the pass
   rate. That happens when a model does not answer, or the judge does not give one decision per
   claim, or gives a grade the claim does not have.
-- If the judge is less sure than the run's `--trust`, the attempt does not count either. See
-  [The judge](judge.md).
+- If the judge is less sure than the run's `--trust`, the attempt may not count;
+  [the pass rate](report.md#tiles) gives the rule. See [The judge](judge.md).
 
 ## Running
 

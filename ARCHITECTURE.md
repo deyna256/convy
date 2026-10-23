@@ -17,7 +17,8 @@ convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome �
                    │                                         └─▶ Judge
                    └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
                                                         ├─▶ Comparison ──▶ results/compare/*.html
-                                                        └─▶ Index ──▶ results/index.html
+                                                        ├─▶ Index ──▶ results/index.html
+                                                        └─▶ Tables ──▶ results/export/
 ```
 
 ## Code map
@@ -35,9 +36,10 @@ All code is in `src/convy/`.
 | `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
+| `tables.py` | a consumer of runs: `Tables`, a run's seven tables, and `Table`, one of them with its rows as records, CSV and JSON Lines; the row types |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and comparisons, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
-| `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
+| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index, comparisons and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
+| `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`, `ExportCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
 
 `convy run` runs `models.py` once per agent, so each agent gets fresh models; code at the top level
@@ -78,7 +80,9 @@ in all of `src/convy/`.
 6. **Domain objects become JSON in one place, the run's folder.** Objects have no `json()` or
    `to_dict()` methods. `RunJournal` writes with `msgspec.json.encode`; `Runs` reads back with
    `msgspec.json.decode`. The report's pages embed data of their own: `Summary` builds the view records
-   for the browser from the runs; `Template` encodes them.
+   for the browser from the runs; `Template` encodes them. Rows of `Tables` are not domain objects
+   either but data for outside: `Table` gives them as records, CSV and JSON Lines, and
+   `Project.export` writes them. Domain objects still have no such methods.
 7. **Outside data becomes the domain's types where it enters; only those types travel inside.**
    Each entry turns what comes in into convy's own types at once. Scenarios: `yamlrocks`, then
    `msgspec.convert` into `Scenario`. The run's folder: `msgspec.json.decode` into `RunFile` and
@@ -121,7 +125,9 @@ in all of `src/convy/`.
   allows; a bench makes new ones for every run). They are plain classes, not frozen `Struct`s, and
   their state never leaves them.
 - **The report's page data uses `None`** (`null` in JSON) for numbers nobody reported: it is data for
-  the browser, not part of the domain.
+  the browser, not part of the domain; and so do the tables' rows: a value the agent or the judge
+  did not give, or one that does not apply to the row, is `None`, a missing value for pandas,
+  polars and CSV.
 
 ## The report
 
@@ -135,8 +141,10 @@ scripts stay thin enough to need no tests of their own. Each page is assembled f
 `window.js` for the scenario window — and written as one standalone file.
 
 The view records are internal and have no version: one convy version writes the template and the data
-into one file, and a page written earlier keeps working on its own. The only durable format is the
-run's folder; see [decision 5](docs/decisions/0005-runs.md).
+into one file, and a page written earlier keeps working on its own. The durable formats are the
+run's folder and the tables' columns: a column may be added, and renaming or removing one is a
+breaking change; see [decision 5](docs/decisions/0005-runs.md) and
+[decision 11](docs/decisions/0011-run-as-data.md).
 
 ## Cross-cutting concerns
 

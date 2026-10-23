@@ -1,5 +1,5 @@
-"""The `convy` command: `init`, `run`, `resume`, `report` and `compare`. It prints and picks the
-exit code."""
+"""The `convy` command: `init`, `run`, `resume`, `report`, `compare` and `export`. It prints and
+picks the exit code."""
 
 import asyncio
 import io
@@ -34,8 +34,9 @@ from convy.dialog import ChatJudge, Failed, NoVerdict, Verdict
 from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
-from convy.report import Comparison, Runs, Summary
+from convy.report import Comparison, Run, Runs, Summary
 from convy.scenario import Matching, Outcome, Scenario
+from convy.tables import Tables
 
 SMOKE = Scenario(
     id="smoke",
@@ -360,6 +361,63 @@ class CompareCommand(BaseModel):
             raise SystemExit(3 if page.deltas.rate.tone == "bad" else 0)
 
 
+class ExportCommand(BaseModel):
+    targets: CliPositionalArg[list[str]] = Field(
+        default=[], description="runs, by id or random part, or folders inside results/"
+    )
+
+    def cli_cmd(self) -> None:
+        project = Project(Path())
+        try:
+            chosen, broken = self.chosen(project.results())
+            for path in broken:
+                print(
+                    f"skipped unreadable lines or a whole run: {project.results() / path}",
+                    file=sys.stderr,
+                )
+            folder = project.export(Tables(chosen))
+        except (ValueError, OSError) as error:  # nothing to export, or its files cannot be written
+            print(f"error: {error}", file=sys.stderr)
+            raise SystemExit(2) from None
+        print(f"export: {folder}")
+
+    def chosen(self, results: Path) -> tuple[tuple[Run, ...], tuple[Path, ...]]:
+        """The runs the targets name, each once, and those of them, or of the named folders, that
+        could not be read whole. A target is a folder when it is a folder inside `results`, else a
+        run. A folder with no readable runs is an error that names the runs it could not read."""
+        if not self.targets:
+            raise ValueError("name the runs or a folder to export")
+        runs = Runs(results)
+        read = list(runs)
+        unread = runs.broken(read)
+        root = results.resolve()
+        found: dict[Path, Run] = {}
+        broken: list[Path] = []
+        for target in self.targets:
+            folder = Path(target).resolve()
+            if folder.is_dir() and folder.is_relative_to(root):
+                inside = [run for run in read if (root / run.path).is_relative_to(folder)]
+                skipped = [p for p in unread if (root / p).is_relative_to(folder)]
+                if not inside:
+                    error = f"no runs in {target}"
+                    if skipped:
+                        error += "; cannot read " + ", ".join(str(results / p) for p in skipped)
+                    raise ValueError(error)
+                found.update((run.path, run) for run in inside)
+                broken += skipped
+                continue
+            try:
+                run = runs.run(target)
+            except ValueError:
+                if folder.is_dir():
+                    raise ValueError(f"{target} is not inside results") from None
+                raise
+            found[run.path] = run
+            if run.unreadable:
+                broken.append(run.path)
+        return tuple(found.values()), tuple(dict.fromkeys(broken))
+
+
 class Convy(BaseSettings):
     """Check conversational agents with a simulated user and a judge."""
 
@@ -378,6 +436,9 @@ class Convy(BaseSettings):
     report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
     compare: CliSubCommand[CompareCommand] = Field(
         description="write a page that compares two runs: before, then after"
+    )
+    export: CliSubCommand[ExportCommand] = Field(
+        description="write runs as tables to results/export/: CSV and JSON Lines"
     )
 
     def cli_cmd(self) -> None:
