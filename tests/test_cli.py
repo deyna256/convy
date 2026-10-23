@@ -712,3 +712,95 @@ def test_compare_refuses_unfinished_runs(project: Path, capsys, status: str, run
     assert convy("compare", before, after, "--fail-on-regression") == 3
     assert "both runs must be finished" in capsys.readouterr().out
     assert convy("compare", before, after) == 0
+
+
+def two_runs(project: Path) -> tuple[str, str]:
+    """Two runs of echo: their ids, oldest first."""
+    comparison_runs(project, FAKE_MODELS, FAKE_MODELS, k=1)
+    first, second = (folder.name for folder in runs(project, "echo"))
+    return first, second
+
+
+def exported(project: Path) -> list[str]:
+    path = project / "results" / "export" / "runs.jsonl"
+    return [json.loads(line)["run"] for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def test_export_writes_the_named_runs_once(project: Path, capsys):
+    first, second = two_runs(project)
+    capsys.readouterr()
+    assert convy("export", second.rpartition("_")[2], second, first) == 0
+    assert capsys.readouterr().out == f"export: {Path('results', 'export')}\n"
+    assert exported(project) == [first, second]
+
+
+@pytest.mark.parametrize("folder", ["results", "results/echo"])
+def test_export_writes_the_runs_of_a_folder(project: Path, folder: str):
+    first, second = two_runs(project)
+    assert convy("export", folder) == 0
+    assert exported(project) == [first, second]
+
+
+def test_export_of_a_run_folder_writes_that_run(project: Path):
+    first, _ = two_runs(project)
+    assert convy("export", f"results/echo/{first}") == 0
+    assert exported(project) == [first]
+
+
+def test_export_of_a_folder_and_a_run_in_it_writes_the_run_once(project: Path):
+    first, second = two_runs(project)
+    assert convy("export", "results", first) == 0
+    assert exported(project) == [first, second]
+
+
+def test_a_folder_outside_results_does_not_hide_a_run_of_its_name(project: Path):
+    first, _ = two_runs(project)
+    short = first.rpartition("_")[2]
+    (project / short).mkdir()
+    assert convy("export", short) == 0
+    assert exported(project) == [first]
+
+
+@pytest.mark.parametrize(
+    ("argv", "error"),
+    [
+        ((), "error: name the runs or a folder to export\n"),
+        (("nope",), "error: no run 'nope' in results\n"),
+        (("scenarios",), "error: scenarios is not inside results\n"),
+        (("results/compare",), "error: no runs in results/compare\n"),
+    ],
+    ids=["nothing", "unknown run", "folder outside results", "folder without runs"],
+)
+def test_export_refuses_what_it_cannot_export_and_writes_nothing(
+    project: Path, capsys, argv, error
+):
+    (project / "results" / "compare").mkdir(parents=True)
+    assert convy("export", *argv) == 2
+    assert capsys.readouterr().err == error
+    assert not (project / "results" / "export").exists()
+
+
+def test_export_of_a_folder_skips_and_names_a_broken_run_inside_it(project: Path, capsys):
+    first, second = two_runs(project)
+    (project / "results" / "echo" / first / "run.json").write_text("{")
+    capsys.readouterr()
+    assert convy("export", "results") == 0
+    assert exported(project) == [second]
+    broken = Path("results", "echo", first)
+    assert capsys.readouterr().err == f"skipped unreadable lines or a whole run: {broken}\n"
+
+
+def test_export_does_not_name_a_broken_run_outside_the_folder(project: Path, capsys):
+    first, second = two_runs(project)
+    (project / "results" / "echo" / first / "run.json").write_text("{")
+    capsys.readouterr()
+    assert convy("export", f"results/echo/{second}") == 0
+    assert capsys.readouterr().err == ""
+
+
+def test_export_that_cannot_write_its_files_says_so(project: Path, capsys):
+    two_runs(project)
+    (project / "results" / "export").write_text("a file, not a folder")
+    capsys.readouterr()
+    assert convy("export", "results") == 2
+    assert capsys.readouterr().err.startswith("error: ")  # the OS's own words differ by system
