@@ -1,5 +1,5 @@
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from statistics import mean
@@ -599,11 +599,8 @@ def counted(tables: Tables, trust: float) -> dict[tuple[str, int], bool]:
 
 def stable(tables: Tables, k: int, trust: float) -> int:
     """Stable scenarios: those whose `k` attempts were all played, counted and passed."""
-    passed = counted(tables, trust)
-    played: defaultdict[str, list[bool | None]] = defaultdict(list)
-    for a in tables.attempts().rows:
-        played[a.scenario].append(passed.get((a.scenario, a.attempt)))
-    return sum(len(said) == k and all(said) for said in played.values())
+    passed = Counter(scenario for (scenario, _), held in counted(tables, trust).items() if held)
+    return sum(times == k for times in passed.values())
 
 
 def seconds_per_answer(tables: Tables) -> float:
@@ -713,7 +710,13 @@ GRADES = Run(
         SPEC,
         k=2,
         trust=0.5,
-        scenarios=(Scenario("a", 2, "Ask.", ("one",)), Scenario("b", 2, "Ask.", (GRADED,))),
+        scenarios=(
+            Scenario("a", 2, "Ask.", ("one",)),
+            Scenario("b", 2, "Ask.", (GRADED,)),
+            Scenario("c", 2, "Ask.", ("one",)),
+            Scenario("d", 2, "Ask.", ("one",)),
+            Scenario("e", 2, "Ask.", ("one",)),
+        ),
     ),
     Finished(DAY),
     (
@@ -721,8 +724,13 @@ GRADES = Run(
         played("a", 2, Verdict((Claim(True),))),
         played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9), grade=Grade("full")),))),
         played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1), grade=Grade("none")),))),
+        played("c", 1, Verdict((Claim(True),))),
+        played("d", 1, Verdict((Claim(True),))),
+        played("d", 2, Verdict((Claim(False),))),
+        played("e", 1, Verdict((Claim(True),))),
+        played("e", 2, Verdict((sure(True, 0.1),))),
     ),  # with the unsure grade, b's grades are none and full, and the worse of two is none
-)
+)  # stable: a only; c has an attempt not played, d one that failed, e one not counted
 GRADES_PAGE = Report(GRADES).page()
 GRADES_TABLES = Tables((GRADES,))
 
@@ -759,5 +767,5 @@ def test_a_claim_s_count_is_over_its_trusted_decisions():
 
 
 def test_a_claim_s_typical_grade_is_the_middle_of_its_trusted_grades():
-    (_, b) = GRADES_PAGE.scenarios
+    (b,) = (scenario for scenario in GRADES_PAGE.scenarios if scenario.id == "b")
     assert typical_grade(GRADES_TABLES, 0.5, "b") == b.claims[0].typical == "full"
