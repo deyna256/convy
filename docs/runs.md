@@ -147,8 +147,9 @@ Delete its folder and run `convy report`.
 
 Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
 with `2` when it cannot find a run it names, else with `0` unless you give
-`--fail-on-regression`. `convy export` exits with `2` when it gets no target, a target names no run, several runs or no
-folder of runs inside `results/`, or the files cannot be written, else with `0`.
+`--fail-on-regression`. `convy export` exits with `2` when it gets no target, a target names no
+run, several runs or no folder of runs inside `results/`, or the files cannot be written, else with
+`0`.
 
 In CI, fail the build when the pass rate is below 90%:
 
