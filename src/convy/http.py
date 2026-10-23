@@ -149,8 +149,16 @@ class TokenPaths(Struct, frozen=True, kw_only=True):
 
     def __post_init__(self) -> None:
         fields = (self.input, self.output, self.thinking, self.cache_read, self.cache_write)
-        if () in fields:
-            raise ValueError("a tuple of token paths needs at least one path")
+        for field in fields:
+            match field:
+                case str() | None:
+                    pass
+                case tuple() if field:
+                    pass
+                case tuple():
+                    raise ValueError("a tuple of token paths needs at least one path")
+                case _:
+                    raise ValueError(f"token paths: give a path or a tuple of paths, got {field!r}")
 
     def usage(self, data: object) -> Usage:
         """The answer's tokens. LookupError: a required path is missing; AgentFailure: a value is
@@ -216,9 +224,12 @@ class JsonAgent(Struct, frozen=True):
         if "{text}" not in template and '"{history}"' not in template:
             raise ValueError('the body has neither "{text}" nor "{history}"')
         match self.tokens:
-            case tuple():  # convy 0.5 took a tuple of two paths
+            case TokenPaths() | None:
+                pass
+            case _:  # convy 0.5 took a tuple of two paths
                 raise ValueError(
-                    "tokens: write tokens=TokenPaths(input=..., output=...), not a tuple of paths"
+                    "tokens: write tokens=TokenPaths(input=..., output=...), "
+                    "not a tuple or a list of paths"
                 )
 
     @asynccontextmanager

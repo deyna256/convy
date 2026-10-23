@@ -286,8 +286,8 @@ async def test_json_agent_reports_nothing_for_optional_paths_that_are_missing_or
 
 @pytest.mark.parametrize(
     ("found", "read"),
-    [({"r1": 2}, 2), ({"r2": 3}, 3), ({"r1": 2, "r2": 3}, 5)],
-    ids=["first only", "second only", "both"],
+    [({"r1": 2}, 2), ({"r2": 3}, 3), ({"r1": 2, "r2": 3}, 5), ({"r1": 0}, 0)],
+    ids=["first only", "second only", "both", "reported 0"],
 )
 async def test_json_agent_adds_the_paths_of_an_optional_count_that_are_there(found: dict, read):
     tokens = TokenPaths(input=("in", "more"), output="out", cache_read=("r1", "r2"))
@@ -316,12 +316,23 @@ async def test_json_agent_fails_the_turn_on_tokens_it_cannot_count(data, error: 
             await conversation.answer(Message("?"))
 
 
-def test_json_agent_refuses_the_old_tuple_of_token_paths():
-    old = cast(TokenPaths, ("in", "out"))  # what convy 0.5 took
+@pytest.mark.parametrize("old", [("in", "out"), ["in", "out"]], ids=["tuple", "list"])
+def test_json_agent_refuses_the_old_tuple_or_list_of_token_paths(old):
+    old = cast(TokenPaths, old)  # what convy 0.5 took
     with pytest.raises(
         ValueError, match=re.escape("write tokens=TokenPaths(input=..., output=...)")
     ):
         json_agent(Service(httpx2.Response(200, json={})), tokens=old)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"input": ["a", "b"], "output": "o"}, {"input": "i", "output": "o", "cache_read": ["a"]}],
+    ids=["required", "optional"],
+)
+def test_token_paths_refuse_a_list_of_paths(fields: dict):
+    with pytest.raises(ValueError, match="give a path or a tuple of paths"):
+        TokenPaths(**fields)
 
 
 def test_token_paths_refuse_an_empty_tuple():
