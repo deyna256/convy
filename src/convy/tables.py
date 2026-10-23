@@ -3,6 +3,8 @@ The tables compute nothing and drop nothing. A row may hold `None` for a value t
 judge did not give, or that does not apply to it: rows are data for the outside, where `None` is a
 missing value."""
 
+import csv
+import io
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Literal
@@ -140,6 +142,32 @@ class Table[R: Struct](Struct, frozen=True):
     def records(self) -> list[dict]:
         """The rows as dicts, for pandas or polars, datetimes kept."""
         return list(msgspec.to_builtins(self.rows, builtin_types=(datetime,)))
+
+    def csv(self) -> str:
+        """The table for spreadsheets: a missing value is an empty cell and text is quoted, so
+        readers that respect quotes keep "" apart from it; a list is JSON text; booleans as in
+        JSON. JSON Lines is the complete form."""
+        out = io.StringIO()
+        writer = csv.writer(out, quoting=csv.QUOTE_NOTNULL)
+        writer.writerow(field.encode_name for field in msgspec.structs.fields(self.row))
+        for record in self.records():
+            writer.writerow(self.cell(value) for value in record.values())
+        return out.getvalue()
+
+    def jsonl(self) -> str:
+        """The table's complete form: one JSON object a line."""
+        return msgspec.json.Encoder().encode_lines(self.rows).decode()
+
+    def cell(self, value: object) -> object:
+        match value:
+            case bool():
+                return "true" if value else "false"
+            case datetime():
+                return value.isoformat()
+            case tuple():  # to_builtins keeps tuples
+                return msgspec.json.encode(value).decode()
+            case _:
+                return value
 
 
 class Tables(Struct, frozen=True):

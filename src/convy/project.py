@@ -18,6 +18,7 @@ from convy.bench import Files, Limits, RunSpec
 from convy.model import Models
 from convy.report import ComparePage, Comparison, Index, Report, Run, Runs, Template
 from convy.scenario import Scenarios
+from convy.tables import Tables
 
 # Files in the template whose names would otherwise be hidden from the package.
 RENAMED = {"env.example": ".env.example", "gitignore": ".gitignore"}
@@ -212,6 +213,17 @@ class Project(Struct, frozen=True):
     def write(self, path: Path, html: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(html, encoding="utf-8")
+
+    def export(self, tables: Tables) -> Path:
+        """Write every table as CSV and as JSON Lines into `export/`, replacing earlier files.
+        CSV gets a byte order mark, so a spreadsheet opened by a double click reads its text as
+        UTF-8."""
+        folder = self.results() / "export"
+        folder.mkdir(parents=True, exist_ok=True)
+        for table in tables:
+            (folder / f"{table.name}.csv").write_text(table.csv(), encoding="utf-8-sig", newline="")
+            (folder / f"{table.name}.jsonl").write_text(table.jsonl(), encoding="utf-8", newline="")
+        return folder
 
     def old_journals(self) -> bool:
         """Whether `results/runs/` holds journals of convy 0.1, which this version does not read.

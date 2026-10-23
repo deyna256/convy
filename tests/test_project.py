@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from convy import Tables
 from convy.bench import Limits
 from convy.fakes import Echo
 from convy.model import Models
@@ -250,3 +251,17 @@ def test_a_wrong_variable_is_an_error_that_names_the_variables(
     monkeypatch.setenv("CONVY_JUDGE_PARALLEL", "0")
     with pytest.raises(ValueError, match=re.escape("CONVY_* variables: Expected `int` >= 1")):
         Project(tmp_path).limits("bot")
+
+
+def test_export_writes_both_files_of_every_table_and_replaces_them(tmp_path: Path):
+    folder = Project(tmp_path).export(Tables(()))
+    assert folder == tmp_path / "results" / "export"
+    names = {"runs", "scenarios", "claims", "attempts", "decisions", "answers", "steps"}
+    assert {path.name for path in folder.iterdir()} == {
+        f"{n}.{x}" for n in names for x in ("csv", "jsonl")
+    }
+    assert (folder / "runs.csv").read_bytes().startswith(b'\xef\xbb\xbf"run",')  # utf-8-sig
+    assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""
+    (folder / "runs.jsonl").write_text("old", encoding="utf-8")
+    Project(tmp_path).export(Tables(()))
+    assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""

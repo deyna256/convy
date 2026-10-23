@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from convy import (
     RunRow,
     ScenarioRow,
     StepRow,
+    Table,
     Tables,
 )
 from convy.agent import Answer, Call, Message, Reported, Thought, Usage
@@ -28,6 +30,7 @@ from convy.dialog import (
     Turn,
     Verdict,
 )
+from convy.project import Project
 from convy.report import Run
 from convy.scenario import Outcome, Scenario
 
@@ -506,3 +509,55 @@ def test_every_column_but_the_keys_holds_a_field_of_a_run():
         f"{t.name}.{f.encode_name}" for t in Tables(()) for f in msgspec.structs.fields(t.row)
     }
     assert named == columns - KEYS
+
+
+class Cells(msgspec.Struct, frozen=True, kw_only=True):
+    text: str | None
+    flag: bool
+    grades: tuple[str, ...] | None
+    at: datetime | None
+    number: float
+
+
+CELLS = Table(
+    "cells",
+    Cells,
+    (
+        Cells(text='two\nlines, "quoted"', flag=True, grades=("a", "b"), at=DAY, number=0.5),
+        Cells(text="", flag=False, grades=None, at=None, number=2),
+    ),
+)  # Table("cells", Cells, (...)): the row type comes second
+
+
+def test_csv_quotes_every_value_and_leaves_a_missing_one_empty():
+    assert CELLS.csv() == (
+        '"text","flag","grades","at","number"\r\n'
+        '"two\nlines, ""quoted""","true","[""a"",""b""]","2026-10-06T00:00:00+00:00","0.5"\r\n'
+        '"","false",,,"2"\r\n'
+    )
+
+
+def test_an_empty_table_still_has_its_header():
+    assert Table("cells", Cells, ()).csv() == '"text","flag","grades","at","number"\r\n'
+
+
+def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
+    assert CELLS.jsonl().endswith("}\n")
+    lines = [json.loads(line) for line in CELLS.jsonl().splitlines()]
+    assert lines == [
+        {
+            "text": 'two\nlines, "quoted"',
+            "flag": True,
+            "grades": ["a", "b"],
+            "at": "2026-10-06T00:00:00Z",
+            "number": 0.5,
+        },
+        {"text": "", "flag": False, "grades": None, "at": None, "number": 2},
+    ]
+
+
+def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
+    folder = Project(tmp_path).export(TABLES)
+    answers = TABLES.answers()
+    assert (folder / "answers.csv").read_bytes() == b"\xef\xbb\xbf" + answers.csv().encode()
+    assert (folder / "answers.jsonl").read_bytes() == answers.jsonl().encode()
