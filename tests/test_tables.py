@@ -10,13 +10,14 @@ from convy import (
     AttemptRow,
     ClaimRow,
     DecisionRow,
+    Report,
     RunRow,
     ScenarioRow,
     StepRow,
     Table,
     Tables,
 )
-from convy.agent import Answer, Call, Message, Reported, Thought, Usage
+from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import Files, Finished, Interrupted, Limits, Running, RunSpec
 from convy.dialog import (
     Claim,
@@ -561,3 +562,76 @@ def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
     answers = TABLES.answers()
     assert (folder / "answers.csv").read_bytes() == b"\xef\xbb\xbf" + answers.csv().encode()
     assert (folder / "answers.jsonl").read_bytes() == answers.jsonl().encode()
+
+
+def numbers_run() -> Run:
+    def played(attempt: int, verdict, usage=None, seconds: float = 1.0) -> Outcome:
+        turns = () if usage is None else (Turn(Message("hi"), Answer("a", usage), seconds),)
+        return Outcome("s", attempt, Transcript(turns), verdict, "user_stop")
+
+    def sure(passed: bool, value: float) -> Claim:
+        return Claim(passed, confidence=Confidence(value))
+
+    scenario = Scenario("s", 2, "Ask.", ("one", "two"))
+    spec = msgspec.structs.replace(SPEC, k=6, trust=0.8, scenarios=(scenario,))
+    outcomes = (
+        played(1, Verdict((sure(True, 0.9), sure(True, 0.9))), Usage(100, 10, cache_read=80), 1.0),
+        played(2, Verdict((sure(True, 0.9), sure(True, 0.5))), Usage(100, 10), 2.0),
+        played(
+            3, Verdict((sure(False, 0.5), sure(False, 0.9))), Usage(200, 10, cache_read=20), 3.0
+        ),
+        played(4, Verdict((Claim(True), Claim(True))), NoUsage(), 1.0),
+        played(5, Failed("down")),
+        played(6, NoVerdict("judge down")),
+    )
+    return Run(Path("bot/numbers"), spec, Finished(DAY), outcomes)
+
+
+def test_the_rules_in_the_docs_give_the_report_s_numbers():
+    run = numbers_run()
+    tables = Tables((run,))
+    attempts, decisions, answers = (
+        tables.attempts().rows,
+        tables.decisions().rows,
+        tables.answers().rows,
+    )
+    trust = run.spec.trust
+    by_attempt: dict[int, list[DecisionRow]] = {}
+    for d in decisions:
+        by_attempt.setdefault(d.attempt, []).append(d)
+    counted = []  # whether each counted attempt passed
+    for a in attempts:
+        if a.verdict == "failed":
+            counted.append(False)
+        elif a.verdict == "verdict":
+            ds = by_attempt[a.attempt]
+            trusted = [d for d in ds if d.confidence is None or d.confidence >= trust]
+            if len(trusted) == len(ds) or any(not d.passed for d in trusted):
+                counted.append(all(d.passed for d in ds))
+    stable = len(attempts) == run.spec.k and len(counted) == len(attempts) and all(counted)
+    tokens: dict[int, int] = {}
+    for a in answers:
+        if a.input is not None and a.output is not None:
+            tokens[a.attempt] = tokens.get(a.attempt, 0) + a.input + a.output
+    cache = [(a.cache_read or 0, a.input or 0) for a in answers if a.cache_read is not None]
+    claims = [
+        [
+            d.passed
+            for d in decisions
+            if d.claim == n and (d.confidence is None or d.confidence >= trust)
+        ]
+        for n in (1, 2)
+    ]
+
+    page = Report(run).page()
+    metrics, (scenario,) = page.metrics, page.scenarios
+    assert (sum(counted), len(counted)) == (metrics.passed, metrics.judged) == (2, 4)
+    assert int(stable) == metrics.stable == 0
+    assert sum(a.seconds for a in answers) / len(answers) == metrics.seconds == 1.75
+    assert sum(tokens.values()) / len(tokens) == metrics.tokens == 430 / 3
+    assert sum(r for r, _ in cache) / sum(i for _, i in cache) == metrics.cached == 100 / 300
+    assert (
+        [(sum(c), len(c)) for c in claims]
+        == [(c.held, c.judged) for c in scenario.claims]
+        == [(3, 3), (2, 3)]
+    )
