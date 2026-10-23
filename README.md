@@ -93,13 +93,13 @@ attempt, next to the dialogue. More in
 An agent with a JSON API needs only settings. Put this in `agents/support_bot.py`:
 
 ```python
-from convy import JsonAgent, JsonEndpoint
+from convy import JsonAgent, JsonEndpoint, TokenPaths
 
 agent = JsonAgent(
     JsonEndpoint("https://bot.example.com/api/chat"),
     body={"session_id": "{session}", "message": "{text}"},
     reply="data.answer",
-    tokens=("data.usage.input_tokens", "data.usage.output_tokens"),
+    tokens=TokenPaths(input="data.usage.input_tokens", output="data.usage.output_tokens"),
 )
 ```
 

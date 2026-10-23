@@ -34,5 +34,6 @@ def test_running_from_python_is_public_api():
     names |= {"Graded", "Grade", "NoGrade"}
     names |= {"Thought", "Call", "Reported", "NotReported"}
     names |= {"Reason", "NoReason"}
+    names |= {"TokenPaths"}
     assert names <= set(convy.__all__)
     assert all(hasattr(convy, name) for name in convy.__all__)

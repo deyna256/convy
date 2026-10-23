@@ -278,7 +278,7 @@ class ResumeCommand(BaseModel):
             match run.status:
                 case Finished():
                     raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
-            if run.format < 5:  # resuming would write format 5 lines over lines of an older one
+            if run.format < 6:  # resuming would write format 6 lines over lines of an older one
                 raise ValueError(f"run {spec.id} was written by an older convy; start a new run")
             if changes := spec.code_changes(project.files(spec.agent), CONVY):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")

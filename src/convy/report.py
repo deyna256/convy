@@ -1,5 +1,6 @@
 """The report: runs read back, summed up, and rendered as static HTML pages."""
 
+import math
 import re
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
@@ -33,9 +34,10 @@ UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
 class OlderLine(Struct, frozen=True):
-    """An attempt line of an older format, read as format 5: format 2 kept a claim's reason as a
-    string, and formats before 5 kept the agent's thinking apart from the steps of its answer.
-    Reading drops the old `thinking` field, as fields an `Outcome` does not have."""
+    """An attempt line of an older format, read as format 6: format 2 kept a claim's reason as a
+    string, formats before 5 kept the agent's thinking apart from the steps of its answer, and
+    formats 3 to 5 wrote 0 for a thinking count the agent did not give. Reading drops the old
+    `thinking` field, as fields an `Outcome` does not have."""
 
     line: bytes
 
@@ -52,9 +54,37 @@ class OlderLine(Struct, frozen=True):
     def turn(self, turn: object) -> object:
         match turn:
             case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
-                return {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+                turn = {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+        match turn:
+            case {"answer": dict() as answer}:
+                return {**turn, "answer": self.answer(answer)}
             case _:
                 return turn
+
+    def answer(self, answer: dict) -> dict:
+        """The answer, with its usage and its calls' usage read as format 6."""
+        match answer:
+            case {"usage": usage}:
+                answer = {**answer, "usage": self.usage(usage)}
+        match answer:
+            case {"steps": list() as steps}:
+                answer = {**answer, "steps": [self.step(step) for step in steps]}
+        return answer
+
+    def step(self, step: object) -> object:
+        match step:
+            case {"type": "call", "usage": usage}:
+                return {**step, "usage": self.usage(usage)}
+            case _:
+                return step
+
+    def usage(self, usage: object) -> object:
+        """0 was the default thinking count, not one the agent gave."""
+        match usage:
+            case {"type": "usage", "thinking": 0}:
+                return {**usage, "thinking": {"type": "not_reported"}}
+            case _:
+                return usage
 
     def claim(self, claim: object) -> object:
         match claim:
@@ -88,7 +118,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4, 5] = 5
+    format: Literal[2, 3, 4, 5, 6] = 6
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -147,7 +177,7 @@ class Runs(Struct, frozen=True):
             try:
                 outcome = (
                     msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 5
+                    if file.format >= 6
                     else OlderLine(line).outcome()
                 )
             except UNREADABLE:  # a line cut short by a crash, say
@@ -233,6 +263,8 @@ class TurnView(Struct, frozen=True):
     output: int | None
     tokens: int | None
     thinking_tokens: int | None  # part of output
+    cache_read: int | None  # part of input
+    cache_write: int | None  # part of input
     steps: tuple[ThoughtView | CallView, ...]
     thoughts: int  # how many of the steps are thoughts
     calls: int  # and how many are calls
@@ -251,6 +283,8 @@ class AttemptView(Struct, frozen=True):
     output: int | None
     tokens: int | None
     thinking_tokens: int | None
+    cache_read: int | None
+    cache_write: int | None
     turns: tuple[TurnView, ...]
 
 
@@ -280,6 +314,9 @@ class ScenarioView(Struct, frozen=True):
     input: float | None  # mean per attempt
     output: float | None
     tokens: float | None
+    thinking_tokens: float | None
+    cache_read: float | None  # mean per attempt
+    cache_write: float | None
     attempts: tuple[AttemptView, ...]
 
 
@@ -297,6 +334,9 @@ class Metrics(Struct, frozen=True):
     output: float | None
     tokens: float | None
     thinking_tokens: float | None
+    cache_read: float | None  # mean per attempt
+    cache_write: float | None
+    cached: float | None  # share of input read from the cache, over the turns that report it
     agent_errors: int
     busy: int  # attempts whose agent's service stayed busy
     model_errors: int
@@ -337,6 +377,7 @@ class Deltas(Struct, frozen=True):
     stable: Delta
     seconds: Delta
     tokens: Delta
+    cached: Delta  # percentage points
     errors: Delta
 
 
@@ -519,6 +560,9 @@ class Summary(Struct, frozen=True):
             output=self.average(a.output for a in attempts),
             tokens=self.average(a.tokens for a in attempts),
             thinking_tokens=self.average(a.thinking_tokens for a in attempts),
+            cache_read=self.average(a.cache_read for a in attempts),
+            cache_write=self.average(a.cache_write for a in attempts),
+            cached=self.share(turn for attempt in attempts for turn in attempt.turns),
             agent_errors=agent_errors,
             busy=busy,
             model_errors=model_errors,
@@ -554,6 +598,9 @@ class Summary(Struct, frozen=True):
             input=self.average(a.input for a in attempts),
             output=self.average(a.output for a in attempts),
             tokens=self.average(a.tokens for a in attempts),
+            thinking_tokens=self.average(a.thinking_tokens for a in attempts),
+            cache_read=self.average(a.cache_read for a in attempts),
+            cache_write=self.average(a.cache_write for a in attempts),
             attempts=attempts,
         )
 
@@ -601,6 +648,8 @@ class Summary(Struct, frozen=True):
             output=self.total(turn.output for turn in turns),
             tokens=self.total(turn.tokens for turn in turns),
             thinking_tokens=self.total(turn.thinking_tokens for turn in turns),
+            cache_read=self.total(turn.cache_read for turn in turns),
+            cache_write=self.total(turn.cache_write for turn in turns),
             turns=turns,
         )
 
@@ -624,15 +673,19 @@ class Summary(Struct, frozen=True):
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
-            case Usage(input=spent, output=produced, thinking=thought):
-                tokens: tuple[int | None, int | None, int | None, int | None] = (
+            case Usage(input=spent, output=produced) as usage:
+                tokens: tuple[
+                    int | None, int | None, int | None, int | None, int | None, int | None
+                ] = (
                     spent,
                     produced,
                     spent + produced,
-                    thought,
+                    self.count(usage.thinking),
+                    self.count(usage.cache_read),
+                    self.count(usage.cache_write),
                 )
             case NoUsage():
-                tokens = (None, None, None, None)
+                tokens = (None, None, None, None, None, None)
         first, length = self.line(turn.answer.steps)
         thoughts = calls = 0
         for step in turn.answer.steps:
@@ -645,6 +698,14 @@ class Summary(Struct, frozen=True):
         return TurnView(
             turn.message.text, turn.answer.text, turn.seconds, *tokens, steps, thoughts, calls
         )
+
+    def count(self, count: int | NotReported) -> int | None:
+        """A part of an answer's tokens; None when the agent did not report it."""
+        match count:
+            case int():
+                return count
+            case NotReported():
+                return None
 
     def line(self, steps: tuple[Thought | Call, ...]) -> tuple[float, float]:
         """Where an answer's calls start and how long they last, from the earliest start to the
@@ -698,6 +759,16 @@ class Summary(Struct, frozen=True):
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]
         return sum(known) if known else None
+
+    def share(self, turns: Iterable[TurnView]) -> float | None:
+        """The share of input read from the cache, over the turns that report it, so turns that
+        do not report it do not pull it down; None when none does, or their input is 0."""
+        read = spent = 0
+        for turn in turns:
+            if turn.cache_read is not None and turn.input is not None:
+                read += turn.cache_read
+                spent += turn.input
+        return read / spent if spent else None
 
     def average(self, values: Iterable[float | None]) -> float | None:
         known = [value for value in values if value is not None]
@@ -820,6 +891,7 @@ class Comparison(Struct, frozen=True):
             stable=self.delta(was.stable, now.stable, more_is_better=True),
             seconds=self.delta(was.seconds, now.seconds, more_is_better=False),
             tokens=self.delta(was.tokens, now.tokens, more_is_better=False),
+            cached=self.points(was.cached, now.cached),
             errors=self.delta(was.errors, now.errors, more_is_better=False),
         )
 
@@ -827,6 +899,14 @@ class Comparison(Struct, frozen=True):
         if was is None or now is None:
             return Delta(None, "none")
         return Delta(now - was, self.tone(now - was, more_is_better=more_is_better, noisy=False))
+
+    def points(self, was: float | None, now: float | None) -> Delta:
+        """The change of a share in percentage points; a rise is better."""
+        if was is None or now is None:
+            return Delta(None, "none")
+        change = round((now - was) * 100, 6)
+        shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
+        return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
 
     def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
         if change == 0:

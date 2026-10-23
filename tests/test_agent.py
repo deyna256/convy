@@ -1,5 +1,6 @@
 import asyncio
 import math
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -12,6 +13,7 @@ from convy.agent import (
     Call,
     Conversation,
     Message,
+    NotReported,
     NoUsage,
     QueuedAgent,
     Thought,
@@ -119,6 +121,54 @@ def test_fake_agent_needs_a_step():
 def test_thinking_tokens_are_part_of_the_output(thinking: int):
     with pytest.raises(ValueError, match="thinking tokens must be from 0 to the output's 30"):
         Usage(10, 30, thinking)
+
+
+@pytest.mark.parametrize(
+    ("counts", "error"),
+    [
+        ({"input": -1, "output": 5}, "input tokens cannot be below 0, got -1"),
+        ({"input": 5, "output": -1}, "output tokens cannot be below 0, got -1"),
+        (
+            {"input": 5, "output": 5, "cache_read": -1},
+            "cache_read tokens cannot be below 0, got -1",
+        ),
+        ({"input": 5, "output": 5, "cache_write": -1}, "cache_write tokens cannot be below 0"),
+        (
+            {"input": 10, "output": 5, "cache_read": 8, "cache_write": 3},
+            "8 read from the cache and 3 written to it are more than the input's 10",
+        ),
+    ],
+)
+def test_usage_refuses_counts_it_cannot_hold(counts: dict, error: str):
+    with pytest.raises(ValueError, match=re.escape(error)):
+        Usage(**counts)
+
+
+def test_usage_takes_thinking_equal_to_output():
+    assert Usage(10, 5, 5) == Usage(10, 5, thinking=5)
+
+
+def test_usage_takes_cached_tokens_equal_to_input():
+    usage = Usage(10, 5, cache_read=4, cache_write=6)
+    assert (usage.cache_read, usage.cache_write) == (4, 6)
+
+
+def test_a_count_not_reported_is_none_spent_for_the_checks():
+    assert Usage(5, 5, cache_read=5).cache_write == NotReported()
+    assert Usage(0, 0).thinking == NotReported()
+
+
+@pytest.mark.parametrize(
+    ("counts", "name"),
+    [
+        ({"thinking": None}, "thinking"),
+        ({"cache_read": 3.0}, "cache_read"),
+        ({"cache_write": "2"}, "cache_write"),
+    ],
+)
+def test_usage_refuses_a_count_that_is_neither_a_number_nor_not_reported(counts: dict, name: str):
+    with pytest.raises(ValueError, match=f"{name} tokens: give a count or NotReported"):
+        Usage(10, 5, **counts)
 
 
 WHEN = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)

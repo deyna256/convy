@@ -3,7 +3,7 @@
 Copy this file for your agent and change the address, the body and the paths.
 """
 
-from convy import JsonAgent
+from convy import JsonAgent, TokenPaths
 
 from gateway import gateway
 
@@ -11,6 +11,6 @@ agent = JsonAgent(
     gateway,
     body={"model": "gpt-4.1-mini", "messages": "{history}"},
     reply="choices.0.message.content",
-    tokens=("usage.prompt_tokens", "usage.completion_tokens"),
+    tokens=TokenPaths(input="usage.prompt_tokens", output="usage.completion_tokens"),
 )
 version = "gpt-4.1-mini"

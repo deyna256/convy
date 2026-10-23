@@ -19,25 +19,6 @@ class Message(Struct, frozen=True):
     text: str
 
 
-class Usage(Struct, frozen=True, tag="usage"):
-    """Tokens the agent spent on one answer; `thinking` is the part of `output` it spent on
-    thinking."""
-
-    input: int
-    output: int
-    thinking: int = 0
-
-    def __post_init__(self) -> None:
-        if not 0 <= self.thinking <= self.output:
-            raise ValueError(
-                f"thinking tokens must be from 0 to the output's {self.output}, got {self.thinking}"
-            )
-
-
-class NoUsage(Struct, frozen=True, tag="no_usage"):
-    """The agent did not report the tokens it spent."""
-
-
 class Reported(Struct, frozen=True, tag="reported"):
     """Text the agent reported; it may be empty, as a search that found nothing."""
 
@@ -45,7 +26,52 @@ class Reported(Struct, frozen=True, tag="reported"):
 
 
 class NotReported(Struct, frozen=True, tag="not_reported"):
-    """The agent did not report this text."""
+    """The agent did not report this: a text, or a count of tokens."""
+
+
+class Usage(Struct, frozen=True, tag="usage"):
+    """Tokens the agent spent on one answer. `input` holds every input token, those read from or
+    written to the model's cache included, and `output` every output token, thinking included; a
+    part the agent did not report is `NotReported()`."""
+
+    input: int
+    output: int
+    thinking: int | NotReported = NotReported()  # part of output
+    cache_read: int | NotReported = NotReported()  # part of input
+    cache_write: int | NotReported = NotReported()  # part of input
+
+    def __post_init__(self) -> None:
+        thinking = self.counted("thinking", self.thinking)
+        read = self.counted("cache_read", self.cache_read)
+        written = self.counted("cache_write", self.cache_write)
+        counts = (("input", self.input), ("output", self.output))
+        for name, count in (*counts, ("cache_read", read), ("cache_write", written)):
+            if count < 0:
+                raise ValueError(f"{name} tokens cannot be below 0, got {count}")
+        if not 0 <= thinking <= self.output:
+            raise ValueError(
+                f"thinking tokens must be from 0 to the output's {self.output}, got {thinking}"
+            )
+        if read + written > self.input:
+            raise ValueError(
+                f"cached tokens are part of the input: {read} read from the cache and {written} "
+                f"written to it are more than the input's {self.input}; add them to the input, "
+                "as Anthropic's input_tokens leaves them out"
+            )
+
+    def counted(self, name: str, count: int | NotReported) -> int:
+        """A part as a count for the checks: 0 when it was not reported."""
+        match count:
+            case int():
+                return count
+            case NotReported():
+                return 0
+            case _:
+                raise ValueError(f"{name} tokens: give a count or NotReported(), got {count!r}")
+
+
+class NoUsage(Struct, frozen=True, tag="no_usage"):
+    """The agent did not report the tokens it spent."""
 
 
 class Thought(Struct, frozen=True, tag="thought"):

@@ -5,6 +5,7 @@ import sys
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
+from typing import cast
 
 import httpx2
 import pytest
@@ -13,7 +14,7 @@ import trustme
 
 from convy.agent import AgentFailure, Answer, Message, NoUsage, Usage
 from convy.busy import Busy
-from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls
+from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls, TokenPaths
 
 NOW = datetime(2026, 10, 6, 12, 0, tzinfo=UTC)
 
@@ -180,7 +181,7 @@ def json_agent(
     service: Service,
     body: Mapping[str, object] | None = None,
     reply: str = "a",
-    tokens: tuple[str, str] | None = None,
+    tokens: TokenPaths | None = None,
 ) -> JsonAgent:
     return JsonAgent(service.endpoint(), body or {"q": "{text}"}, reply, tokens)
 
@@ -221,17 +222,146 @@ async def test_post_opens_a_client_of_its_own():
 async def test_json_agent_reads_reply_and_tokens_by_paths():
     data = {"choices": [{"message": {"content": "hi"}}], "usage": {"in": 3, "out": 4}}
     service = Service(httpx2.Response(200, json=data))
-    agent = json_agent(service, reply="choices.0.message.content", tokens=("usage.in", "usage.out"))
+    tokens = TokenPaths(input="usage.in", output="usage.out")
+    agent = json_agent(service, reply="choices.0.message.content", tokens=tokens)
     async with agent.conversation() as conversation:
         assert await conversation.answer(Message("?")) == Answer("hi", Usage(3, 4))
 
 
-@pytest.mark.parametrize("spent", [True, "3", None])
-async def test_json_agent_rejects_tokens_that_are_not_counts(spent: object):
-    service = Service(httpx2.Response(200, json={"a": "hi", "in": spent, "out": 1}))
-    async with json_agent(service, tokens=("in", "out")).conversation() as conversation:
-        with pytest.raises(AgentFailure, match="expected token counts"):
+async def test_json_agent_adds_the_values_of_a_tuple_of_paths():
+    usage = {"input_tokens": 50, "cache_read_input_tokens": 1000,
+             "cache_creation_input_tokens": 150, "output_tokens": 300}  # fmt: skip
+    service = Service(httpx2.Response(200, json={"a": "hi", "usage": usage}))
+    tokens = TokenPaths(
+        input=(
+            "usage.input_tokens",
+            "usage.cache_read_input_tokens",
+            "usage.cache_creation_input_tokens",
+        ),
+        output="usage.output_tokens",
+        cache_read="usage.cache_read_input_tokens",
+        cache_write="usage.cache_creation_input_tokens",
+    )
+    async with json_agent(service, tokens=tokens).conversation() as conversation:
+        answer = await conversation.answer(Message("?"))
+    assert answer.usage == Usage(1200, 300, cache_read=1000, cache_write=150)
+
+
+async def test_json_agent_reads_thinking_and_cache_where_openai_puts_them():
+    usage = {
+        "prompt_tokens": 1200,
+        "completion_tokens": 300,
+        "prompt_tokens_details": {"cached_tokens": 1000},
+        "completion_tokens_details": {"reasoning_tokens": 200},
+    }
+    service = Service(httpx2.Response(200, json={"a": "hi", "usage": usage}))
+    tokens = TokenPaths(
+        input="usage.prompt_tokens",
+        output="usage.completion_tokens",
+        thinking="usage.completion_tokens_details.reasoning_tokens",
+        cache_read="usage.prompt_tokens_details.cached_tokens",
+    )
+    async with json_agent(service, tokens=tokens).conversation() as conversation:
+        answer = await conversation.answer(Message("?"))
+    assert answer.usage == Usage(1200, 300, 200, cache_read=1000)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"a": "hi", "in": 3, "out": 4},
+        {"a": "hi", "in": 3, "out": 4, "more": None, "r1": None, "r2": None},
+        {"a": "hi", "in": 3, "out": 4, "details": None},  # a parent of a path is null
+    ],
+    ids=["missing", "null", "parent null"],
+)
+async def test_json_agent_reports_nothing_for_optional_paths_that_are_missing_or_null(data):
+    tokens = TokenPaths(
+        input=("in", "more"), output="out", thinking="details.think", cache_read=("r1", "r2")
+    )
+    service = Service(httpx2.Response(200, json=data))
+    async with json_agent(service, tokens=tokens).conversation() as conversation:
+        assert (await conversation.answer(Message("?"))).usage == Usage(3, 4)
+
+
+@pytest.mark.parametrize(
+    ("found", "read"),
+    [({"r1": 2}, 2), ({"r2": 3}, 3), ({"r1": 2, "r2": 3}, 5), ({"r1": 0}, 0)],
+    ids=["first only", "second only", "both", "reported 0"],
+)
+async def test_json_agent_adds_the_paths_of_an_optional_count_that_are_there(found: dict, read):
+    tokens = TokenPaths(input=("in", "more"), output="out", cache_read=("r1", "r2"))
+    data = {"a": "hi", "in": 10, "more": 1, "out": 4, **found}
+    service = Service(httpx2.Response(200, json=data))
+    async with json_agent(service, tokens=tokens).conversation() as conversation:
+        assert (await conversation.answer(Message("?"))).usage == Usage(11, 4, cache_read=read)
+
+
+@pytest.mark.parametrize(
+    ("data", "error"),
+    [
+        ({"a": "hi", "out": 4}, "in: no 'in' in the answer"),
+        ({"a": "hi", "in": None, "out": 4}, "in: expected a token count"),
+        ({"a": "hi", "in": True, "out": 4}, "in: expected a token count"),
+        ({"a": "hi", "in": 3.0, "out": 4}, "in: expected a token count"),
+        ({"a": "hi", "in": 3, "out": 4, "read": "2"}, "read: expected a token count"),
+        ({"a": "hi", "in": 3, "out": 4, "read": 5}, "tokens: cached tokens are part of the input"),
+    ],
+    ids=[
+        "required missing",
+        "required null",
+        "a bool",
+        "a float",
+        "text",
+        "more cached than input",
+    ],
+)
+async def test_json_agent_fails_the_turn_on_tokens_it_cannot_count(data, error: str):
+    tokens = TokenPaths(input="in", output="out", cache_read="read")
+    service = Service(httpx2.Response(200, json=data))
+    async with json_agent(service, tokens=tokens).conversation() as conversation:
+        with pytest.raises(AgentFailure, match=re.escape(error)):
             await conversation.answer(Message("?"))
+
+
+@pytest.mark.parametrize("old", [("in", "out"), ["in", "out"]], ids=["tuple", "list"])
+def test_json_agent_refuses_the_old_tuple_or_list_of_token_paths(old):
+    old = cast(TokenPaths, old)  # what convy 0.5 took
+    with pytest.raises(
+        ValueError, match=re.escape("write tokens=TokenPaths(input=..., output=...)")
+    ):
+        json_agent(Service(httpx2.Response(200, json={})), tokens=old)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"input": ["a", "b"], "output": "o"},
+        {"input": "i", "output": "o", "thinking": ["a"]},
+        {"input": "i", "output": "o", "cache_read": ["a"]},
+        {"input": "i", "output": "o", "cache_write": ["a"]},
+        {"input": None, "output": "o"},
+        {"input": "i", "output": None},
+        {"input": ("a", 1), "output": "o"},
+    ],
+    ids=[
+        "required",
+        "thinking",
+        "cache_read",
+        "cache_write",
+        "input null",
+        "output null",
+        "non-string in a tuple",
+    ],
+)
+def test_token_paths_refuse_what_is_not_a_path_or_a_tuple_of_paths(fields: dict):
+    with pytest.raises(ValueError, match="give a path or a tuple of paths"):
+        TokenPaths(**fields)
+
+
+def test_token_paths_refuse_an_empty_tuple():
+    with pytest.raises(ValueError, match="needs at least one path"):
+        TokenPaths(input=(), output="out")
 
 
 async def test_json_agent_without_tokens_has_no_usage():

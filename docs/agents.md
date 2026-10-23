@@ -11,7 +11,7 @@ Settings are enough. Add `agents/support_bot.py`:
 
 ```python
 from pydantic import SecretStr
-from convy import Env, JsonAgent, JsonEndpoint
+from convy import Env, JsonAgent, JsonEndpoint, TokenPaths
 
 
 class BotEnv(Env):
@@ -26,14 +26,14 @@ agent = JsonAgent(
     ),
     body={"session_id": "{session}", "message": "{text}"},
     reply="data.answer",
-    tokens=("data.usage.input_tokens", "data.usage.output_tokens"),
+    tokens=TokenPaths(input="data.usage.input_tokens", output="data.usage.output_tokens"),
 )
 ```
 
 On every turn convy sends `body`. It puts the user's message in place of `{text}`, and an id that
 stays the same for the whole conversation in place of `{session}`. If your agent does not remember
-the dialogue, put `"{history}"` where it expects the list of messages. `reply` and `tokens` are
-paths in the JSON answer.
+the dialogue, put `"{history}"` where it expects the list of messages. `reply` is a path
+in the JSON answer, and `tokens` says where its tokens are; see [Tokens](#tokens).
 
 Files of the project can import each other, as in a script run from its folder. Put shared settings
 in one module, like `gateway.py` in a new project (`from gateway import gateway`).
@@ -147,6 +147,50 @@ agent = SupportBot()
 When a turn runs out of time, convy stops waiting. But a thread cannot be stopped: the call goes on
 until it returns. Give the client its own timeout if it has one.
 
+## Tokens
+
+An answer's `Usage` has its input and output tokens, and the parts of them you can report:
+
+```python
+Usage(input=1200, output=300, thinking=200, cache_read=1000, cache_write=150)
+```
+
+`input` is every token the model read, those read from or written to its cache included; `output`
+every token it wrote, thinking included. A count you do not give, or that is missing from the
+answer, shows as not reported, not as 0; `thinking=0` says none was spent. Leave a count out or
+write `NotReported()`; `None` is refused.
+
+A `JsonAgent` reads them with `TokenPaths`. OpenAI counts them as convy does:
+
+```python
+tokens = TokenPaths(
+    input="usage.prompt_tokens",
+    output="usage.completion_tokens",
+    thinking="usage.completion_tokens_details.reasoning_tokens",
+    cache_read="usage.prompt_tokens_details.cached_tokens",
+)
+```
+
+A tuple of paths adds their values. Anthropic's `input_tokens` leaves the cache out, so add it:
+
+```python
+tokens = TokenPaths(
+    input=(
+        "usage.input_tokens",
+        "usage.cache_read_input_tokens",
+        "usage.cache_creation_input_tokens",
+    ),
+    output="usage.output_tokens",
+    thinking="usage.output_tokens_details.thinking_tokens",
+    cache_read="usage.cache_read_input_tokens",
+    cache_write="usage.cache_creation_input_tokens",
+)
+```
+
+The path of `input` and of `output`, or the first of their tuple, must be in the answer, so a typo
+fails the turn at once. The other paths may be missing or `null`: providers leave them out when
+there is nothing to count.
+
 ## Tokens counted from the start
 
 Some agents report only the tokens spent so far, not those of one answer. Read the counter before
@@ -224,6 +268,8 @@ The agent's thinking is a `Thought`. Its tokens go in `Usage`: `thinking` is the
 spent on thinking. OpenAI and Anthropic report it that way, so pass their numbers as they are. If a
 provider counts thinking apart from the answer, as Gemini does, add the two: `output` is the
 answer's tokens plus the thinking's.
+
+A thinking count you do not give shows as not reported; see [Tokens](#tokens).
 
 ```python
 return Answer(text, Usage(input=120, output=300, thinking=200), steps=(Thought(thought),))

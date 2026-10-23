@@ -28,7 +28,7 @@ All code is in `src/convy/`.
 |---|---|
 | `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, an answer's steps `Thought` and `Call`, `Reported`, `NotReported`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
 | `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
-| `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template |
+| `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template, and `TokenPaths`, where it finds an answer's tokens |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
@@ -102,6 +102,7 @@ in all of `src/convy/`.
    `Runs.broken()`. Only `cli.py` prints and picks the exit code.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
     `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
+    `int | NotReported` (a count of `Usage`),
     `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
     and records such as `Outcome`. Data from outside is read into such types where it enters
     (rule 7), so this holds for it too.

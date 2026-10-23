@@ -1,12 +1,15 @@
 import json
+import re
 import secrets
+import shutil
+import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import msgspec
 import pytest
 
-from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
+from convy.agent import Answer, Call, Message, NotReported, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
@@ -109,7 +112,7 @@ def test_a_run_of_format_2_reads_its_reasons(tmp_path):
     written = journal(tmp_path, "bot", "1", 2)
     folder = written.folder()
     data = json.loads((folder / "run.json").read_text())
-    assert data["format"] == 5
+    assert data["format"] == 6
     older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 4}}
     (folder / "run.json").write_text(json.dumps(older))
     line = {
@@ -162,6 +165,56 @@ def test_an_older_line_reads_its_thinking_as_a_step(
     assert run.unreadable == 0
 
 
+@pytest.mark.parametrize("format", [3, 5])
+@pytest.mark.parametrize(("thinking", "read"), [(0, NotReported()), (20, 20)])
+def test_an_older_line_reads_a_thinking_count_of_0_as_not_reported_and_keeps_others(
+    tmp_path, format: int, thinking: int, read: int | NotReported
+):
+    """Formats 3 to 5 wrote 0 for a thinking count the agent did not give."""
+    usage = {"type": "usage", "input": 10, "output": 30, "thinking": thinking}
+    call = {"type": "call", "name": "search", "started": "2026-10-06T00:00:00Z", "seconds": 1.0}
+    answer = {"text": "hi", "usage": usage, "steps": [{**call, "usage": usage}]}
+    run = older_run(tmp_path, format, answer, {"parallel": 4} if format < 4 else None)
+    spent = Usage(10, 30, read)
+    steps = (Call(name="search", started=DAY, seconds=1.0, usage=spent),)
+    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", spent, steps)
+    assert run.unreadable == 0
+
+
+def test_an_older_line_with_thinking_text_reads_its_thinking_count_of_0_as_not_reported(tmp_path):
+    """Before format 5 the thinking was a field of its own; its count still needs converting."""
+    usage = {"type": "usage", "input": 10, "output": 30, "thinking": 0}
+    thinking = {"type": "thinking", "text": "plan"}
+    run = older_run(tmp_path, 4, {"text": "hi", "usage": usage, "thinking": thinking})
+    answer = Answer("hi", Usage(10, 30), (Thought("plan"),))
+    assert run.outcomes[0].transcript.turns[0].answer == answer
+
+
+def test_a_format_2_line_reads_its_thinking_count_as_not_reported(tmp_path):
+    usage = {"type": "usage", "input": 10, "output": 30}  # format 2 had no thinking count
+    run = older_run(tmp_path, 2, {"text": "hi", "usage": usage}, {"parallel": 4})
+    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", Usage(10, 30))
+
+
+def older_run(directory: Path, format: int, answer: dict, spec: dict | None = None) -> Run:
+    """A run of `format` whose one line holds one turn with `answer`, read back."""
+    folder = journal(directory, "bot", "1", 1).folder()
+    data = json.loads((folder / "run.json").read_text())
+    older = {**data, "format": format, "spec": {**data["spec"], **(spec or {})}}
+    (folder / "run.json").write_text(json.dumps(older))
+    turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
+    line = {
+        "scenario": "a",
+        "attempt": 1,
+        "transcript": {"turns": [turn]},
+        "verdict": {"type": "verdict", "claims": [{"pass": True}]},
+        "stop": "max_turns",
+    }
+    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n")
+    (run,) = Runs(directory)
+    return run
+
+
 @pytest.mark.parametrize("format", [2, 3])
 def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, format: int):
     folder = journal(tmp_path, "bot", "1", 1).folder()
@@ -176,7 +229,7 @@ def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, fo
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
     steps = (Thought("plan"), Call(name="search", started=DAY, seconds=1.5, received=Reported("")))
-    turn = Turn(Message("hi"), Answer("hello", steps=steps), 2.0)
+    turn = Turn(Message("hi"), Answer("hello", Usage(10, 5, cache_read=4), steps), 2.0)
     written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     run_journal = journal(tmp_path, "bot", "1", 1, written)
     run_journal.write(Finished(datetime.now(UTC)))
@@ -382,18 +435,63 @@ def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
     assert (attempt.passed, attempt.error) == (None, "judge down")
 
 
-def test_a_turn_shows_its_thinking_tokens(tmp_path):
+def test_a_turn_shows_its_thinking_tokens_when_reported(tmp_path):
     turns = (
         Turn(Message("hi"), Answer("a", Usage(10, 30, 20)), 1.0),
-        Turn(Message("and?"), Answer("b", Usage(5, 10)), 1.0),  # no thinking
-        Turn(Message("ok"), Answer("c"), 1.0),  # no usage
+        Turn(Message("and?"), Answer("b", Usage(5, 10, 0)), 1.0),  # none spent on thinking
+        Turn(Message("so?"), Answer("c", Usage(5, 10)), 1.0),  # not reported
+        Turn(Message("ok"), Answer("d"), 1.0),  # no usage
     )
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
     page = Report(only(tmp_path)).page()
     (attempt,) = page.scenarios[0].attempts
-    assert [t.thinking_tokens for t in attempt.turns] == [20, 0, None]
-    assert (attempt.output, attempt.thinking_tokens) == (40, 20)  # thinking is part of output
+    assert [t.thinking_tokens for t in attempt.turns] == [20, 0, None, None]
+    assert (attempt.output, attempt.thinking_tokens) == (50, 20)  # thinking is part of output
     assert page.metrics.thinking_tokens == 20
+
+
+def test_cache_tokens_add_up_and_their_share_skips_turns_without_them(tmp_path):
+    turns = (
+        Turn(Message("hi"), Answer("a", Usage(100, 10, cache_read=80, cache_write=20)), 1.0),
+        Turn(Message("and?"), Answer("b", Usage(50, 10, cache_read=0)), 1.0),  # none hit
+        Turn(Message("so?"), Answer("c", Usage(1000, 10)), 1.0),  # left out of the share
+    )
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
+    page = Report(only(tmp_path)).page()
+    (attempt,) = page.scenarios[0].attempts
+    assert [(t.cache_read, t.cache_write) for t in attempt.turns] == [
+        (80, 20),
+        (0, None),
+        (None, None),
+    ]
+    assert (attempt.cache_read, attempt.cache_write) == (80, 20)
+    assert (page.scenarios[0].cache_read, page.scenarios[0].cache_write) == (80, 20)
+    assert (page.metrics.cache_read, page.metrics.cache_write) == (80, 20)
+    assert page.metrics.cached == 80 / 150  # the code computes the same expression
+
+
+def test_the_cache_share_weighs_every_attempt_by_its_input(tmp_path):
+    def played(attempt: int, usage: Usage) -> Outcome:
+        turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+        return Outcome("a", attempt, Transcript((turn,)), PASSED, "max_turns")
+
+    first, second = (
+        played(1, Usage(100, 10, cache_read=90)),
+        played(2, Usage(300, 10, cache_read=0)),
+    )
+    journal(tmp_path, "bot", "1", 1, first, second, k=2)
+    assert Report(only(tmp_path)).page().metrics.cached == 90 / 400  # not the mean of 90% and 0%
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [Usage(10, 5), Usage(0, 5, cache_read=0), NoUsage()],
+    ids=["no cache", "no input", "no usage"],
+)
+def test_the_cache_share_is_none_without_cache_counts_or_input(tmp_path, usage):
+    turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    assert Report(only(tmp_path)).page().metrics.cached is None
 
 
 AGENT_CLOCK = datetime(2001, 1, 1, tzinfo=UTC)  # far from the time convy measures
@@ -737,6 +835,48 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
     assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
 
 
+def cached(directory: Path, read: int | None, day: int) -> RunJournal:
+    """A run on `day` whose one answer read `read` of its 100 input tokens from the cache."""
+    usage = Usage(100, 10) if read is None else Usage(100, 10, cache_read=read)
+    turn = Turn(Message("hi"), Answer("hello", usage), 1.0)
+    outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
+    return journal(directory, "bot", "1", 1, outcome, started=at(day))
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "change"),
+    [
+        (80, 20, (-60, "bad")),
+        (20, 80, (60, "good")),
+        (None, 80, (None, "none")),
+        (80, None, (None, "none")),
+    ],
+    ids=["fell", "rose", "not reported before", "not reported after"],
+)
+def test_a_comparison_shows_how_the_share_of_cached_input_changed(
+    tmp_path, before: int | None, after: int | None, change: tuple
+):
+    cached(tmp_path, before, 5)
+    cached(tmp_path, after, 6)
+    delta = Comparison(*both(tmp_path)).page().deltas.cached
+    assert (delta.value, delta.tone) == change
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "tone"),
+    [(834, 831, "same"), (800, 200, "bad"), (800, 805, "good")],
+    ids=["same whole percent", "fell", "rose a little"],
+)
+def test_the_colour_of_a_cache_change_agrees_with_the_percents_shown(
+    tmp_path, before: int, after: int, tone: str
+):
+    for day, read in ((5, before), (6, after)):
+        turn = Turn(Message("hi"), Answer("a", Usage(1000, 10, cache_read=read)), 1.0)
+        outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
+        journal(tmp_path, "bot", "1", 1, outcome, started=at(day))
+    assert Comparison(*both(tmp_path)).page().deltas.cached.tone == tone
+
+
 def test_a_comparison_names_the_models_that_differ(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), models=("u", "j2"))
@@ -908,3 +1048,43 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     assert page.metrics.seconds == 3.0
     assert page.scenarios[0].seconds == 3.0
     assert page.scenarios[0].attempts[0].seconds == 12.0
+
+
+def test_counts_not_reported_stay_none_at_every_level(tmp_path):
+    turn = Turn(Message("hi"), Answer("a", Usage(10, 5)), 1.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    page = Report(only(tmp_path)).page()
+    scenario, (attempt,) = page.scenarios[0], page.scenarios[0].attempts
+    assert (attempt.cache_read, attempt.cache_write, attempt.thinking_tokens) == (None, None, None)
+    assert (scenario.cache_read, scenario.cache_write, scenario.thinking_tokens) == (
+        None,
+        None,
+        None,
+    )
+    assert (page.metrics.cache_read, page.metrics.cache_write) == (None, None)
+
+
+def test_cache_means_cover_only_the_attempts_that_report_them(tmp_path):
+    def played(attempt: int, usage: Usage) -> Outcome:
+        turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+        return Outcome("a", attempt, Transcript((turn,)), PASSED, "max_turns")
+
+    reported, silent = played(1, Usage(100, 10, cache_read=80)), played(2, Usage(100, 10))
+    journal(tmp_path, "bot", "1", 1, reported, silent, k=2)
+    page = Report(only(tmp_path)).page()
+    assert (page.scenarios[0].cache_read, page.metrics.cache_read) == (80, 80)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_scripts_of_every_page_parse(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    pages = (Report(after).html(), Comparison(before, after).html(), Index([before]).html())
+    scripts = [body for html in pages for body in re.findall(r"<script>(.*?)</script>", html, re.S)]
+    assert len(scripts) == 6
+    for number, body in enumerate(scripts):
+        file = tmp_path / f"script{number}.js"
+        file.write_text(body, encoding="utf-8")
+        done = subprocess.run(["node", "--check", str(file)], check=False, capture_output=True)
+        assert done.returncode == 0, done.stderr.decode()

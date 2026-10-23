@@ -14,7 +14,7 @@ import httpx2
 import msgspec
 from msgspec import Struct
 
-from convy.agent import AgentFailure, Answer, Conversation, Message, NoUsage, Usage
+from convy.agent import AgentFailure, Answer, Conversation, Message, NotReported, NoUsage, Usage
 from convy.busy import Busy
 
 BUSY = frozenset({429, 503})  # the service says it did not process the request
@@ -134,23 +134,103 @@ class JsonConnection(Struct, frozen=True):
         return max(seconds, 0.0)
 
 
+class TokenPaths(Struct, frozen=True, kw_only=True):
+    """Where a `JsonAgent` finds an answer's tokens: each a dot-separated path, or a tuple of paths
+    whose values are added. The path of `input` and `output`, or the first of their tuple, must be
+    in the answer, so a typo fails the turn; their further paths and the other fields may be
+    missing or null, as providers leave out what there is nothing to count. A field not given is
+    not reported."""
+
+    input: str | tuple[str, ...]
+    output: str | tuple[str, ...]
+    thinking: str | tuple[str, ...] | None = None
+    cache_read: str | tuple[str, ...] | None = None
+    cache_write: str | tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        given = (f for f in (self.thinking, self.cache_read, self.cache_write) if f is not None)
+        for field in (self.input, self.output, *given):
+            match field:
+                case str():
+                    pass
+                case tuple() if not field:
+                    raise ValueError("a tuple of token paths needs at least one path")
+                case tuple() if all(type(path) is str for path in field):
+                    pass
+                case _:
+                    raise ValueError(f"token paths: give a path or a tuple of paths, got {field!r}")
+
+    def usage(self, data: object) -> Usage:
+        """The answer's tokens. LookupError: a required path is missing; AgentFailure: a value is
+        not a count; ValueError: the counts do not fit together."""
+        return Usage(
+            self.needed(data, self.input),
+            self.needed(data, self.output),
+            thinking=self.found(data, self.thinking),
+            cache_read=self.found(data, self.cache_read),
+            cache_write=self.found(data, self.cache_write),
+        )
+
+    def needed(self, data: object, paths: str | tuple[str, ...]) -> int:
+        first, *further = self.each(paths)
+        counts = (self.at(data, path) for path in further)
+        return self.count(JsonPath(first).find(data), first) + sum(
+            c for c in counts if c is not None
+        )
+
+    def found(self, data: object, paths: str | tuple[str, ...] | None) -> int | NotReported:
+        if paths is None:
+            return NotReported()
+        counts = [c for c in (self.at(data, path) for path in self.each(paths)) if c is not None]
+        return sum(counts) if counts else NotReported()
+
+    def at(self, data: object, path: str) -> int | None:
+        """The count at a path that may be missing or null; None then."""
+        try:
+            found = JsonPath(path).find(data)
+        except LookupError:
+            return None
+        return None if found is None else self.count(found, path)
+
+    def count(self, found: object, path: str) -> int:
+        try:
+            return msgspec.convert(found, int)  # a bool is not a count
+        except msgspec.ValidationError as error:
+            raise AgentFailure(f"{path}: expected a token count: {error}") from None
+
+    def each(self, paths: str | tuple[str, ...]) -> tuple[str, ...]:
+        match paths:
+            case str():
+                return (paths,)
+            case tuple():
+                return paths
+
+
 class JsonAgent(Struct, frozen=True):
     """An agent with a JSON API, described by a body template and paths in the answer.
 
     In `body`, `{text}` becomes the user's message and `{session}` the conversation's id; a value of
     exactly `"{history}"` becomes the dialogue so far. `reply` is the path to the answer's text and
-    `tokens` the paths to its input and output tokens: dot-separated, numbers are list indexes.
+    `tokens` says where its tokens are; paths are dot-separated, numbers are list indexes.
     """
 
     endpoint: JsonEndpoint
     body: Mapping[str, object]
     reply: str
-    tokens: tuple[str, str] | None = None
+    tokens: TokenPaths | None = None
 
     def __post_init__(self) -> None:
         template = json.dumps(self.body)
         if "{text}" not in template and '"{history}"' not in template:
             raise ValueError('the body has neither "{text}" nor "{history}"')
+        match self.tokens:
+            case TokenPaths() | None:
+                pass
+            case _:  # convy 0.5 took a tuple of two paths
+                raise ValueError(
+                    "tokens: write tokens=TokenPaths(input=..., output=...), "
+                    "not a tuple or a list of paths"
+                )
 
     @asynccontextmanager
     async def conversation(self) -> AsyncIterator[Conversation]:
@@ -188,14 +268,14 @@ class JsonConversation:
             raise AgentFailure(f"{self.agent.reply}: expected text: {error}") from None
 
     def usage(self, data: object) -> Usage | NoUsage:
-        if self.agent.tokens is None:
-            return NoUsage()
-        found = tuple(JsonPath(path).find(data) for path in self.agent.tokens)
-        try:
-            spent, produced = msgspec.convert(found, tuple[int, int])  # a bool is not a count
-        except msgspec.ValidationError as error:
-            raise AgentFailure(f"{self.agent.tokens}: expected token counts: {error}") from None
-        return Usage(spent, produced)
+        match self.agent.tokens:
+            case TokenPaths() as paths:
+                try:
+                    return paths.usage(data)
+                except ValueError as error:  # counts a Usage cannot hold
+                    raise AgentFailure(f"tokens: {error}") from None
+            case None:
+                return NoUsage()
 
 
 class Placeholders(Struct, frozen=True):
