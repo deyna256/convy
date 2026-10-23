@@ -1,5 +1,8 @@
 import json
+import re
 import secrets
+import shutil
+import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -162,15 +165,16 @@ def test_an_older_line_reads_its_thinking_as_a_step(
     assert run.unreadable == 0
 
 
+@pytest.mark.parametrize("format", [3, 5])
 @pytest.mark.parametrize(("thinking", "read"), [(0, NotReported()), (20, 20)])
-def test_an_older_line_reads_a_thinking_count_of_0_as_not_reported(
-    tmp_path, thinking: int, read: int | NotReported
+def test_an_older_line_reads_a_thinking_count_of_0_as_not_reported_and_keeps_others(
+    tmp_path, format: int, thinking: int, read: int | NotReported
 ):
     """Formats 3 to 5 wrote 0 for a thinking count the agent did not give."""
     usage = {"type": "usage", "input": 10, "output": 30, "thinking": thinking}
     call = {"type": "call", "name": "search", "started": "2026-10-06T00:00:00Z", "seconds": 1.0}
     answer = {"text": "hi", "usage": usage, "steps": [{**call, "usage": usage}]}
-    run = older_run(tmp_path, 5, answer)
+    run = older_run(tmp_path, format, answer, {"parallel": 4} if format < 4 else None)
     spent = Usage(10, 30, read)
     steps = (Call(name="search", started=DAY, seconds=1.0, usage=spent),)
     assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", spent, steps)
@@ -186,11 +190,18 @@ def test_an_older_line_with_thinking_text_reads_its_thinking_count_of_0_as_not_r
     assert run.outcomes[0].transcript.turns[0].answer == answer
 
 
-def older_run(directory: Path, format: int, answer: dict) -> Run:
+def test_a_format_2_line_reads_its_thinking_count_as_not_reported(tmp_path):
+    usage = {"type": "usage", "input": 10, "output": 30}  # format 2 had no thinking count
+    run = older_run(tmp_path, 2, {"text": "hi", "usage": usage}, {"parallel": 4})
+    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", Usage(10, 30))
+
+
+def older_run(directory: Path, format: int, answer: dict, spec: dict | None = None) -> Run:
     """A run of `format` whose one line holds one turn with `answer`, read back."""
     folder = journal(directory, "bot", "1", 1).folder()
     data = json.loads((folder / "run.json").read_text())
-    (folder / "run.json").write_text(json.dumps({**data, "format": format}))
+    older = {**data, "format": format, "spec": {**data["spec"], **(spec or {})}}
+    (folder / "run.json").write_text(json.dumps(older))
     turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
     line = {
         "scenario": "a",
@@ -834,16 +845,36 @@ def cached(directory: Path, read: int | None, day: int) -> RunJournal:
 
 @pytest.mark.parametrize(
     ("before", "after", "change"),
-    [(80, 20, (-60, "bad")), (20, 80, (60, "good")), (None, 80, (None, "none"))],
-    ids=["fell", "rose", "not reported before"],
+    [
+        (80, 20, (-60, "bad")),
+        (20, 80, (60, "good")),
+        (None, 80, (None, "none")),
+        (80, None, (None, "none")),
+    ],
+    ids=["fell", "rose", "not reported before", "not reported after"],
 )
 def test_a_comparison_shows_how_the_share_of_cached_input_changed(
-    tmp_path, before: int | None, after: int, change: tuple
+    tmp_path, before: int | None, after: int | None, change: tuple
 ):
     cached(tmp_path, before, 5)
     cached(tmp_path, after, 6)
     delta = Comparison(*both(tmp_path)).page().deltas.cached
     assert (delta.value, delta.tone) == change
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "tone"),
+    [(834, 831, "same"), (800, 200, "bad"), (800, 805, "good")],
+    ids=["same whole percent", "fell", "rose a little"],
+)
+def test_the_colour_of_a_cache_change_agrees_with_the_percents_shown(
+    tmp_path, before: int, after: int, tone: str
+):
+    for day, read in ((5, before), (6, after)):
+        turn = Turn(Message("hi"), Answer("a", Usage(1000, 10, cache_read=read)), 1.0)
+        outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
+        journal(tmp_path, "bot", "1", 1, outcome, started=at(day))
+    assert Comparison(*both(tmp_path)).page().deltas.cached.tone == tone
 
 
 def test_a_comparison_names_the_models_that_differ(tmp_path):
@@ -1017,3 +1048,43 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     assert page.metrics.seconds == 3.0
     assert page.scenarios[0].seconds == 3.0
     assert page.scenarios[0].attempts[0].seconds == 12.0
+
+
+def test_counts_not_reported_stay_none_at_every_level(tmp_path):
+    turn = Turn(Message("hi"), Answer("a", Usage(10, 5)), 1.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    page = Report(only(tmp_path)).page()
+    scenario, (attempt,) = page.scenarios[0], page.scenarios[0].attempts
+    assert (attempt.cache_read, attempt.cache_write, attempt.thinking_tokens) == (None, None, None)
+    assert (scenario.cache_read, scenario.cache_write, scenario.thinking_tokens) == (
+        None,
+        None,
+        None,
+    )
+    assert (page.metrics.cache_read, page.metrics.cache_write) == (None, None)
+
+
+def test_cache_means_cover_only_the_attempts_that_report_them(tmp_path):
+    def played(attempt: int, usage: Usage) -> Outcome:
+        turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+        return Outcome("a", attempt, Transcript((turn,)), PASSED, "max_turns")
+
+    reported, silent = played(1, Usage(100, 10, cache_read=80)), played(2, Usage(100, 10))
+    journal(tmp_path, "bot", "1", 1, reported, silent, k=2)
+    page = Report(only(tmp_path)).page()
+    assert (page.scenarios[0].cache_read, page.metrics.cache_read) == (80, 80)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_the_scripts_of_every_page_parse(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    pages = (Report(after).html(), Comparison(before, after).html(), Index([before]).html())
+    scripts = [body for html in pages for body in re.findall(r"<script>(.*?)</script>", html, re.S)]
+    assert len(scripts) == 6
+    for number, body in enumerate(scripts):
+        file = tmp_path / f"script{number}.js"
+        file.write_text(body, encoding="utf-8")
+        done = subprocess.run(["node", "--check", str(file)], check=False, capture_output=True)
+        assert done.returncode == 0, done.stderr.decode()

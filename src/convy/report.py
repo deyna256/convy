@@ -1,5 +1,6 @@
 """The report: runs read back, summed up, and rendered as static HTML pages."""
 
+import math
 import re
 from collections.abc import Iterable, Iterator
 from importlib.resources import files
@@ -313,6 +314,7 @@ class ScenarioView(Struct, frozen=True):
     input: float | None  # mean per attempt
     output: float | None
     tokens: float | None
+    thinking_tokens: float | None
     cache_read: float | None  # mean per attempt
     cache_write: float | None
     attempts: tuple[AttemptView, ...]
@@ -596,6 +598,7 @@ class Summary(Struct, frozen=True):
             input=self.average(a.input for a in attempts),
             output=self.average(a.output for a in attempts),
             tokens=self.average(a.tokens for a in attempts),
+            thinking_tokens=self.average(a.thinking_tokens for a in attempts),
             cache_read=self.average(a.cache_read for a in attempts),
             cache_write=self.average(a.cache_write for a in attempts),
             attempts=attempts,
@@ -670,14 +673,14 @@ class Summary(Struct, frozen=True):
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
-            case Usage(input=spent, output=produced, thinking=thought) as usage:
+            case Usage(input=spent, output=produced) as usage:
                 tokens: tuple[
                     int | None, int | None, int | None, int | None, int | None, int | None
                 ] = (
                     spent,
                     produced,
                     spent + produced,
-                    self.count(thought),
+                    self.count(usage.thinking),
                     self.count(usage.cache_read),
                     self.count(usage.cache_write),
                 )
@@ -902,7 +905,8 @@ class Comparison(Struct, frozen=True):
         if was is None or now is None:
             return Delta(None, "none")
         change = round((now - was) * 100, 6)
-        return Delta(change, self.tone(change, more_is_better=True, noisy=False))
+        shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
+        return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
 
     def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
         if change == 0:

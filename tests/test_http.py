@@ -303,10 +303,18 @@ async def test_json_agent_adds_the_paths_of_an_optional_count_that_are_there(fou
         ({"a": "hi", "out": 4}, "in: no 'in' in the answer"),
         ({"a": "hi", "in": None, "out": 4}, "in: expected a token count"),
         ({"a": "hi", "in": True, "out": 4}, "in: expected a token count"),
+        ({"a": "hi", "in": 3.0, "out": 4}, "in: expected a token count"),
         ({"a": "hi", "in": 3, "out": 4, "read": "2"}, "read: expected a token count"),
         ({"a": "hi", "in": 3, "out": 4, "read": 5}, "tokens: cached tokens are part of the input"),
     ],
-    ids=["required missing", "required null", "a bool", "text", "more cached than input"],
+    ids=[
+        "required missing",
+        "required null",
+        "a bool",
+        "a float",
+        "text",
+        "more cached than input",
+    ],
 )
 async def test_json_agent_fails_the_turn_on_tokens_it_cannot_count(data, error: str):
     tokens = TokenPaths(input="in", output="out", cache_read="read")
@@ -327,10 +335,26 @@ def test_json_agent_refuses_the_old_tuple_or_list_of_token_paths(old):
 
 @pytest.mark.parametrize(
     "fields",
-    [{"input": ["a", "b"], "output": "o"}, {"input": "i", "output": "o", "cache_read": ["a"]}],
-    ids=["required", "optional"],
+    [
+        {"input": ["a", "b"], "output": "o"},
+        {"input": "i", "output": "o", "thinking": ["a"]},
+        {"input": "i", "output": "o", "cache_read": ["a"]},
+        {"input": "i", "output": "o", "cache_write": ["a"]},
+        {"input": None, "output": "o"},
+        {"input": "i", "output": None},
+        {"input": ("a", 1), "output": "o"},
+    ],
+    ids=[
+        "required",
+        "thinking",
+        "cache_read",
+        "cache_write",
+        "input null",
+        "output null",
+        "non-string in a tuple",
+    ],
 )
-def test_token_paths_refuse_a_list_of_paths(fields: dict):
+def test_token_paths_refuse_what_is_not_a_path_or_a_tuple_of_paths(fields: dict):
     with pytest.raises(ValueError, match="give a path or a tuple of paths"):
         TokenPaths(**fields)
 

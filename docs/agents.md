@@ -157,7 +157,8 @@ Usage(input=1200, output=300, thinking=200, cache_read=1000, cache_write=150)
 
 `input` is every token the model read, those read from or written to its cache included; `output`
 every token it wrote, thinking included. A count you do not give, or that is missing from the
-answer, shows as not reported, not as 0; `thinking=0` says none was spent.
+answer, shows as not reported, not as 0; `thinking=0` says none was spent. Leave a count out or
+write `NotReported()`; `None` is refused.
 
 A `JsonAgent` reads them with `TokenPaths`. OpenAI counts them as convy does:
 

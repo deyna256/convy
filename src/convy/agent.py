@@ -41,8 +41,9 @@ class Usage(Struct, frozen=True, tag="usage"):
     cache_write: int | NotReported = NotReported()  # part of input
 
     def __post_init__(self) -> None:
-        thinking = self.counted(self.thinking)
-        read, written = self.counted(self.cache_read), self.counted(self.cache_write)
+        thinking = self.counted("thinking", self.thinking)
+        read = self.counted("cache_read", self.cache_read)
+        written = self.counted("cache_write", self.cache_write)
         counts = (("input", self.input), ("output", self.output))
         for name, count in (*counts, ("cache_read", read), ("cache_write", written)):
             if count < 0:
@@ -58,13 +59,15 @@ class Usage(Struct, frozen=True, tag="usage"):
                 "as Anthropic's input_tokens leaves them out"
             )
 
-    def counted(self, count: int | NotReported) -> int:
+    def counted(self, name: str, count: int | NotReported) -> int:
         """A part as a count for the checks: 0 when it was not reported."""
         match count:
             case int():
                 return count
             case NotReported():
                 return 0
+            case _:
+                raise ValueError(f"{name} tokens: give a count or NotReported(), got {count!r}")
 
 
 class NoUsage(Struct, frozen=True, tag="no_usage"):

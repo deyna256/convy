@@ -144,9 +144,31 @@ def test_usage_refuses_counts_it_cannot_hold(counts: dict, error: str):
         Usage(**counts)
 
 
-def test_usage_holds_counts_at_their_limits():
-    assert Usage(0, 0).thinking == NotReported()  # a count not reported is none for the checks
-    assert Usage(10, 5, 5, cache_read=4, cache_write=6).cache_write == 6
+def test_usage_takes_thinking_equal_to_output():
+    assert Usage(10, 5, 5) == Usage(10, 5, thinking=5)
+
+
+def test_usage_takes_cached_tokens_equal_to_input():
+    usage = Usage(10, 5, cache_read=4, cache_write=6)
+    assert (usage.cache_read, usage.cache_write) == (4, 6)
+
+
+def test_a_count_not_reported_is_none_spent_for_the_checks():
+    assert Usage(5, 5, cache_read=5).cache_write == NotReported()
+    assert Usage(0, 0).thinking == NotReported()
+
+
+@pytest.mark.parametrize(
+    ("counts", "name"),
+    [
+        ({"thinking": None}, "thinking"),
+        ({"cache_read": 3.0}, "cache_read"),
+        ({"cache_write": "2"}, "cache_write"),
+    ],
+)
+def test_usage_refuses_a_count_that_is_neither_a_number_nor_not_reported(counts: dict, name: str):
+    with pytest.raises(ValueError, match=f"{name} tokens: give a count or NotReported"):
+        Usage(10, 5, **counts)
 
 
 WHEN = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
