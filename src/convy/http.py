@@ -148,23 +148,17 @@ class TokenPaths(Struct, frozen=True, kw_only=True):
     cache_write: str | tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
-        for field in (self.input, self.output):
-            self.check(field, none_given=False)
-        for field in (self.thinking, self.cache_read, self.cache_write):
-            self.check(field, none_given=True)
-
-    def check(self, field: object, none_given: bool) -> None:
-        match field:
-            case str():
-                pass
-            case None if none_given:
-                pass
-            case tuple() if not field:
-                raise ValueError("a tuple of token paths needs at least one path")
-            case tuple() if all(type(path) is str for path in field):
-                pass
-            case _:
-                raise ValueError(f"token paths: give a path or a tuple of paths, got {field!r}")
+        given = (f for f in (self.thinking, self.cache_read, self.cache_write) if f is not None)
+        for field in (self.input, self.output, *given):
+            match field:
+                case str():
+                    pass
+                case tuple() if not field:
+                    raise ValueError("a tuple of token paths needs at least one path")
+                case tuple() if all(type(path) is str for path in field):
+                    pass
+                case _:
+                    raise ValueError(f"token paths: give a path or a tuple of paths, got {field!r}")
 
     def usage(self, data: object) -> Usage:
         """The answer's tokens. LookupError: a required path is missing; AgentFailure: a value is
