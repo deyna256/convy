@@ -90,8 +90,6 @@ attempt, next to the dialogue. More in
 
 ## Connect your agent
 
-An agent file's name is a plain filename: no path separators, and not `""`, `.`, or `..`.
-
 An agent with a JSON API needs only settings. Put this in `agents/support_bot.py`:
 
 ```python

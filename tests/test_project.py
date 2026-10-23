@@ -102,7 +102,15 @@ def test_a_missing_agent_is_named(tmp_path: Path):
 
 @pytest.mark.parametrize(
     "name",
-    ["team/bot", "../bot", ".."],
+    [
+        "team/bot",
+        "../bot",
+        "..",
+        pytest.param(
+            "team\\bot",
+            marks=pytest.mark.skipif(sys.platform != "win32", reason="a path on Windows only"),
+        ),
+    ],
 )
 def test_an_agent_name_outside_agents_is_refused(tmp_path: Path, name: str):
     with pytest.raises(ValueError, match=re.escape(f"agent {name!r}:")):
@@ -110,8 +118,8 @@ def test_an_agent_name_outside_agents_is_refused(tmp_path: Path, name: str):
 
 
 def test_a_name_with_dot_dot_inside_still_loads(tmp_path: Path):
-    write(tmp_path / "agents" / "my..bot.py", "agent = 1\n")
-    assert Project(tmp_path).agent_file("my..bot") == tmp_path / "agents" / "my..bot.py"
+    write(tmp_path / "agents" / "my..bot.py", "from convy.fakes import Echo\nagent = Echo()\n")
+    assert Project(tmp_path).agent("my..bot").agent == Echo()
 
 
 def test_models_come_from_models_py(tmp_path: Path):
