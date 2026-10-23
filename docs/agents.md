@@ -1,7 +1,9 @@
 # Connect an agent
 
 convy talks to your agent as a user would: it sends a message and waits for the answer. It does not
-need the agent's code or its model. Each agent is one file in `agents/`.
+need the agent's code or its model. Each agent is one file in `agents/`. Its name is the file name
+without `.py`, such as `support_bot`. A name cannot be a path: no `/`, no `..`, and on Windows
+no `\`.
 
 ## An agent with a JSON API
 

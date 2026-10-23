@@ -173,6 +173,8 @@ class Project(Struct, frozen=True):
         return ProjectAgent(name, agent, version)
 
     def agent_file(self, name: str) -> Path:
+        if Path(name).name != name or name in ("", ".", ".."):
+            raise ValueError(f"agent {name!r}: a name cannot be a path")
         path = self.directory / "agents" / f"{name}.py"
         if not path.is_file():
             raise FileNotFoundError(f"no agent {name!r}: there is no {path}")
