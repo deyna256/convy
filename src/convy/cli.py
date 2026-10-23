@@ -382,8 +382,9 @@ class ExportCommand(BaseModel):
         print(f"export: {folder}")
 
     def chosen(self, results: Path) -> tuple[tuple[Run, ...], tuple[Path, ...]]:
-        """The runs the targets name, each once, and the runs inside named folders that could not
-        be read whole. A target is a folder when it is a folder inside `results`, else a run."""
+        """The runs the targets name, each once, and those of them, or of the named folders, that
+        could not be read whole. A target is a folder when it is a folder inside `results`, else a
+        run."""
         if not self.targets:
             raise ValueError("name the runs or a folder to export")
         runs = Runs(results)
@@ -407,6 +408,8 @@ class ExportCommand(BaseModel):
                     raise ValueError(f"{target} is not inside results") from None
                 raise
             found[run.path] = run
+            if run.unreadable:
+                broken.append(run.path)
         return tuple(found.values()), tuple(dict.fromkeys(broken))
 
 

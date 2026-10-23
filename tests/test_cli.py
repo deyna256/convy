@@ -798,6 +798,16 @@ def test_export_does_not_name_a_broken_run_outside_the_folder(project: Path, cap
     assert capsys.readouterr().err == ""
 
 
+def test_export_of_a_named_run_with_unreadable_lines_names_it(project: Path, capsys):
+    first, _ = two_runs(project)
+    with (project / "results" / "echo" / first / "attempts.jsonl").open("a") as lines:
+        lines.write("{\n")
+    capsys.readouterr()
+    assert convy("export", first) == 0
+    broken = Path("results", "echo", first)
+    assert capsys.readouterr().err == f"skipped unreadable lines or a whole run: {broken}\n"
+
+
 def test_export_that_cannot_write_its_files_says_so(project: Path, capsys):
     two_runs(project)
     (project / "results" / "export").write_text("a file, not a folder")

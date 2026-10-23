@@ -559,9 +559,10 @@ def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
 
 def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
     folder = Project(tmp_path).export(TABLES)
-    answers = TABLES.answers()
-    assert (folder / "answers.csv").read_bytes() == b"\xef\xbb\xbf" + answers.csv().encode()
-    assert (folder / "answers.jsonl").read_bytes() == answers.jsonl().encode()
+    for table in TABLES:
+        csv, jsonl = folder / f"{table.name}.csv", folder / f"{table.name}.jsonl"
+        assert csv.read_bytes() == b"\xef\xbb\xbf" + table.csv().encode()
+        assert jsonl.read_bytes() == table.jsonl().encode()
 
 
 def numbers_run() -> Run:
