@@ -104,8 +104,9 @@ A target is a folder inside `results/`, or else a run. It writes 14 files into `
 `runs.csv` and `runs.jsonl`, and so on for each table, replacing the files of an earlier export.
 
 JSON Lines is the complete form: one JSON object a line, `null` for `None`, `""` kept. CSV is for
-spreadsheets: an empty cell for `None`, every other value quoted, a list as JSON text, times in
-ISO form, `true` and `false`. Reading it back:
+spreadsheets: an empty cell for `None`, every other value quoted, and a value that is not text
+written as in JSON Lines: a list as JSON text, `true` and `false`, times in ISO form (`…Z` for
+UTC). Reading it back:
 
 - pandas and DuckDB read a quoted `""` as missing, the same as `None`; polars keeps it apart.
 - pandas keeps times as text; so does polars, unless you give `try_parse_dates=True`, which reads

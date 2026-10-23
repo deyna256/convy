@@ -530,10 +530,10 @@ CELLS = Table(
 )  # Table("cells", Cells, (...)): the row type comes second
 
 
-def test_csv_quotes_every_value_and_leaves_a_missing_one_empty():
+def test_csv_quotes_every_value_writes_what_is_not_text_as_json_and_leaves_a_missing_one_empty():
     assert CELLS.csv() == (
         '"text","flag","grades","at","number"\r\n'
-        '"two\nlines, ""quoted""","true","[""a"",""b""]","2026-10-06T00:00:00+00:00","0.5"\r\n'
+        '"two\nlines, ""quoted""","true","[""a"",""b""]","2026-10-06T00:00:00Z","0.5"\r\n'
         '"","false",,,"2"\r\n'
     )
 

@@ -384,11 +384,12 @@ class ExportCommand(BaseModel):
     def chosen(self, results: Path) -> tuple[tuple[Run, ...], tuple[Path, ...]]:
         """The runs the targets name, each once, and those of them, or of the named folders, that
         could not be read whole. A target is a folder when it is a folder inside `results`, else a
-        run."""
+        run. A folder with no readable runs is an error that names the runs it could not read."""
         if not self.targets:
             raise ValueError("name the runs or a folder to export")
         runs = Runs(results)
         read = list(runs)
+        unread = runs.broken(read)
         root = results.resolve()
         found: dict[Path, Run] = {}
         broken: list[Path] = []
@@ -396,10 +397,14 @@ class ExportCommand(BaseModel):
             folder = Path(target).resolve()
             if folder.is_dir() and folder.is_relative_to(root):
                 inside = [run for run in read if (root / run.path).is_relative_to(folder)]
+                skipped = [p for p in unread if (root / p).is_relative_to(folder)]
                 if not inside:
-                    raise ValueError(f"no runs in {target}")
+                    error = f"no runs in {target}"
+                    if skipped:
+                        error += "; cannot read " + ", ".join(str(results / p) for p in skipped)
+                    raise ValueError(error)
                 found.update((run.path, run) for run in inside)
-                broken += [p for p in runs.broken(read) if (root / p).is_relative_to(folder)]
+                broken += skipped
                 continue
             try:
                 run = runs.run(target)

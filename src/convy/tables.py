@@ -7,7 +7,7 @@ import csv
 import io
 from collections.abc import Iterator
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import msgspec
 from msgspec import Struct
@@ -139,18 +139,19 @@ class Table[R: Struct](Struct, frozen=True):
     row: type[R]
     rows: tuple[R, ...]
 
-    def records(self) -> list[dict]:
+    def records(self) -> list[dict[str, Any]]:
         """The rows as dicts, for pandas or polars, datetimes kept."""
         return list(msgspec.to_builtins(self.rows, builtin_types=(datetime,)))
 
     def csv(self) -> str:
-        """The table for spreadsheets: a missing value is an empty cell and text is quoted, so
-        readers that respect quotes keep "" apart from it; a list is JSON text; booleans as in
-        JSON. JSON Lines is the complete form."""
+        """The table for spreadsheets: a missing value is an empty cell and every other value is
+        quoted, so readers that respect quotes keep "" apart from it; a value that is not text is
+        written as in JSON Lines: a list, `true`, a number, a time. JSON Lines is the complete
+        form."""
         out = io.StringIO()
         writer = csv.writer(out, quoting=csv.QUOTE_NOTNULL)
         writer.writerow(field.encode_name for field in msgspec.structs.fields(self.row))
-        for record in self.records():
+        for record in msgspec.to_builtins(self.rows):
             writer.writerow(self.cell(value) for value in record.values())
         return out.getvalue()
 
@@ -158,16 +159,12 @@ class Table[R: Struct](Struct, frozen=True):
         """The table's complete form: one JSON object a line."""
         return msgspec.json.Encoder().encode_lines(self.rows).decode()
 
-    def cell(self, value: object) -> object:
+    def cell(self, value: object) -> str | None:
         match value:
-            case bool():
-                return "true" if value else "false"
-            case datetime():
-                return value.isoformat()
-            case tuple():  # to_builtins keeps tuples
-                return msgspec.json.encode(value).decode()
-            case _:
+            case str() | None:
                 return value
+            case _:
+                return msgspec.json.encode(value).decode()
 
 
 class Tables(Struct, frozen=True):
@@ -235,7 +232,7 @@ class Tables(Struct, frozen=True):
                 self.decision(run, outcome, number, claim)
                 for run in self.ordered()
                 for outcome in self.outcomes(run)
-                for number, claim in enumerate(self.verdict(outcome), 1)
+                for number, claim in enumerate(self.decided(outcome), 1)
             ),
         )
 
@@ -344,7 +341,7 @@ class Tables(Struct, frozen=True):
             stop=outcome.stop,
         )
 
-    def verdict(self, outcome: Outcome) -> tuple[Claim, ...]:
+    def decided(self, outcome: Outcome) -> tuple[Claim, ...]:
         match outcome.verdict:
             case Verdict(claims=claims):
                 return claims
@@ -402,15 +399,9 @@ class Tables(Struct, frozen=True):
             case Thought(text=said):
                 kind, text, name, started, seconds = "thought", said, None, None, None
                 usage, sent, received = NoUsage(), None, None
-            case Call():
-                kind, text, name, started, seconds = (
-                    "call",
-                    None,
-                    step.name,
-                    step.started,
-                    step.seconds,
-                )
-                usage, sent, received = step.usage, self.text(step.sent), self.text(step.received)
+            case Call(name=name, started=started, seconds=seconds, usage=usage):
+                kind, text = "call", None
+                sent, received = self.text(step.sent), self.text(step.received)
         input, output, thinking, cache_read, cache_write = self.tokens(usage)
         return StepRow(
             run=run.spec.id,

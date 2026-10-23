@@ -125,8 +125,9 @@ in all of `src/convy/`.
   allows; a bench makes new ones for every run). They are plain classes, not frozen `Struct`s, and
   their state never leaves them.
 - **The report's page data uses `None`** (`null` in JSON) for numbers nobody reported: it is data for
-  the browser, not part of the domain; and so do the tables' rows: a value the agent or judge did
-  not give is `None`, a missing value for pandas, polars and CSV.
+  the browser, not part of the domain; and so do the tables' rows: a value the agent or the judge
+  did not give, or one that does not apply to the row, is `None`, a missing value for pandas,
+  polars and CSV.
 
 ## The report
 

@@ -790,6 +790,16 @@ def test_export_of_a_folder_skips_and_names_a_broken_run_inside_it(project: Path
     assert capsys.readouterr().err == f"skipped unreadable lines or a whole run: {broken}\n"
 
 
+def test_export_of_a_folder_of_only_broken_runs_names_them(project: Path, capsys):
+    first, second = two_runs(project)
+    for run in (first, second):
+        (project / "results" / "echo" / run / "run.json").write_text("{")
+    capsys.readouterr()
+    assert convy("export", "results") == 2
+    broken = f"{Path('results', 'echo', first)}, {Path('results', 'echo', second)}"
+    assert capsys.readouterr().err == f"error: no runs in results; cannot read {broken}\n"
+
+
 def test_export_does_not_name_a_broken_run_outside_the_folder(project: Path, capsys):
     first, second = two_runs(project)
     (project / "results" / "echo" / first / "run.json").write_text("{")
