@@ -33,9 +33,10 @@ UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
 class OlderLine(Struct, frozen=True):
-    """An attempt line of an older format, read as format 5: format 2 kept a claim's reason as a
-    string, and formats before 5 kept the agent's thinking apart from the steps of its answer.
-    Reading drops the old `thinking` field, as fields an `Outcome` does not have."""
+    """An attempt line of an older format, read as format 6: format 2 kept a claim's reason as a
+    string, formats before 5 kept the agent's thinking apart from the steps of its answer, and
+    formats 3 to 5 wrote 0 for a thinking count the agent did not give. Reading drops the old
+    `thinking` field, as fields an `Outcome` does not have."""
 
     line: bytes
 
@@ -52,9 +53,37 @@ class OlderLine(Struct, frozen=True):
     def turn(self, turn: object) -> object:
         match turn:
             case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
-                return {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+                turn = {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
+        match turn:
+            case {"answer": dict() as answer}:
+                return {**turn, "answer": self.answer(answer)}
             case _:
                 return turn
+
+    def answer(self, answer: dict) -> dict:
+        """The answer, with its usage and its calls' usage read as format 6."""
+        match answer:
+            case {"usage": usage}:
+                answer = {**answer, "usage": self.usage(usage)}
+        match answer:
+            case {"steps": list() as steps}:
+                answer = {**answer, "steps": [self.step(step) for step in steps]}
+        return answer
+
+    def step(self, step: object) -> object:
+        match step:
+            case {"type": "call", "usage": usage}:
+                return {**step, "usage": self.usage(usage)}
+            case _:
+                return step
+
+    def usage(self, usage: object) -> object:
+        """0 was the default thinking count, not one the agent gave."""
+        match usage:
+            case {"type": "usage", "thinking": 0}:
+                return {**usage, "thinking": {"type": "not_reported"}}
+            case _:
+                return usage
 
     def claim(self, claim: object) -> object:
         match claim:
@@ -88,7 +117,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4, 5] = 5
+    format: Literal[2, 3, 4, 5, 6] = 6
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -147,7 +176,7 @@ class Runs(Struct, frozen=True):
             try:
                 outcome = (
                     msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 5
+                    if file.format >= 6
                     else OlderLine(line).outcome()
                 )
             except UNREADABLE:  # a line cut short by a crash, say
@@ -629,7 +658,7 @@ class Summary(Struct, frozen=True):
                     spent,
                     produced,
                     spent + produced,
-                    thought,
+                    self.count(thought),
                 )
             case NoUsage():
                 tokens = (None, None, None, None)
@@ -645,6 +674,14 @@ class Summary(Struct, frozen=True):
         return TurnView(
             turn.message.text, turn.answer.text, turn.seconds, *tokens, steps, thoughts, calls
         )
+
+    def count(self, count: int | NotReported) -> int | None:
+        """A part of an answer's tokens; None when the agent did not report it."""
+        match count:
+            case int():
+                return count
+            case NotReported():
+                return None
 
     def line(self, steps: tuple[Thought | Call, ...]) -> tuple[float, float]:
         """Where an answer's calls start and how long they last, from the earliest start to the

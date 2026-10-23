@@ -66,9 +66,9 @@ function attemptTiles(attempt) {
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : `${count(attempt.input)} in · ${count(attempt.output)} out${thought(attempt.thinking_tokens)}`)));
 }
-// The part of the output spent on thinking, or nothing when there was none.
+// The part of the output spent on thinking: a reported 0 too, nothing when it was not reported.
 function thought(tokens) {
-  return tokens ? `, ${count(tokens)} thinking` : "";
+  return tokens == null ? "" : `, ${count(tokens)} thinking` : "";
 }
 // How sure the judge was of a decision, at the run's trust; nothing when the run's judge never says.
 function sure(claim, run) {

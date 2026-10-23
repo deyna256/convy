@@ -225,6 +225,8 @@ spent on thinking. OpenAI and Anthropic report it that way, so pass their number
 provider counts thinking apart from the answer, as Gemini does, add the two: `output` is the
 answer's tokens plus the thinking's.
 
+If you do not give `thinking`, the report says nothing of it; `thinking=0` says none was spent.
+
 ```python
 return Answer(text, Usage(input=120, output=300, thinking=200), steps=(Thought(thought),))
 ```

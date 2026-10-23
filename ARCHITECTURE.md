@@ -102,6 +102,7 @@ in all of `src/convy/`.
    `Runs.broken()`. Only `cli.py` prints and picks the exit code.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
     `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
+    `int | NotReported` (a count of `Usage`),
     `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
     and records such as `Outcome`. Data from outside is read into such types where it enters
     (rule 7), so this holds for it too.
