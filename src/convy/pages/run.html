@@ -47,7 +47,7 @@ function tiles() {
     tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
     tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
     tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
-    tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : `${count(M.input)} in · ${count(M.output)} out${thought(M.thinking_tokens)}`),
+    tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : tokenParts(M)),
     tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`));
 }
 
@@ -58,7 +58,7 @@ function table() {
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {className: "n metric"}, secs(s.seconds), el("small", {}, s.slowest == null ? "" : `slowest ${secs(s.slowest)}`)),
-      el("td", {className: "n metric"}, count(s.tokens), el("small", {}, s.tokens == null ? "not reported" : `${count(s.input)} in · ${count(s.output)} out`)));
+      el("td", {className: "n metric"}, count(s.tokens), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });

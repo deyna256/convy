@@ -439,6 +439,50 @@ def test_a_turn_shows_its_thinking_tokens_when_reported(tmp_path):
     assert page.metrics.thinking_tokens == 20
 
 
+def test_cache_tokens_add_up_and_their_share_skips_turns_without_them(tmp_path):
+    turns = (
+        Turn(Message("hi"), Answer("a", Usage(100, 10, cache_read=80, cache_write=20)), 1.0),
+        Turn(Message("and?"), Answer("b", Usage(50, 10, cache_read=0)), 1.0),  # none hit
+        Turn(Message("so?"), Answer("c", Usage(1000, 10)), 1.0),  # left out of the share
+    )
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
+    page = Report(only(tmp_path)).page()
+    (attempt,) = page.scenarios[0].attempts
+    assert [(t.cache_read, t.cache_write) for t in attempt.turns] == [
+        (80, 20),
+        (0, None),
+        (None, None),
+    ]
+    assert (attempt.cache_read, attempt.cache_write) == (80, 20)
+    assert (page.scenarios[0].cache_read, page.scenarios[0].cache_write) == (80, 20)
+    assert (page.metrics.cache_read, page.metrics.cache_write) == (80, 20)
+    assert page.metrics.cached == 80 / 150  # the code computes the same expression
+
+
+def test_the_cache_share_weighs_every_attempt_by_its_input(tmp_path):
+    def played(attempt: int, usage: Usage) -> Outcome:
+        turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+        return Outcome("a", attempt, Transcript((turn,)), PASSED, "max_turns")
+
+    first, second = (
+        played(1, Usage(100, 10, cache_read=90)),
+        played(2, Usage(300, 10, cache_read=0)),
+    )
+    journal(tmp_path, "bot", "1", 1, first, second, k=2)
+    assert Report(only(tmp_path)).page().metrics.cached == 90 / 400  # not the mean of 90% and 0%
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [Usage(10, 5), Usage(0, 5, cache_read=0), NoUsage()],
+    ids=["no cache", "no input", "no usage"],
+)
+def test_the_cache_share_is_none_without_cache_counts_or_input(tmp_path, usage):
+    turn = Turn(Message("hi"), Answer("a", usage), 1.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    assert Report(only(tmp_path)).page().metrics.cached is None
+
+
 AGENT_CLOCK = datetime(2001, 1, 1, tzinfo=UTC)  # far from the time convy measures
 
 
@@ -778,6 +822,28 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
     assert (deltas.tokens.value, deltas.tokens.tone) == (30, "bad")  # mean in + out per attempt
     assert (deltas.seconds.value, deltas.seconds.tone) == (0, "same")
     assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
+
+
+def cached(directory: Path, read: int | None, day: int) -> RunJournal:
+    """A run on `day` whose one answer read `read` of its 100 input tokens from the cache."""
+    usage = Usage(100, 10) if read is None else Usage(100, 10, cache_read=read)
+    turn = Turn(Message("hi"), Answer("hello", usage), 1.0)
+    outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
+    return journal(directory, "bot", "1", 1, outcome, started=at(day))
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "change"),
+    [(80, 20, (-60, "bad")), (20, 80, (60, "good")), (None, 80, (None, "none"))],
+    ids=["fell", "rose", "not reported before"],
+)
+def test_a_comparison_shows_how_the_share_of_cached_input_changed(
+    tmp_path, before: int | None, after: int, change: tuple
+):
+    cached(tmp_path, before, 5)
+    cached(tmp_path, after, 6)
+    delta = Comparison(*both(tmp_path)).page().deltas.cached
+    assert (delta.value, delta.tone) == change
 
 
 def test_a_comparison_names_the_models_that_differ(tmp_path):

@@ -10,6 +10,7 @@
 /*include window.css*/
 .delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
+.tile .s.good { color: var(--pass); } .tile .s.bad { color: var(--fail); }
 .tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
 .group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
 .arrow { color: var(--muted); padding: 0 6px; }
@@ -63,14 +64,23 @@ function change(delta, unit) {
   return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
 }
 
+// The share of input read from the cache, before and after, coloured by its change; no line when
+// neither run reports it.
+function cached() {
+  if (WAS.cached == null && NOW.cached == null) return null;
+  if (WAS.cached == null || NOW.cached == null) return el("span", {className: "s"}, "from cache: not reported");
+  const title = D.cached.value ? percentagePoints(Math.abs(D.cached.value)) : null;
+  return el("span", {className: `s ${D.cached.tone}`, title}, `from cache ${pct(WAS.cached)} → ${pct(NOW.cached)}`);
+}
+
 function tiles() {
-  const tile = (label, value, was, delta, hero = false) => el("div", {className: hero ? "tile hero" : "tile"},
-    el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta);
+  const tile = (label, value, was, delta, {hero = false, extra = null} = {}) => el("div", {className: hero ? "tile hero" : "tile"},
+    el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta, extra);
   return el("div", {className: "tiles"},
-    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), true),
+    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
     tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
     tile("Time per answer", secs(NOW.seconds), `was ${secs(WAS.seconds)}`, change(D.seconds, secs)),
-    tile("Tokens per attempt", count(NOW.tokens), `was ${count(WAS.tokens)}`, change(D.tokens, count)),
+    tile("Tokens per attempt", count(NOW.tokens), `was ${count(WAS.tokens)}`, change(D.tokens, count), {extra: cached()}),
     tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v))));
 }
 

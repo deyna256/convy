@@ -13,7 +13,9 @@ Five tiles sum up the run:
 - **Stable scenarios**: those that passed every attempt.
 - **Time per answer**: the mean, and the slowest. Only the agent's own time counts, not the
   simulated user's or the judge's.
-- **Tokens per attempt**: in and out, as the agent reports them.
+- **Tokens per attempt**: in and out, as the agent reports them, with the parts it reports: how
+  many of the input it read from or wrote to the model's cache, and how many of the output went to
+  thinking. A part the agent does not report is left out; a 0 it reports is shown.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
 
 ## Scenarios
@@ -33,8 +35,9 @@ many attempts it held in and how many of its decisions were not trusted. A grade
 how often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you
 see the judge's decision on every claim with its grade, if it has one, and its reason, and the
 dialogue with the time and tokens of each answer; **Total answer time** adds them up for the
-attempt. An answer's tokens say how many went to thinking, such as `300 out, 200 thinking`: they are
-part of the output, not added to it.
+attempt. An answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`:
+cached tokens are part of the input, and thinking part of the output, not added to them. A part
+the agent does not report is left out; a 0 it reports is shown.
 
 An answer that gives its [steps](agents.md#steps) has them folded under "Steps": its thoughts as
 text, and its calls on a time line of their own, each with its time, its tokens and what it sent
@@ -57,6 +60,11 @@ uv run convy compare e46f 4693       # before, then after
 The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old value and the change.
 Pass-rate changes are in **percentage points**, not relative percent.
 [See a real one.](https://deyna256.github.io/convy/compare.html)
+
+Under Tokens per attempt, the share of input read from the cache shows how it changed, such as
+`from cache 83% → 20%`: red when it fell, green when it rose, the change in percentage points when
+you point at it. It says `not reported` when only one of the runs reports it, and is not there
+when neither does.
 
 - Green means better, red means worse.
 - Grey with `~` means the pass rate's change may be chance. convy looks at the scenarios both
