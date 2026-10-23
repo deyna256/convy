@@ -32,8 +32,8 @@ Each scenario gets a row and a status:
 - **Failing**: no counted attempt passed.
 - **Flaky**: some counted attempts passed.
 - **Passing**: every counted attempt passed.
-- **No verdict**: no attempt was counted, because one of convy's models failed or the judge was not
-  sure enough.
+- **No verdict**: no attempt was counted: none was played yet, or each had no verdict or a verdict
+  not decided at the run's trust.
 
 The row also shows time per answer and tokens. A filter such as `refund-*` narrows the list.
 

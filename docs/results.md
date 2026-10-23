@@ -29,8 +29,8 @@ run = runs.run("7ad8")
 ```
 
 `Runs` converts older formats as it reads them. What an older run did not record comes as a
-default: the limits per minute are 0 before format 4, `trust` is 0, and the files' digests and
-`convy` may be empty.
+default: the limits per minute are 0 in runs made before convy had them, `trust` is 0, and the
+files' digests and `convy` may be empty.
 
 ## Tables
 
@@ -104,8 +104,8 @@ A target is a folder inside `results/`, or else a run. It writes 14 files into `
 `runs.csv` and `runs.jsonl`, and so on for each table, replacing the files of an earlier export.
 
 JSON Lines is the complete form: one JSON object a line, `null` for `None`, `""` kept. CSV is for
-spreadsheets: an empty cell for `None`, text quoted, a list as JSON text, times in ISO form,
-`true` and `false`. Reading it back:
+spreadsheets: an empty cell for `None`, every other value quoted, a list as JSON text, times in
+ISO form, `true` and `false`. Reading it back:
 
 - pandas and DuckDB read a quoted `""` as missing, the same as `None`; polars keeps it apart.
 - pandas keeps times as text; so does polars, unless you give `try_parse_dates=True`, which reads
@@ -136,7 +136,7 @@ runs = pd.DataFrame(tables.runs().records())
 attempts = pd.DataFrame(tables.attempts().records())
 decisions = pd.DataFrame(tables.decisions().records())
 
-# A decision is trusted at its run's trust; one without a confidence is trusted.
+# Counted and passed as the pass rate in report.md says.
 decisions = decisions.merge(runs[["run", "trust"]], on="run")
 decisions["trusted"] = decisions["confidence"].fillna(1.0) >= decisions["trust"]
 decisions["trusted_fail"] = decisions["trusted"] & ~decisions["passed"]
@@ -144,10 +144,7 @@ keys = ["run", "scenario", "attempt"]
 verdicts = decisions.groupby(keys).agg(
     passed=("passed", "all"), trusted=("trusted", "all"), trusted_fail=("trusted_fail", "any")
 )
-# A verdict is decided when every decision is trusted, or a trusted decision failed.
 verdicts["decided"] = verdicts["trusted"] | verdicts["trusted_fail"]
-
-# A failed attempt counts and did not pass; one with no verdict is left out.
 attempts = attempts.join(verdicts, on=keys)
 failed = attempts["verdict"] == "failed"
 attempts["counted"] = failed | attempts["decided"].eq(True)

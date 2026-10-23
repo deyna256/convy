@@ -635,3 +635,52 @@ def test_the_rules_in_the_docs_give_the_report_s_numbers():
         == [(c.held, c.judged) for c in scenario.claims]
         == [(3, 3), (2, 3)]
     )
+
+
+def grades_run() -> Run:
+    def played(scenario: str, attempt: int, *claims: Claim) -> Outcome:
+        return Outcome(scenario, attempt, Transcript(()), Verdict(claims), "user_stop")
+
+    spec = msgspec.structs.replace(
+        SPEC,
+        k=2,
+        trust=0.0,
+        scenarios=(Scenario("a", 2, "Ask.", ("one",)), Scenario("b", 2, "Ask.", (GRADED,))),
+    )
+    outcomes = (
+        played("a", 1, Claim(True)),
+        played("a", 2, Claim(True)),
+        played("b", 1, Claim(True, grade=Grade("full"))),
+        played("b", 2, Claim(False, grade=Grade("none"))),
+    )
+    return Run(Path("bot/grades"), spec, Finished(DAY), outcomes)
+
+
+def test_the_rules_in_the_docs_give_stable_scenarios_and_typical_grades():
+    run = grades_run()
+    tables = Tables((run,))
+    attempts, decisions = tables.attempts().rows, tables.decisions().rows
+    (graded,) = (c for c in tables.claims().rows if c.grades is not None)
+    stable = 0
+    for scenario in run.spec.scenarios:
+        played = [a for a in attempts if a.scenario == scenario.id]
+        passed = [
+            all(d.passed for d in decisions if d.scenario == a.scenario and d.attempt == a.attempt)
+            for a in played
+        ]  # trust is 0: every attempt is counted
+        stable += len(played) == run.spec.k and all(passed)
+    levels = list(graded.grades or ())
+    trusted = sorted(
+        (
+            d.grade
+            for d in decisions
+            if d.scenario == graded.scenario and d.claim == graded.claim and d.grade
+        ),
+        key=levels.index,
+    )
+    typical = trusted[(len(trusted) - 1) // 2]  # the middle; the worse of two
+
+    page = Report(run).page()
+    b = next(s for s in page.scenarios if s.id == "b")
+    assert stable == page.metrics.stable == 1
+    assert typical == b.claims[0].typical == "none"

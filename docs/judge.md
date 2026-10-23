@@ -30,7 +30,7 @@ uv run convy run support_bot --trust 0.8
 
 A decision below 0.8 is not trusted. An attempt that is not decided is neither a pass nor a fail:
 it is left out of the pass rate, and the report says how many were left out;
-[the pass rate](report.md#tiles) gives the rule. A decision with no number is trusted.
+[the pass rate](report.md#tiles) gives the rule.
 
 `trust` is saved with the run, so its report and `convy resume` use it. Without `--trust` every
 decision counts.
