@@ -214,7 +214,7 @@ type Stat = Literal["p50", "p90", "max", "mean"]  # what a chart shows of a spre
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
-SLIGHT = 5  # percent: a smaller change of a mean time or token count is drawn as the same
+SLIGHT = 5  # percent: a smaller change of a time or token statistic is drawn as the same
 TONES: dict[Group, Tone] = {"worse": "bad", "better": "good", "same": "same", "apart": "none"}
 STATS: tuple[Stat, ...] = ("p50", "p90", "max", "mean")  # the switch's order
 
@@ -443,8 +443,8 @@ NO_CHANGE = Delta(None, "none")
 class Deltas(Struct, frozen=True):
     rate: Delta  # percentage points
     stable: Delta
-    seconds: Delta
-    tokens: Delta
+    seconds: PerStat[Delta]  # each statistic's change in seconds; Max's is noise
+    tokens: PerStat[Delta]  # and in tokens
     cached: Delta  # percentage points
     errors: Delta
 
@@ -467,8 +467,8 @@ class CompareRow(Struct, frozen=True):
     after: ScenarioView | None
     claims: tuple[ClaimChange, ...]
     held: Delta  # the change in passed attempts, in the tone of the row's group
-    seconds: Delta  # the change of the mean time per answer, a percent
-    tokens: Delta  # the change of the mean tokens per attempt, a percent
+    seconds: PerStat[Delta]  # the change of each statistic of the time per answer, a percent
+    tokens: PerStat[Delta]  # and of the tokens per attempt
 
 
 class ComparePage(Struct, frozen=True):
@@ -479,8 +479,8 @@ class ComparePage(Struct, frozen=True):
     deltas: Deltas
     differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
     rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
-    by_seconds: tuple[str, ...]  # compared scenarios with both times, the largest rise first
-    by_tokens: tuple[str, ...]
+    by_seconds: PerStat[tuple[str, ...]]  # compared ids with a change, the largest rise first
+    by_tokens: PerStat[tuple[str, ...]]
 
 
 class IndexRow(Struct, frozen=True):
@@ -935,12 +935,24 @@ class Comparison(Struct, frozen=True):
             deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
             differences=self.differences(),
             rows=tuple(rows),
-            by_seconds=Ranking(
-                tuple((r.id, r.seconds.value) for r in compared if r.seconds.value is not None)
-            ).ids(),
-            by_tokens=Ranking(
-                tuple((r.id, r.tokens.value) for r in compared if r.tokens.value is not None)
-            ).ids(),
+            by_seconds=self.ranked((r.id, r.seconds) for r in compared),
+            by_tokens=self.ranked((r.id, r.tokens) for r in compared),
+        )
+
+    def ranked(self, changes: Iterable[tuple[str, PerStat[Delta]]]) -> PerStat[tuple[str, ...]]:
+        """The ids with a change of each statistic, the largest rise first, then by id."""
+        pairs = tuple(changes)
+        return PerStat(
+            *(
+                Ranking(
+                    tuple(
+                        (id, change.of(stat).value)
+                        for id, change in pairs
+                        if change.of(stat).value is not None
+                    )
+                ).ids()
+                for stat in STATS
+            )
         )
 
     def html(self) -> str:
@@ -987,15 +999,16 @@ class Comparison(Struct, frozen=True):
             now,
             self.claims(was, now),
             Delta(now.held - was.held, TONES[group]),
-            self.relative(self.at(was.seconds, "mean"), self.at(now.seconds, "mean")),
-            self.relative(self.at(was.tokens, "mean"), self.at(now.tokens, "mean")),
+            self.changes(was.seconds, now.seconds),
+            self.changes(was.tokens, now.tokens),
         )
 
     def apart(
         self, id: str, why: str, was: ScenarioView | None, now: ScenarioView | None
     ) -> CompareRow:
         """A scenario not compared: why, and no change of any number."""
-        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, NO_CHANGE, NO_CHANGE)
+        none = PerStat(NO_CHANGE, NO_CHANGE, NO_CHANGE, NO_CHANGE)
+        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, none, none)
 
     def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
         changes = []
@@ -1033,8 +1046,8 @@ class Comparison(Struct, frozen=True):
         return Deltas(
             rate=rate,
             stable=self.delta(was.stable, now.stable, more_is_better=True),
-            seconds=self.mean(self.at(was.seconds, "mean"), self.at(now.seconds, "mean")),
-            tokens=self.mean(self.at(was.tokens, "mean"), self.at(now.tokens, "mean")),
+            seconds=self.units(was.seconds, now.seconds),
+            tokens=self.units(was.tokens, now.tokens),
             cached=self.points(was.cached, now.cached),
             errors=self.delta(was.errors, now.errors, more_is_better=False),
         )
@@ -1056,17 +1069,27 @@ class Comparison(Struct, frozen=True):
         shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
         return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
 
-    def mean(self, was: float | None, now: float | None) -> Delta:
-        """A tile's change of a mean in its own unit, toned as the scenarios' rows are; a rise
-        from 0 is worse."""
+    def units(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
+        """A tile's change of each statistic in its own unit. Max's is noise, as one answer moves
+        it, unless it did not change."""
+        p50, p90, top, mean = (self.unit(self.at(was, s), self.at(now, s)) for s in STATS)
+        return PerStat(p50, p90, Delta(top.value, "noise") if top.value else top, mean)
+
+    def unit(self, was: float | None, now: float | None) -> Delta:
+        """A tile's change of a statistic in its own unit, toned as the scenarios' rows are; a
+        rise from 0 is worse."""
         if was is None or now is None:
             return NO_CHANGE
         relative = self.relative(was, now)
         return Delta(now - was, "bad" if relative.value is None else relative.tone)
 
+    def changes(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
+        """A row's change of each statistic, a percent of the old one."""
+        return PerStat(*(self.relative(self.at(was, s), self.at(now, s)) for s in STATS))
+
     def relative(self, was: float | None, now: float | None) -> Delta:
-        """The change of a mean as a percent of the old one; none when either is missing, or the
-        old one is 0 and the new one is not."""
+        """The change of a statistic as a percent of the old one; none when either is missing, or
+        the old one is 0 and the new one is not."""
         if was is None or now is None or (was == 0 and now != 0):
             return NO_CHANGE
         if was == now == 0:

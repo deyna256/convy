@@ -26,9 +26,11 @@ from convy.dialog import (
     Verdict,
 )
 from convy.report import (
+    NO_CHANGE,
     STATS,
     CallView,
     Comparison,
+    Delta,
     Evidence,
     Index,
     PerStat,
@@ -847,12 +849,16 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
             k=1, started=at(6))  # fmt: skip
     deltas = Comparison(*both(tmp_path)).page().deltas
     assert (deltas.stable.value, deltas.stable.tone) == (-1, "bad")
-    assert (deltas.tokens.value, deltas.tokens.tone) == (30, "bad")  # mean in + out per attempt
-    assert (deltas.seconds.value, deltas.seconds.tone) == (0, "same")
+    # tokens per attempt 20 and 20, then 80 and 20: p50 20 to 50, p90 20 to 74 (0.9 of the way
+    # from 20 to 80), max 20 to 80, mean 20 to 50; Max moves with one attempt
+    assert deltas.tokens == PerStat(
+        Delta(30, "bad"), Delta(54, "bad"), Delta(60, "noise"), Delta(30, "bad")
+    )
+    assert deltas.seconds == alike(Delta(0, "same"))  # an unchanged Max is the same
     assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
 
 
-def test_a_scenario_changes_by_a_percent_of_its_old_mean(tmp_path):
+def test_a_scenario_changes_by_a_percent_of_each_old_statistic(tmp_path):
     before = (answers(s, 2.0, tokens=50) for s in "abc")
     journal(tmp_path, "bot", "1", 3, *before, started=at(5))
     after = (
@@ -861,16 +867,16 @@ def test_a_scenario_changes_by_a_percent_of_its_old_mean(tmp_path):
         answers("c", 2.0, tokens=50),
     )
     journal(tmp_path, "bot", "1", 3, *after, started=at(6))
-    rows = Comparison(*both(tmp_path)).page().rows
-    assert [(r.id, r.seconds.value, r.seconds.tone) for r in rows] == [
-        ("a", 50, "bad"),
-        ("b", -50, "good"),
-        ("c", 0, "same"),
+    rows = Comparison(*both(tmp_path)).page().rows  # one answer each: every statistic alike
+    assert [(r.id, r.seconds) for r in rows] == [
+        ("a", alike(Delta(50, "bad"))),
+        ("b", alike(Delta(-50, "good"))),
+        ("c", alike(Delta(0, "same"))),
     ]
-    assert [(r.tokens.value, r.tokens.tone) for r in rows] == [
-        (4, "same"),
-        (20, "bad"),
-        (0, "same"),
+    assert [r.tokens for r in rows] == [
+        alike(Delta(4, "same")),
+        alike(Delta(20, "bad")),
+        alike(Delta(0, "same")),
     ]
 
 
@@ -884,8 +890,8 @@ def test_a_change_under_5_percent_as_the_page_rounds_it_is_the_same(tmp_path, to
     journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
     page = Comparison(*both(tmp_path)).page()
     (row,) = page.rows
-    assert (row.tokens.tone, page.deltas.tokens.tone) == (tone, tone)
-    assert page.deltas.tokens.value == 2 * tokens - 1000  # the tile keeps its unit
+    assert (row.tokens.p50.tone, page.deltas.tokens.p50.tone) == (tone, tone)
+    assert page.deltas.tokens.p50.value == 2 * tokens - 1000  # the tile keeps its unit
 
 
 @pytest.mark.parametrize(("tokens", "row", "tile"), [(0, (0, "same"), (0, "same")),
@@ -894,8 +900,8 @@ def test_a_change_from_0_tokens_has_no_percent(tmp_path, tokens, row, tile):
     journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=0), started=at(5))
     journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
     page = Comparison(*both(tmp_path)).page()
-    assert (page.rows[0].tokens.value, page.rows[0].tokens.tone) == row
-    assert (page.deltas.tokens.value, page.deltas.tokens.tone) == tile
+    assert (page.rows[0].tokens.p50.value, page.rows[0].tokens.p50.tone) == row
+    assert (page.deltas.tokens.p50.value, page.deltas.tokens.p50.tone) == tile
 
 
 def test_the_change_panels_hold_compared_scenarios_by_their_rise_then_id(tmp_path):
@@ -904,7 +910,42 @@ def test_the_change_panels_hold_compared_scenarios_by_their_rise_then_id(tmp_pat
     after = (answers("a", 3.0, tokens=5), answers("b", 3.0), answers("c", 1.0), answers("d", 9.0))
     journal(tmp_path, "bot", "1", 4, *after, started=at(6))
     page = Comparison(*both(tmp_path)).page()
-    assert (page.by_seconds, page.by_tokens) == (("a", "b", "c"), ("b", "c"))
+    assert (page.by_seconds, page.by_tokens) == (alike(("a", "b", "c")), alike(("b", "c")))
+
+
+def test_each_statistic_changes_and_orders_the_scenarios_its_own_way(tmp_path):
+    journal(tmp_path, "bot", "1", 2, answers("a", 2, 2, 2), answers("b", 2, 2, 2), started=at(5))
+    journal(tmp_path, "bot", "1", 2, answers("a", 3, 3, 3), answers("b", 2, 2, 4), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    a, b = page.rows
+    assert a.seconds == alike(Delta(50, "bad"))
+    # b: 2, 2, 4 has p50 2, p90 at 1.8, 0.8 of the way from 2 to 4, 3.6, max 4, mean 8 / 3
+    assert b.seconds == PerStat(
+        Delta(0, "same"), Delta(80, "bad"), Delta(100, "bad"), Delta(33.333333, "bad")
+    )
+    assert page.by_seconds == PerStat(("a", "b"), ("b", "a"), ("b", "a"), ("a", "b"))
+    # the after run's answers 2, 2, 3, 3, 3, 4 against six of 2: p50 at 2.5, between two 3s; max 4
+    assert (page.deltas.seconds.p50, page.deltas.seconds.max) == (
+        Delta(1, "bad"),
+        Delta(2, "noise"),
+    )
+
+
+def test_a_statistic_that_was_0_has_no_percent_while_the_others_do(tmp_path):
+    before = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 0), (3, 50)))
+    journal(tmp_path, "bot", "1", 1, *before, k=3, started=at(5))
+    after = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 5), (3, 60)))
+    journal(tmp_path, "bot", "1", 1, *after, k=3, started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    # tokens 0, 0, 100: p50 0, p90 at 1.8, 0.8 of the way from 0 to 100, 80, max 100, mean
+    # 100 / 3; then 0, 10, 120: p50 10, p90 10 + 0.8 * 110 = 98, max 120, mean 130 / 3
+    assert page.rows[0].tokens == PerStat(
+        NO_CHANGE, Delta(22.5, "bad"), Delta(20, "bad"), Delta(30, "bad")
+    )
+    assert page.deltas.tokens == PerStat(
+        Delta(10, "bad"), Delta(18, "bad"), Delta(20, "noise"), Delta(10, "bad")
+    )
+    assert page.by_tokens == PerStat((), ("a",), ("a",), ("a",))
 
 
 def test_a_row_counts_the_change_of_passed_attempts_in_its_groups_tone(tmp_path):
@@ -920,6 +961,7 @@ def test_a_row_counts_the_change_of_passed_attempts_in_its_groups_tone(tmp_path)
         ("a", "better", 0, "good"),  # 2 of 4 to 2 of 2: as many passed, a higher rate
         ("c", "apart", None, "none"),
     ]
+    assert (rows[2].seconds, rows[2].tokens) == (alike(NO_CHANGE), alike(NO_CHANGE))
 
 
 def cached(directory: Path, read: int | None, day: int) -> RunJournal:
