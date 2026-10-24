@@ -24,7 +24,10 @@
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
 .key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .key.line { width: 2px; background: var(--muted); }
-.group th, .group td { white-space: nowrap; }
+.group th { white-space: normal; }
+.group td { white-space: nowrap; }
+.group td.setup { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; }
+.group th, .group td { padding-left: 9px; padding-right: 9px; }
 td.changed { color: var(--focus); } td.changed::before { content: "● "; font-size: 9px; vertical-align: 2px; }
 .group .more { display: block; margin: 0; padding: 10px 16px; border-top: 1px solid var(--rule); }
 .cmp { position: sticky; bottom: 12px; margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--side); border: 1px solid var(--focus); border-radius: 10px; }
@@ -66,28 +69,30 @@ function strip(group) {
   const rows = group.rows.slice(0, BARS);
   const parts = rows.flatMap((row, i) => {
     const m = row.metrics, rate = m.rate;
-    const bar = el("span", {className: i ? "bar" : "bar now", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${m.passed} of ${m.judged}` : "no verdict"}`},
+    const bar = el("span", {className: i ? "bar" : "bar now", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${m.passed} of ${m.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
       el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${rate == null ? 3 : Math.max(3, rate * 30)}px`}));
     return i && rows[i - 1].changed.length ? [el("span", {className: "brk"}), bar] : [bar];
   });
   const shown = group.rows.length > BARS ? el("span", {}, `newest ${BARS} of ${group.rows.length}`) : null;
-  return el("div", {className: "runs", "aria-hidden": "true"}, el("div", {className: "strip"}, parts),
+  return el("div", {className: "runs", tabindex: "-1", "aria-hidden": "true"}, el("div", {className: "strip"}, parts),
     el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
       el("span", {}, el("i", {className: "key line"}), "setup changed"), shown));
 }
 
 // A setup cell: marked when it differs from the agent's previous run, which the next row holds.
-const SETUP = {user: r => r.run.user, judge: r => r.run.judge, convy: r => r.run.convy, trust: r => r.run.trust ? String(r.run.trust) : "—"};
+const SETUP = {trust: r => r.run.trust ? String(r.run.trust) : "—"};
+const setupOf = (row, field) => field === "trust" ? SETUP.trust(row) : String(row.run[field]);
 function cell(row, older, field, text) {
-  if (!row.changed.includes(field)) return el("td", {className: "mono"}, text);
-  const was = field === "scenarios" ? [row.added && `+${row.added}`, row.dropped && `−${row.dropped}`].filter(Boolean).join(" ") + " scenarios" : `was ${SETUP[field](older)}`;
-  return el("td", {className: "mono changed", title: was}, text);
+  const base = ["user", "judge", "convy"].includes(field) ? "mono setup" : "mono";
+  if (!row.changed.includes(field)) return el("td", {className: base}, text);
+  const was = field === "scenarios" ? [row.added && `+${row.added}`, row.dropped && `−${row.dropped}`].filter(Boolean).join(" ") + " scenarios" : `was ${setupOf(older, field)}`;
+  return el("td", {className: `${base} changed`, title: was}, text);
 }
 
 function line(group, row, older) {
   const run = row.run, m = row.metrics, state = STATUS[run.status];
   const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`});
-  box.addEventListener("change", () => pick(row, box.checked));
+  box.addEventListener("change", () => pick(row, box.checked, box.getAttribute("aria-label")));
   return el("tr", {},
     el("td", {}, box),
     el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short)), el("span", {className: "sub"}, when(run.started), state && ` · ${state}`)),
@@ -103,22 +108,22 @@ function section(group) {
   const all = opened.has(group.agent), older = group.rows.length - RUNS;
   const rows = all ? group.rows : group.rows.slice(0, RUNS);
   const more = older > 0 && el("button", {className: "more", type: "button"}, all ? "Show fewer runs" : `Show ${plural(older, "older run")}`);
-  if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(); });
+  if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(() => document.querySelector(`section[aria-label="${CSS.escape(group.agent)}"] .more`)); });
   const heads = ["", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", "Time / answer", "Tokens / attempt", "Errors"].filter(h => h !== false);
   return el("section", {className: "panel group", "aria-label": group.agent},
     el("div", {className: "ghead"}, el("div", {}, el("h2", {}, group.agent), el("span", {className: "sub"}, `${plural(group.rows.length, "run")} · last ${when(group.rows[0].run.started)}`)), strip(group)),
     el("div", {className: "scroll"}, el("table", {},
-      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h) ? "n" : null}, h)))),
+      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h) ? "n" : null, "aria-label": h || "Compare"}, h)))),
       el("tbody", {}, rows.map((row, i) => line(group, row, group.rows[i + 1]))))),
     more);
 }
 
 // Two ticked runs give the command that compares them, the older first; a third replaces the first.
-function pick(row, on) {
+function pick(row, on, label) {
   picked = picked.filter(r => r !== row);
   if (on) picked.push(row);
   if (picked.length > 2) picked.shift();
-  draw();
+  draw(() => document.querySelector(`input[aria-label="${CSS.escape(label)}"]`));
 }
 function compareBar() {
   const bar = document.getElementById("compare");
@@ -128,15 +133,20 @@ function compareBar() {
   const code = el("code", {}, command);
   const copy = el("button", {className: "theme", type: "button"}, "Copy");
   copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(command); copy.textContent = "Copied"; }
-    catch { getSelection().selectAllChildren(code); }  // no clipboard here: the command is selected to copy by hand
+    try { await navigator.clipboard.writeText(command); copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 2000); }
+    catch { getSelection().selectAllChildren(code); copy.textContent = "Select and copy"; }  // no clipboard here: the command is selected to copy by hand
   });
   bar.replaceChildren(el("span", {}, "Compare them:"), code, copy);
 }
 
-function draw() {
-  document.getElementById("groups").replaceChildren(...(DATA.agents.length ? DATA.agents.map(section) : [el("p", {className: "empty"}, "Nothing to list.")]));
+// Redraws everything, then puts back the sideways scroll and the focus (find() gives the element to focus).
+function draw(find) {
+  const groups = document.getElementById("groups");
+  const left = [...groups.querySelectorAll(".scroll")].map(div => div.scrollLeft);
+  groups.replaceChildren(...(DATA.agents.length ? DATA.agents.map(section) : [el("p", {className: "empty"}, "Nothing to list.")]));
+  groups.querySelectorAll(".scroll").forEach((div, i) => { div.scrollLeft = left[i] || 0; });
   compareBar();
+  if (find) find()?.focus();
 }
 
 document.getElementById("head").replaceChildren(header());
