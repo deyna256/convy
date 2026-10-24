@@ -89,8 +89,8 @@ function tiles() {
   return el("div", {className: "tiles"},
     tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
     tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
-    tile("Time per answer", secs(NOW.seconds), `was ${secs(WAS.seconds)}`, change(D.seconds, secs)),
-    tile("Tokens per attempt", count(NOW.tokens), `was ${count(WAS.tokens)}`, change(D.tokens, count), {extra: cached()}),
+    tile("Time per answer", secs(NOW.seconds?.mean), `was ${secs(WAS.seconds?.mean)}`, change(D.seconds, secs)),
+    tile("Tokens per attempt", count(NOW.tokens?.mean), `was ${count(WAS.tokens?.mean)}`, change(D.tokens, count), {extra: cached()}),
     tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v))));
 }
 
@@ -135,8 +135,8 @@ function table() {
             r.after ? squares(attemptMarks(r.after.attempts), "After", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
             r.held.value != null && el("span", {className: `delta ${r.held.tone}`}, passedChange(r.held.value))),
           r.why && el("div", {className: "muted", style: "font-size:12.5px;margin-top:4px"}, r.why)),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(r.after.seconds), `was ${secs(r.before.seconds)}`)),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(count(r.after.tokens), `was ${count(r.before.tokens)}`)));
+        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(r.after.seconds?.mean), `was ${secs(r.before.seconds?.mean)}`)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(count(r.after.tokens?.mean), `was ${count(r.before.tokens?.mean)}`)));
       row.addEventListener("click", () => show(r.id, 1));
       body.push(row);
     }
@@ -189,8 +189,8 @@ function show(id, number) {
 
 function draw() {
   document.getElementById("changes").replaceChildren(
-    changes("Time per answer", DATA.by_seconds, "seconds", v => v.seconds, secs),
-    changes("Tokens per attempt", DATA.by_tokens, "tokens", v => v.tokens, count));
+    changes("Time per answer", DATA.by_seconds, "seconds", v => v.seconds?.mean, secs),
+    changes("Tokens per attempt", DATA.by_tokens, "tokens", v => v.tokens?.mean, count));
   document.getElementById("table").replaceChildren(table());
 }
 

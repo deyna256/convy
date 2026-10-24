@@ -746,11 +746,15 @@ def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
 
 
 def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
-    assert seconds_per_answer(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.seconds == 1.75
+    seconds = NUMBERS_PAGE.metrics.seconds
+    assert seconds is not None
+    assert seconds_per_answer(NUMBERS_TABLES) == seconds.mean == 1.75
 
 
 def test_the_tokens_per_attempt_are_the_mean_over_the_attempts_that_report_them():
-    assert tokens_per_attempt(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.tokens == 430 / 3
+    tokens = NUMBERS_PAGE.metrics.tokens
+    assert tokens is not None
+    assert tokens_per_attempt(NUMBERS_TABLES) == tokens.mean == 430 / 3
 
 
 def test_the_cache_share_is_over_the_answers_that_report_a_cache_read():

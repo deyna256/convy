@@ -47,8 +47,8 @@ function tiles() {
   return el("div", {className: "tiles"},
     tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
     tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
-    tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
-    tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : tokenParts(M)),
+    tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds.mean).replace(" s", ""), el("small", {}, "s")], M.seconds == null ? "no answers" : `mean · slowest ${secs(M.seconds.max)}`),
+    tile("Tokens per attempt", count(M.tokens?.mean), M.tokens == null ? "not reported" : tokenParts(M)),
     tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`));
 }
 
@@ -59,8 +59,8 @@ function table() {
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
-      el("td", {className: "n metric"}, secs(s.seconds), el("small", {}, s.slowest == null ? "" : `slowest ${secs(s.slowest)}`)),
-      el("td", {className: "n metric"}, count(s.tokens), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
+      el("td", {className: "n metric"}, secs(s.seconds?.mean), el("small", {}, s.seconds == null ? "" : `slowest ${secs(s.seconds.max)}`)),
+      el("td", {className: "n metric"}, count(s.tokens?.mean), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
@@ -122,9 +122,9 @@ function spread(title, order, low, mean, high, unit, words, missing) {
 
 function draw() {
   document.getElementById("spread").replaceChildren(
-    spread("Time per answer by scenario", DATA.by_seconds, s => s.fastest, s => s.seconds, s => s.slowest, secs,
+    spread("Time per answer by scenario", DATA.by_seconds.max, s => s.seconds?.min, s => s.seconds?.mean, s => s.seconds?.max, secs,
       ["fastest", "slowest"], s => s.attempts.length ? "no answers" : "not played"),
-    spread("Tokens per attempt by scenario", DATA.by_tokens, s => s.fewest, s => s.tokens, s => s.most, count,
+    spread("Tokens per attempt by scenario", DATA.by_tokens.max, s => s.tokens?.min, s => s.tokens?.mean, s => s.tokens?.max, count,
       ["fewest", "most"], s => s.attempts.length ? "not reported" : "not played"));
   document.getElementById("table").replaceChildren(table());
 }

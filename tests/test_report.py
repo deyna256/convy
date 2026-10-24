@@ -5,7 +5,7 @@ import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import msgspec
 import pytest
@@ -26,13 +26,18 @@ from convy.dialog import (
     Verdict,
 )
 from convy.report import (
+    STATS,
     CallView,
     Comparison,
     Evidence,
     Index,
+    PerStat,
     Report,
     Run,
     Runs,
+    Spread,
+    Stat,
+    Summary,
     Tally,
     ThoughtView,
     TurnView,
@@ -386,8 +391,12 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     metrics = page.metrics
     assert (metrics.passed, metrics.judged, metrics.rate) == (3, 4, 0.75)
     assert metrics.stable == 1  # only a passed both
-    assert (metrics.seconds, metrics.slowest) == (2.0, 2.0)
-    assert (metrics.input, metrics.output, metrics.tokens) == (30, 30, 60)
+    assert metrics.seconds == Spread(5, 2, 2, 2, 2, 2, 2)  # five answers of 2 s
+    assert (metrics.input, metrics.output) == (30, 30)
+    # tokens 20, 40, 60, 80, 100: p10 at 4 * 0.1 = 0.4 of the way from 20 to 40, 28; p50 the
+    # third, 60; p90 at 3.6, 0.6 of the way from 80 to 100, 92
+    assert metrics.tokens == Spread(5, 20, 28, 60, 92, 100, 60)
+    assert (metrics.attempts, metrics.reported) == (5, 5)
     assert (metrics.agent_errors, metrics.busy, metrics.model_errors, metrics.errors) == (
         1,
         0,
@@ -402,7 +411,8 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
         3,
     )
     a = next(s for s in page.scenarios if s.id == "a")
-    assert (a.rate, a.tokens) == (1, 30)  # 20 then 40 tokens: their mean
+    # 20 then 40 tokens: p10 0.1 of the way, 22; p50 halfway, 30; p90 0.9 of the way, 38
+    assert (a.rate, a.tokens) == (1, Spread(2, 20, 22, 30, 38, 40, 30))
     first = a.attempts[0]
     assert (first.tokens, first.slowest, first.turns[0].tokens) == (20, 2.0, 20)
 
@@ -1006,7 +1016,7 @@ def test_the_index_groups_runs_by_agent_newest_first_and_ranks_them_all(tmp_path
     ]
     older = page.agents[1].rows[1]
     assert older.report == f"bot/{first.spec.id}/report.html"
-    assert (older.metrics.passed, older.metrics.judged, older.metrics.tokens) == (1, 1, 20)
+    assert (older.metrics.passed, older.metrics.judged, older.metrics.tokens) == (1, 1, single(20))
 
 
 def test_the_index_orders_runs_by_the_instant_they_started(tmp_path):
@@ -1183,8 +1193,10 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     played = Outcome("a", 1, Transcript(turns), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 1, played)
     page = Report(only(tmp_path)).page()
-    assert page.metrics.seconds == 3.0
-    assert page.scenarios[0].seconds == 3.0
+    # 1, 2, 3, 6: p10 at 3 * 0.1 = 0.3 from 1 to 2, 1.3; p50 halfway from 2 to 3, 2.5; p90 at
+    # 2.7, 0.7 of the way from 3 to 6, 5.1; mean 12 / 4 = 3
+    assert page.metrics.seconds == Spread(4, 1, 1.3, 2.5, 5.1, 6, 3)
+    assert page.scenarios[0].seconds == page.metrics.seconds
     assert page.scenarios[0].attempts[0].seconds == 12.0
 
 
@@ -1194,14 +1206,68 @@ def answers(scenario: str, *seconds: float, attempt: int = 1, tokens: int = 10) 
     return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
 
 
-def test_a_scenario_spreads_from_its_fastest_answer_and_its_cheapest_attempt(tmp_path):
+def single(value: float) -> Spread:
+    """The spread of one value: every statistic is the value."""
+    return Spread(1, value, value, value, value, value, value)
+
+
+def alike[T](value: T) -> PerStat[T]:
+    """The same value for every statistic."""
+    return PerStat(value, value, value, value)
+
+
+@pytest.mark.parametrize(
+    ("values", "spread"),
+    [
+        ([], None),
+        ([None, None], None),
+        ([7], single(7)),
+        # two: p10 0.1 of the way from 1 to 3, 1.2; p50 halfway, 2; p90 0.9 of the way, 2.8
+        ([3.0, 1.0], Spread(2, 1, 1.2, 2, 2.8, 3, 2)),
+        # ties, even count: p10 at 3 * 0.1 = 0.3, between two 2s; p50 at 1.5, between two 2s;
+        # p90 at 2.7, 0.7 of the way from 2 to 8, 6.2; mean 14 / 4 = 3.5
+        ([2, 2, 8, 2], Spread(4, 2, 2, 2, 6.2, 8, 3.5)),
+        # odd count: p10 at 4 * 0.1 = 0.4 from 1 to 2, 1.4; p50 the third, 3; p90 at 3.6, 0.6 of
+        # the way from 4 to 5, 4.6
+        ([5, 1, None, 4, 2, 3], Spread(5, 1, 1.4, 3, 4.6, 5, 3)),
+        # eleven values: p10 at 10 * 0.1 = 1, p50 at 5, p90 at 9: the values there
+        (list(range(1, 12)), Spread(11, 1, 2, 6, 10, 11, 6)),
+    ],
+    ids=["none", "none reported", "one", "two", "ties", "odd", "on a value"],
+)
+def test_a_spread_holds_every_statistic_of_its_values(tmp_path, values, spread):
+    journal(tmp_path, "bot", "1", 1)
+    assert Summary(only(tmp_path)).spread(values) == spread
+
+
+def test_a_spread_of_ints_is_of_floats(tmp_path):
+    journal(tmp_path, "bot", "1", 1)
+    spread = Summary(only(tmp_path)).spread([2, 2, 8, 2])
+    assert msgspec.json.encode(spread) == (
+        b'{"n":4,"min":2.0,"p10":2.0,"p50":2.0,"p90":6.2,"max":8.0,"mean":3.5}'
+    )
+
+
+def test_every_statistic_the_switch_offers_is_a_field_of_a_spread_and_of_a_per_stat():
+    assert get_args(Stat.__value__) == STATS
+    assert set(STATS) <= set(Spread.__struct_fields__)
+    assert PerStat.__struct_fields__ == STATS
+    spread = Spread(4, 2, 2, 2, 6.2, 8, 3.5)
+    assert [spread.of(stat) for stat in STATS] == [2, 6.2, 8, 3.5]
+    assert [PerStat("a", "b", "c", "d").of(stat) for stat in STATS] == ["a", "b", "c", "d"]
+
+
+def test_a_scenario_spreads_its_answers_time_and_its_attempts_tokens(tmp_path):
     played = (answers("a", 3.0, 1.0, tokens=5), answers("a", 2.0, attempt=2, tokens=50))
     journal(tmp_path, "bot", "1", 1, *played, k=2)
     (view,) = Report(only(tmp_path)).page().scenarios
-    assert (view.fastest, view.slowest, view.fewest, view.most) == (1.0, 3.0, 20, 100)
+    # answers 1, 2, 3: p10 at 2 * 0.1 = 0.2 from 1 to 2, 1.2; p90 at 1.8, 0.8 from 2 to 3, 2.8
+    assert view.seconds == Spread(3, 1, 1.2, 2, 2.8, 3, 2)
+    # attempts of 2 * 2 * 5 = 20 and 2 * 50 = 100 tokens: p10 at 0.1, 28; p90 at 0.9, 92
+    assert view.tokens == Spread(2, 20, 28, 60, 92, 100, 60)
 
 
-def test_the_spread_puts_the_slowest_and_costliest_first_ties_by_id_and_the_unplayed_last(tmp_path):
+def test_the_spread_puts_the_largest_first_ties_by_id_and_the_unplayed_last(tmp_path):
     played = (
         answers("a", 1.0, tokens=30),
         answers("b", 4.0, tokens=10),
@@ -1209,7 +1275,16 @@ def test_the_spread_puts_the_slowest_and_costliest_first_ties_by_id_and_the_unpl
     )
     journal(tmp_path, "bot", "1", 4, *played)
     page = Report(only(tmp_path)).page()
-    assert (page.by_seconds, page.by_tokens) == (("b", "c", "a", "d"), ("a", "c", "b", "d"))
+    assert page.by_seconds == alike(("b", "c", "a", "d"))
+    assert page.by_tokens == alike(("a", "c", "b", "d"))
+
+
+def test_each_statistic_has_its_own_order(tmp_path):
+    journal(tmp_path, "bot", "1", 2, answers("a", 1.0, 1.0, 10.0), answers("b", 3.0, 3.0, 3.0))
+    # a: p50 1, p90 at 1.8, 0.8 of the way from 1 to 10, 8.2, max 10, mean 4; b: 3 for each
+    assert Report(only(tmp_path)).page().by_seconds == PerStat(
+        ("b", "a"), ("a", "b"), ("a", "b"), ("a", "b")
+    )
 
 
 def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
@@ -1217,11 +1292,12 @@ def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
     unreported = Outcome("a", 1, Transcript((silent,)), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 2, unreported, answers("b", 1.0))
     page = Report(only(tmp_path)).page()
-    assert [(v.id, v.fastest, v.fewest, v.most) for v in page.scenarios] == [
-        ("a", 2.0, None, None),
-        ("b", 1.0, 20, 20),
+    assert [(v.id, v.seconds, v.tokens) for v in page.scenarios] == [
+        ("a", single(2.0), None),
+        ("b", single(1.0), single(20)),
     ]
-    assert page.by_tokens == ("b", "a")
+    assert page.by_tokens == alike(("b", "a"))
+    assert (page.metrics.tokens, page.metrics.reported) == (single(20), 1)
 
 
 def test_counts_not_reported_stay_none_at_every_level(tmp_path):

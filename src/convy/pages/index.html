@@ -101,7 +101,7 @@ function line(group, row, older) {
     cell(row, older, "user", run.user), cell(row, older, "judge", run.judge), cell(row, older, "convy", run.convy),
     group.trusted && cell(row, older, "trust", setupOf(row, "trust")),
     el("td", {className: "n"}, el("strong", {}, pct(m.rate)), el("span", {className: "sub"}, `${m.passed} of ${m.judged}${notTrusted(m.cut)}`)),
-    el("td", {className: "n"}, secs(m.seconds)), el("td", {className: "n"}, count(m.tokens)), el("td", {className: "n"}, String(m.errors)));
+    el("td", {className: "n"}, secs(m.seconds?.mean)), el("td", {className: "n"}, count(m.tokens?.mean)), el("td", {className: "n"}, String(m.errors)));
 }
 
 function section(group) {
