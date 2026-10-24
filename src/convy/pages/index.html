@@ -22,6 +22,12 @@
 .fill.unfinished { background: transparent; border: 1.5px solid var(--muted); min-height: 6px; }
 .strip .brk { flex: none; width: 2px; height: 30px; margin: 0 3px; border-radius: 1px; background: var(--muted); }
 .key.line { width: 2px; background: var(--muted); }
+.trend { display: grid; grid-template-columns: 22ch 7ch max-content; align-items: end; gap: 0 8px; margin-top: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.trend.first { margin-top: 0; }
+.trend .tv { color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.strip.thin, .strip.thin .bar, .strip.thin .brk { height: 18px; }
+.strip.thin .bar { background: none; }
+.fill.value { background: var(--muted); } .fill.cache { background: var(--cache); } .fill.stub { background: var(--rule); }
 .group th { white-space: normal; }
 .group td { white-space: nowrap; }
 .group td.setup { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; }
@@ -64,19 +70,29 @@ function header() {
 }
 
 // The agent's runs, newest left: a bar per run as high as its pass rate, coloured by its result,
-// and a line where the setup changed. The table under it holds the same facts.
+// and a line where the setup changed; under them the same runs' time, tokens and cache share, each
+// on its own scale from 0, the newest run's number beside it. The table under it holds the same facts.
 function strip(group) {
   const rows = group.rows.slice(0, BARS);
-  const parts = rows.flatMap((row, i) => {
+  const lined = bars => bars.flatMap((bar, i) => i && rows[i - 1].changed.length ? [el("span", {className: "brk"}), bar] : [bar]);
+  const passes = rows.map((row, i) => {
     const m = row.metrics, rate = m.rate;
-    const bar = el("span", {className: i ? "bar" : "bar now", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${m.passed} of ${m.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
+    return el("span", {className: i ? "bar" : "bar now", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${m.passed} of ${m.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
       el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${rate == null ? 3 : Math.max(3, rate * 30)}px`}));
-    return i && rows[i - 1].changed.length ? [el("span", {className: "brk"}), bar] : [bar];
   });
+  const trend = (label, values, unit, fill) => {
+    const top = Math.max(0, ...values.filter(v => v != null));
+    return el("div", {className: "trend"}, el("span", {}, label), el("span", {className: "tv"}, unit(values[0])),
+      el("div", {className: "strip thin"}, lined(rows.map((row, i) => el("span", {className: "bar", title: `${row.run.short} · ${when(row.run.started)} · ${label}: ${values[i] == null ? "not reported" : unit(values[i])}`},
+        el("span", {className: values[i] == null ? "fill stub" : `fill ${fill}`, style: `height: ${values[i] == null || !top ? 2 : Math.max(2, values[i] / top * 18)}px`}))))));
+  };
   const shown = group.rows.length > BARS ? el("span", {}, `newest ${BARS} of ${group.rows.length}`) : null;
-  return el("div", {className: "runs", tabindex: "-1", "aria-hidden": "true"}, el("div", {className: "strip"}, parts),
+  return el("div", {className: "runs", tabindex: "-1", "aria-hidden": "true"}, el("div", {className: "trend first"}, el("span"), el("span"), el("div", {className: "strip"}, lined(passes))),
     el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
-      el("span", {}, el("i", {className: "key line"}), "setup changed"), shown));
+      el("span", {}, el("i", {className: "key line"}), "setup changed"), shown),
+    trend(`Time / answer · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.seconds)), secs, "value"),
+    trend(`Tokens / attempt · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.tokens)), count, "value"),
+    trend("From the cache", rows.map(row => row.metrics.cached), pct, "cache"));
 }
 
 // A setup cell: marked when it differs from the agent's previous run, which the next row holds.
