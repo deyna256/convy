@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import msgspec
 import pytest
@@ -985,20 +986,83 @@ def test_a_comparison_names_another_convy(tmp_path, then: str, shown: str):
     assert Comparison(*both(tmp_path)).page().differences == (f"convy: {shown} → {CONVY}",)
 
 
-def test_the_index_lists_runs_newest_first_with_their_reports(tmp_path):
+def test_the_index_groups_runs_by_agent_newest_first_and_ranks_them_all(tmp_path):
     first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    second = journal(tmp_path, "bot", "2", 2, outcome("a", FAILED), started=at(6))
+    journal(tmp_path, "ann", "1", 1, outcome("a", FAILED), started=at(6))
+    played = (outcome("a", FAILED), outcome("a", PASSED, attempt=2))
+    journal(tmp_path, "bot", "2", 1, *played, k=2, started=at(7))
     page = Index(Runs(tmp_path)).page()
-    assert [(row.run.version, row.passed, row.judged, row.rate) for row in page.runs] == [
-        ("2", 0, 1, 0),
-        ("1", 1, 1, 1),
+    assert [
+        (g.agent, [(r.run.version, r.order, r.result) for r in g.rows]) for g in page.agents
+    ] == [
+        ("ann", [("1", 1, "failing")]),
+        ("bot", [("2", 0, "flaky"), ("1", 2, "passing")]),
     ]
-    assert page.runs[0].report == f"bot/{second.spec.id}/report.html"
-    assert page.runs[1].report == f"bot/{first.spec.id}/report.html"
+    older = page.agents[1].rows[1]
+    assert older.report == f"bot/{first.spec.id}/report.html"
+    assert (older.metrics.passed, older.metrics.judged, older.metrics.tokens) == (1, 1, 20)
+
+
+def test_the_index_orders_runs_by_the_instant_they_started(tmp_path):
+    east = timezone(timedelta(hours=3))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=datetime(2026, 10, 6, 12, tzinfo=east),
+    )
+    journal(
+        tmp_path, "bot", "2", 1, outcome("a", PASSED), started=datetime(2026, 10, 6, 10, tzinfo=UTC)
+    )
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [(r.run.version, r.order) for r in group.rows] == [("2", 0), ("1", 1)]
 
 
 def test_no_runs_make_an_empty_index(tmp_path):
-    assert '"runs":[]' in Index(Runs(tmp_path / "results")).html()
+    assert '"agents":[]' in Index(Runs(tmp_path / "results")).html()
+
+
+@pytest.mark.parametrize(
+    ("setup", "changed"),
+    [
+        ({"models": ("other", "fake")}, ("user",)),
+        ({"models": ("fake", "other")}, ("judge",)),
+        ({"convy": "0.1.0"}, ("convy",)),
+        ({"trust": 0.5}, ("trust",)),
+        ({"k": 3}, ()),  # more attempts measure the same thing
+        ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
+    ],
+    ids=["user", "judge", "convy", "trust", "attempts", "edited scenario"],
+)
+def test_a_run_names_the_setup_that_differs_from_the_agents_previous_run(
+    tmp_path, setup: dict[str, Any], changed
+):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", 1, outcome("a", PASSED), started=at(6), **setup)
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [r.changed for r in group.rows] == [changed, ()]
+
+
+@pytest.mark.parametrize(("then", "now", "moved"), [(2, 3, (1, 0)), (3, 2, (0, 1))])
+def test_a_run_counts_the_scenarios_it_added_and_dropped(tmp_path, then, now, moved):
+    journal(tmp_path, "bot", "1", then, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", now, outcome("a", PASSED), started=at(6))
+    (group,) = Index(Runs(tmp_path)).page().agents
+    newer, older = group.rows
+    assert (newer.changed, (newer.added, newer.dropped)) == (("scenarios",), moved)
+    assert (older.changed, older.added, older.dropped) == ((), 0, 0)
+
+
+def test_an_agent_says_whether_any_run_has_a_trust_and_a_run_names_its_convy(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), trust=0.5, convy="")
+    journal(tmp_path, "ann", "1", 1, outcome("a", PASSED), started=at(6))
+    page = Index(Runs(tmp_path)).page()
+    assert [(g.agent, g.trusted, g.rows[0].run.convy) for g in page.agents] == [
+        ("ann", False, CONVY),
+        ("bot", True, "unknown"),
+    ]
 
 
 def data(html: str) -> object:
@@ -1096,10 +1160,8 @@ def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
     assert (page.before.trust, page.after.trust) == (0, 0.8)
     assert (page.was.judged, page.now.judged, page.now.cut) == (1, 0, 1)
     assert page.differences == ()  # trust is not a warning
-    assert [(row.run.trust, row.cut) for row in Index(Runs(tmp_path)).page().runs] == [
-        (0.8, 1),
-        (0, 0),
-    ]
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [(row.run.trust, row.metrics.cut) for row in group.rows] == [(0.8, 1), (0, 0)]
 
 
 def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):

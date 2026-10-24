@@ -209,6 +209,7 @@ type Result = Literal["failing", "flaky", "passing", "none"]
 type Tone = Literal["good", "bad", "same", "noise", "none"]
 type Group = Literal["worse", "better", "same", "apart"]
 type Change = Literal["unchanged", "worse", "better"]
+type Setup = Literal["user", "judge", "convy", "trust", "scenarios"]  # what a run is measured with
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
@@ -372,6 +373,7 @@ class RunHead(Struct, frozen=True):
     unreadable: int
     trust: float
     confident: bool  # some decision of the run says how sure the judge was
+    convy: str  # the convy that played the run; "unknown" when the run does not say
 
 
 class RunPage(Struct, frozen=True):
@@ -438,15 +440,23 @@ class ComparePage(Struct, frozen=True):
 
 class IndexRow(Struct, frozen=True):
     run: RunHead
-    passed: int
-    judged: int
-    cut: int
-    rate: float | None
+    metrics: Metrics
+    result: Result
+    changed: tuple[Setup, ...]  # what differs from the agent's previous run; () for its first
+    added: int  # scenario ids the previous run did not have
+    dropped: int  # and ids it had that this run does not
+    order: int  # the run's place among every run of the index, 0 the newest
     report: str  # the run's report, relative to the index
 
 
+class AgentRuns(Struct, frozen=True):
+    agent: str
+    trusted: bool  # some run of the agent has a trust: its table shows a Trust column
+    rows: tuple[IndexRow, ...]  # newest first
+
+
 class IndexPage(Struct, frozen=True):
-    runs: tuple[IndexRow, ...]  # newest first
+    agents: tuple[AgentRuns, ...]  # by name
 
 
 class Evidence(Struct, frozen=True):
@@ -551,6 +561,7 @@ class Summary(Struct, frozen=True):
             unreadable=self.run.unreadable,
             trust=spec.trust,
             confident=self.confident(),
+            convy=spec.convy or "unknown",
         )
 
     def confident(self) -> bool:
@@ -1011,27 +1022,56 @@ class Comparison(Struct, frozen=True):
 
 
 class Index(Struct, frozen=True):
-    """`index.html`: every run, newest first, with a link to its report."""
+    """`index.html`: every run by agent, newest first, with what it was measured with and a link
+    to its report."""
 
     runs: Iterable[Run]
 
     def page(self) -> IndexPage:
-        rows = []
-        for run in sorted(self.runs, key=lambda run: run.spec.started, reverse=True):
-            summary = Summary(run)
-            metrics = summary.metrics(summary.scenarios().values())
-            report = f"{run.path.as_posix()}/report.html"
-            rows.append(
-                IndexRow(
-                    summary.head(),
-                    metrics.passed,
-                    metrics.judged,
-                    metrics.cut,
-                    metrics.rate,
-                    report,
-                )
+        played = sorted(self.runs, key=lambda run: run.spec.started, reverse=True)  # instants
+        groups: dict[str, list[tuple[int, Run]]] = {}
+        for order, run in enumerate(played):
+            groups.setdefault(run.spec.agent, []).append((order, run))
+        agents = []
+        for agent in sorted(groups):
+            runs = groups[agent]
+            older: list[Run | None] = [run for _, run in runs[1:]]
+            older.append(None)
+            rows = tuple(
+                self.row(order, run, previous)
+                for (order, run), previous in zip(runs, older, strict=True)
             )
-        return IndexPage(tuple(rows))
+            agents.append(AgentRuns(agent, any(run.spec.trust for _, run in runs), rows))
+        return IndexPage(tuple(agents))
+
+    def row(self, order: int, run: Run, previous: Run | None) -> IndexRow:
+        summary = Summary(run)
+        metrics = summary.metrics(summary.scenarios().values())
+        ids = {scenario.id for scenario in run.spec.scenarios}
+        before = ids if previous is None else {s.id for s in previous.spec.scenarios}
+        return IndexRow(
+            run=summary.head(),
+            metrics=metrics,
+            result=Tally(metrics.passed, metrics.judged).result(),
+            changed=() if previous is None else self.changed(previous.spec, run.spec),
+            added=len(ids - before),
+            dropped=len(before - ids),
+            order=order,
+            report=f"{run.path.as_posix()}/report.html",
+        )
+
+    def changed(self, was: RunSpec, now: RunSpec) -> tuple[Setup, ...]:
+        """What a run is measured with that differs from the agent's previous run. Neither the
+        agent's version (comparing versions is the point) nor the number of attempts counts; nor
+        a scenario edited under the same id, which the comparison tells apart."""
+        pairs: tuple[tuple[Setup, object, object], ...] = (
+            ("user", was.user, now.user),
+            ("judge", was.judge, now.judge),
+            ("convy", was.convy, now.convy),
+            ("trust", was.trust, now.trust),
+            ("scenarios", {s.id for s in was.scenarios}, {s.id for s in now.scenarios}),
+        )
+        return tuple(name for name, before, after in pairs if before != after)
 
     def html(self) -> str:
         return Template("index.html").html(self.page())
