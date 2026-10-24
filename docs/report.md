@@ -28,7 +28,7 @@ Five tiles sum up the run:
 Under the tiles, two panels show how each scenario spreads. **Time per answer** has a bar per
 scenario from its fastest answer to its slowest, a tick at the mean and the slowest as text;
 **Tokens per attempt** the same from its cheapest attempt to its costliest. The slowest and the
-costliest come first, ten at a time (**Show all N** shows the rest). Each panel's scale runs from 0
+costliest come first, the first ten (**Show all N** shows the rest). Each panel's scale runs from 0
 to its largest value, written at its right end, so one very slow answer squashes the other bars;
 the numbers stay in the text.
 
@@ -48,18 +48,17 @@ to open that attempt. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
 many attempts it held in, a square per attempt with the judge's decision on it, and how many of its
-decisions were not trusted. A claim's count is over its
-trusted decisions. Its typical grade is the middle one of its trusted grades; with two in the
-middle, the worse. A graded claim also says how often it got each grade
-(`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you see the judge's decision on
-every claim with its grade, if it has one, and its reason, and the dialogue with the time and tokens
-of each answer; **Total answer time** adds them up for the attempt. An answer's tokens show their
-parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached tokens are part of the
-input, and thinking part of the output, not added to them. A part the agent does not report is left
-out; a 0 it reports is shown.
+decisions were not trusted. A claim's count is over its trusted decisions. Its typical grade is the
+middle one of its trusted grades; with two in the middle, the worse. A graded claim also says how
+often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you see
+the judge's decision on every claim with its grade, if it has one, and its reason, and the dialogue
+with the time and tokens of each answer; **Total answer time** adds them up for the attempt. An
+answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached
+tokens are part of the input, and thinking part of the output, not added to them. A part the agent
+does not report is left out; a 0 it reports is shown.
 
 An answer that gives its [steps](agents.md#steps) shows them as a line that ends in the answer.
-Folded, the steps are one node, such as `2 thoughts · 4 calls · calls ran 2.1 s`; **Show steps**
+By default the steps are folded into one node, such as `2 thoughts · 4 calls · calls ran 2.1 s`; **Show steps**
 unfolds them. A thought shows its text. A call shows its bar on the line of the answer's calls,
 from the first call's start to the last call's end: bars that overlap ran at the same time. It
 shows when it started (`from +0.6 s`), how long it took and its tokens; open it to see what it
@@ -68,7 +67,7 @@ sent and received, JSON indented, or "not reported" and "empty".
 If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
 did not say. The address keeps the open scenario, so you can send a link to it.
 
-`results/index.html` lists the runs by agent, newest first, five at a time (**Show N older runs**
+`results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
 shows the rest). A strip shows each agent's newest 40 runs, newest left: a bar per run as high as
 its pass rate and coloured by its result, and a line where the **setup** changed. The setup is what
 a run is measured with: the user's model, the judge, convy's version, the trust and the set of

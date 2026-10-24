@@ -584,7 +584,10 @@ def test_steps_keep_their_order_and_counts(tmp_path):
 
 
 def test_an_answer_without_calls_has_no_time_line(tmp_path):
-    assert (shown(tmp_path).span, shown(tmp_path / "thought", Thought("hmm")).span) == (0, 0)
+    bare = shown(tmp_path)
+    thought = shown(tmp_path / "thought", Thought("hmm"))
+    assert (bare.span, thought.span) == (0, 0)
+    assert (bare.steps, bare.thoughts, bare.calls) == ((), 0, 0)
 
 
 def test_calls_in_other_time_zones_share_the_time_line(tmp_path):

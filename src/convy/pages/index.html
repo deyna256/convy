@@ -91,8 +91,8 @@ function cell(row, older, field, text) {
 
 function line(group, row, older) {
   const run = row.run, m = row.metrics, state = STATUS[run.status];
-  const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`});
-  box.addEventListener("change", () => pick(row, box.checked, box.getAttribute("aria-label")));
+  const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`, "data-id": run.id});
+  box.addEventListener("change", () => pick(row, box.checked, run.id));
   return el("tr", {},
     el("td", {}, box),
     el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short)), el("span", {className: "sub"}, when(run.started), state && ` · ${state}`)),
@@ -119,11 +119,11 @@ function section(group) {
 }
 
 // Two ticked runs give the command that compares them, the older first; a third replaces the first.
-function pick(row, on, label) {
+function pick(row, on, id) {
   picked = picked.filter(r => r !== row);
   if (on) picked.push(row);
   if (picked.length > 2) picked.shift();
-  draw(() => document.querySelector(`input[aria-label="${CSS.escape(label)}"]`));
+  draw(() => document.querySelector(`input[data-id="${CSS.escape(id)}"]`));
 }
 function compareBar() {
   const bar = document.getElementById("compare");

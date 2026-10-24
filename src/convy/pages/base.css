@@ -76,11 +76,12 @@ tbody tr.row:hover td { background: var(--side); }
 .squares { display: inline-flex; flex-wrap: wrap; gap: 3px; max-width: 207px; vertical-align: middle; }
 .sq { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font: 800 10px/1 system-ui, sans-serif; color: var(--on-status); }
 .sq.passing { background: var(--pass); } .sq.failing { background: var(--fail); } .sq.none { background: var(--none); }
-.sq.go { cursor: pointer; } .sq.open { outline: 2px solid var(--ink); outline-offset: 1px; }
+.sq.go { cursor: pointer; } .sq.at { outline: 2px solid var(--ink); outline-offset: 1px; }
 
 /* the spread and change blocks */
 .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-top: 14px; }
 .chart { background: var(--surface); padding: 14px 16px; min-width: 0; }
+.chart .empty { padding: 12px 0; }
 .chart h3 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
 .chart .rrow, .chart .scale { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
 .chart .rrow { font-size: 13px; min-height: 24px; }

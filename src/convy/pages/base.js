@@ -62,7 +62,7 @@ const MARK = {passing: "✓", failing: "✕", none: "–"};
 function squares(marks, what, open, go) {
   return el("span", {className: "squares", role: "img", "aria-label": `${what}: ${marks.map(m => m.word).join(", ")}`},
     marks.map(m => {
-      const square = el("span", {className: `sq ${m.result}${m.attempt === open ? " open" : ""}${go ? " go" : ""}`, title: `Attempt ${m.attempt}: ${m.word}`}, MARK[m.result]);
+      const square = el("span", {className: `sq ${m.result}${m.attempt === open ? " at" : ""}${go ? " go" : ""}`, title: `Attempt ${m.attempt}: ${m.word}`}, MARK[m.result]);
       if (go) square.addEventListener("click", event => { event.stopPropagation(); go(m.attempt); });
       return square;
     }));
@@ -79,6 +79,7 @@ const claimMarks = (attempts, i) => attempts.map(a => {
 const ROWS = 10;
 let every = false;
 function chart(title, rows, scale, redraw) {
+  if (!rows.length) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, "No scenario to show"));
   const more = rows.length > ROWS && el("button", {className: "more", type: "button"}, every ? "Show fewer" : `Show all ${rows.length}`);
   if (more) more.addEventListener("click", () => { every = !every; redraw(); });
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every ? rows.length : ROWS), scale, more);

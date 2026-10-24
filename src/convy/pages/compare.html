@@ -21,8 +21,6 @@
 .cols .msg { max-width: 100%; }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
 .changes { --tail: 22ch; }
-.chart .scale > .dev-scale { display: grid; grid-template-columns: 1fr auto 1fr; }
-.dev-scale > span:last-child { text-align: right; }
 .chart .dev { position: relative; height: 16px; }
 .chart .dev::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
 .chart .dbar { position: absolute; top: 4px; height: 8px; border-radius: 3px; }
@@ -112,7 +110,7 @@ function changes(title, order, field, mean, unit) {
       el("span", {className: "n"}, el("span", {className: `delta ${d.tone}`}, `${sign}${Math.round(Math.abs(d.value))}%`),
         el("small", {className: "muted"}, ` · ${unit(mean(r.before))} → ${unit(mean(r.after))}`)));
   });
-  const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {className: "dev-scale"}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
+  const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
     el("p", {className: "caption"}, "The bar is the change of the scenario's mean, from −100% to +100%; grey under 5%."));
   return chart(title, rows, scale, draw);
 }
