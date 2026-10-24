@@ -28,11 +28,13 @@ from convy.dialog import (
 from convy.report import (
     NO_CHANGE,
     STATS,
+    CallStats,
     CallView,
     Comparison,
     Delta,
     Evidence,
     Index,
+    Parts,
     PerStat,
     Report,
     Run,
@@ -42,6 +44,7 @@ from convy.report import (
     Summary,
     Tally,
     ThoughtView,
+    TurnStats,
     TurnView,
 )
 from convy.scenario import Outcome, Scenario
@@ -1365,6 +1368,158 @@ def test_cache_means_cover_only_the_attempts_that_report_them(tmp_path):
     journal(tmp_path, "bot", "1", 1, reported, silent, k=2)
     page = Report(only(tmp_path)).page()
     assert (page.scenarios[0].cache_read, page.metrics.cache_read) == (80, 80)
+
+
+def talk(scenario: str, *usages: Usage | NoUsage, attempt: int = 1) -> Outcome:
+    """A passed attempt of `scenario` with an answer of 1 s per usage."""
+    turns = tuple(Turn(Message("hi"), Answer("hello", usage), 1.0) for usage in usages)
+    return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
+
+
+def test_each_turn_counts_its_answers_and_scenarios_and_spreads_their_tokens(tmp_path):
+    played = (
+        talk("a", Usage(100, 10, cache_read=80), Usage(200, 20, cache_read=150)),
+        talk("a", Usage(120, 12, cache_read=60), attempt=2),
+        talk("b", Usage(100, 10), NoUsage(), NoUsage()),
+    )
+    journal(tmp_path, "bot", "1", 2, *played, k=2)
+    first, second = Report(only(tmp_path)).page().turns  # turn 3: no answer reports tokens
+    # input 100, 100, 120: p10 at 2 * 0.1 = 0.2, between two 100s; p50 the second, 100; p90 at
+    # 1.8, 0.8 of the way from 100 to 120, 116; mean 320 / 3; output a tenth of each
+    assert first == TurnStats(
+        1,
+        3,
+        2,
+        Spread(3, 100, 100, 100, 116, 120, 320 / 3),
+        Spread(3, 10, 10, 10, 11.6, 12, 32 / 3),
+        None,  # b does not report its cache reads
+    )
+    assert second == TurnStats(2, 2, 2, single(200), single(20), single(150))
+
+
+@pytest.mark.parametrize(
+    ("reads", "cached"),
+    [((80, 60), Spread(2, 60, 62, 70, 78, 80, 70)), ((80, None), None), ((None, None), None)],
+    ids=["every answer", "some", "none"],
+)
+def test_a_turns_cache_reads_spread_only_when_every_answer_reports_them(tmp_path, reads, cached):
+    usages = (Usage(100, 10) if r is None else Usage(100, 10, cache_read=r) for r in reads)
+    played = (talk("a", usage, attempt=n) for n, usage in enumerate(usages, 1))
+    journal(tmp_path, "bot", "1", 1, *played, k=2)
+    (turn,) = Report(only(tmp_path)).page().turns
+    assert turn.cached == cached  # 60 and 80: p10 at 0.1, 62; p90 at 0.9, 78
+
+
+@pytest.mark.parametrize(
+    ("attempts", "parts"),
+    [
+        (
+            [
+                [Usage(100, 40, 10, cache_read=60, cache_write=5), Usage(50, 20, 0, cache_read=30)],
+                [Usage(30, 10, 4, cache_read=0)],
+            ],
+            # over 2 attempts: 90 from the cache; 180 - 90 new input, the 5 written included;
+            # 70 - 14 output besides the 14 thinking
+            Parts(45, 45, 28, 7),
+        ),
+        ([[NoUsage()]], None),
+        ([[Usage(100, 40, 10)], [NoUsage()]], Parts(None, 100, 30, 10)),  # one attempt counts
+        ([[Usage(0, 0)]], Parts(None, 0, 0, None)),
+    ],
+    ids=["every part", "none reported", "thinking without cache", "no tokens at all"],
+)
+def test_a_scenario_splits_its_mean_tokens_per_attempt_into_the_parts_reported(
+    tmp_path, attempts, parts
+):
+    played = (talk("a", *usages, attempt=n) for n, usages in enumerate(attempts, 1))
+    journal(tmp_path, "bot", "1", 1, *played, k=len(attempts))
+    assert Report(only(tmp_path)).page().scenarios[0].parts == parts
+
+
+def test_the_parts_put_the_most_tokens_first_ties_by_id_and_leave_out_the_unreported(tmp_path):
+    played = (
+        answers("a", 1.0),
+        answers("b", 1.0, tokens=30),
+        answers("c", 1.0),
+        talk("d", NO_USAGE),
+    )
+    journal(tmp_path, "bot", "1", 4, *played)
+    assert Report(only(tmp_path)).page().by_parts == ("b", "a", "c")  # 60, 20 and 20 tokens
+
+
+def test_the_agents_calls_are_summed_up_by_name(tmp_path):
+    first = Answer(
+        "hello",
+        steps=(Thought("plan"), call("search", 0, 1, Usage(3, 4)), call("gpt", 1, 2)),
+    )
+    second = Answer("hello", steps=(call("search", 0, 3, Usage(5, 6)),))
+    other = Answer("hello", steps=(call("gpt", 0, 2), call("lookup", 0, 5)))
+    played = (
+        Outcome(
+            "a",
+            1,
+            Transcript((Turn(Message("hi"), first, 2.0), Turn(Message("hi"), second, 3.0))),
+            PASSED,
+            "max_turns",
+        ),
+        Outcome("b", 1, Transcript((Turn(Message("hi"), other, 5.0),)), PASSED, "max_turns"),
+    )
+    journal(tmp_path, "bot", "1", 2, *played)
+    assert Report(only(tmp_path)).page().calls == (
+        CallStats("lookup", 1, 5, single(5), None),
+        CallStats("gpt", 2, 4, Spread(2, 2, 2, 2, 2, 2, 2), None),
+        # 1 and 3 s: p10 at 0.1, 1.2; p90 at 0.9, 2.8; 7 and 11 tokens: 7.4 and 10.6
+        CallStats(
+            "search", 2, 4, Spread(2, 1, 1.2, 2, 2.8, 3, 2), Spread(2, 7, 7.4, 9, 10.6, 11, 9)
+        ),
+    )
+
+
+def test_a_comparison_pairs_each_turn_either_run_has(tmp_path):
+    usage = Usage(10, 10)
+    journal(
+        tmp_path, "bot", "1", 2, talk("a", usage, usage, usage), talk("b", usage), started=at(5)
+    )
+    journal(tmp_path, "bot", "1", 2, talk("a", usage), talk("b", usage, usage), started=at(6))
+    turns = Comparison(*both(tmp_path)).page().turns
+    answered = [
+        (
+            t.turn,
+            None if t.before is None else t.before.answers,
+            None if t.after is None else t.after.answers,
+        )
+        for t in turns
+    ]
+    assert answered == [(1, 2, 2), (2, 1, 1), (3, 1, None)]
+
+
+def test_a_comparison_orders_the_parts_by_the_after_runs_tokens(tmp_path):
+    before = (answers(s, 1.0) for s in "abce")
+    journal(tmp_path, "bot", "1", 5, *before, started=at(5))
+    after = (
+        answers("a", 1.0),
+        answers("b", 1.0, tokens=30),
+        answers("c", 1.0, tokens=30),
+        answers("d", 1.0),  # not played before: not compared
+        talk("e", NO_USAGE),  # no tokens after
+    )
+    journal(tmp_path, "bot", "1", 5, *after, started=at(6))
+    assert Comparison(*both(tmp_path)).page().by_parts == ("b", "c", "a")
+
+
+def test_the_turns_calls_and_parts_reach_the_pages(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    run, compared = data(Report(after).html()), data(Comparison(before, after).html())
+    assert isinstance(run, dict) and isinstance(compared, dict)
+    assert [turn["answers"] for turn in run["turns"]] == [1]
+    assert (run["calls"], run["by_parts"]) == ([], ["a"])
+    parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
+    assert run["scenarios"][0]["parts"] == parts
+    assert [turn["turn"] for turn in compared["turns"]] == [1]
+    assert compared["by_parts"] == ["a"]
+    assert set(run["by_seconds"]) == set(compared["by_tokens"]) == set(STATS)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
