@@ -28,6 +28,9 @@
 .chart .clip { position: absolute; top: -1px; font-weight: 800; color: var(--muted); } .clip.up { right: -2px; } .clip.down { left: -2px; }
 .pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .pair .delta { font-size: 13px; }
+.tile .stats .delta { font-size: 12.5px; }
+#tokens { --tail: 24ch; }
+#tokens > .chart:last-child:nth-child(odd) { grid-column: 1 / -1; }
 </style>
 <script>
 /*include base.js*/
@@ -39,6 +42,7 @@
   <section id="tiles" aria-label="Before and after in numbers"></section>
   <div id="switch"></div>
   <section id="changes" class="charts changes" aria-label="Changes by scenario"></section>
+  <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
 </div>
@@ -86,12 +90,16 @@ function cached() {
 function tiles() {
   const tile = (label, value, was, delta, {hero = false, extra = null} = {}) => el("div", {className: hero ? "tile hero" : "tile"},
     el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta, extra);
-  return el("div", {className: "tiles"},
-    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
-    tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
-    tile("Time per answer", secs(NOW.seconds?.mean), `was ${secs(WAS.seconds?.mean)}`, change(D.seconds.mean, secs)),
-    tile("Tokens per attempt", count(NOW.tokens?.mean), `was ${count(WAS.tokens?.mean)}`, change(D.tokens.mean, count), {extra: cached()}),
-    tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v))));
+  const was = (spread, unit) => spread ? `was ${STATS.map(k => unit(spread[k])).join(" · ")}` : "was —";
+  return [
+    el("div", {className: "tiles"},
+      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
+      tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
+      tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v)))),
+    el("div", {className: "tiles two"},
+      spreadTile("Time per answer", NOW.seconds, secs, [was(WAS.seconds, secs)], k => change(D.seconds[k], secs)),
+      spreadTile("Tokens per attempt", NOW.tokens, count, [was(WAS.tokens, count), cached()], k => change(D.tokens[k], count))),
+  ];
 }
 
 // The change block: per compared scenario a bar from zero on a fixed −100%…+100% scale, its length
@@ -113,6 +121,23 @@ function changes(title, order, field, value, unit) {
   const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
     el("p", {className: "caption"}, `The bar is the change of the scenario's ${STAT[stat]}, from −100% to +100%; grey under 5%.`));
   return chart(title, rows, scale, draw);
+}
+
+// Tokens by part before and after: two thin bars per compared scenario on one scale, the mean
+// tokens per attempt and the share of the input read from the cache as text.
+const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const share = p => p.cached == null || !(p.cached + p.input) ? "—" : pct(p.cached / (p.cached + p.input));
+function partPairs() {
+  const {keep} = filtered();
+  const rows = DATA.by_parts.filter(keep).map(id => DATA.rows.find(r => r.id === id));
+  const top = Math.max(0, ...rows.flatMap(r => [r.before.tokens.mean, r.after.tokens.mean]));
+  return chart("Tokens per attempt by part · mean · before and after", rows.map(r => el("div", {className: "rrow", title: `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(r.before.parts, r.before.tokens.mean, top, true), partBar(r.after.parts, r.after.tokens.mean, top, true)),
+      el("span", {className: "n"}, `${thousands(r.before.tokens.mean)} → ${thousands(r.after.tokens.mean)}`,
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted"}, ` · ${share(r.before.parts)} → ${share(r.after.parts)} cached`)))),
+    [scaleLine(count(top)), partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])),
+      el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
 }
 
 const passedChange = v => v > 0 ? `${v} more passed` : v < 0 ? `${-v} fewer passed` : "=";
@@ -191,12 +216,17 @@ function draw() {
   document.getElementById("changes").replaceChildren(
     changes(`Time per answer · ${STAT[stat]}`, DATA.by_seconds[stat], "seconds", v => chosen(v.seconds), secs),
     changes(`Tokens per attempt · ${STAT[stat]}`, DATA.by_tokens[stat], "tokens", v => chosen(v.tokens), count));
+  const turns = DATA.turns.length > 1, top = turnTop(DATA.turns.flatMap(p => [p.before, p.after].filter(Boolean)));
+  document.getElementById("tokens").replaceChildren(...[
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · before ${BEFORE.short}`, DATA.turns.map(p => p.before ?? {turn: p.turn}), top),
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · after ${AFTER.short}`, DATA.turns.map(p => p.after ?? {turn: p.turn}), top),
+    DATA.by_parts.length > 0 && partPairs()].filter(Boolean));
   document.getElementById("table").replaceChildren(table());
 }
 
 document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
 document.getElementById("head").replaceChildren(header());
-document.getElementById("tiles").replaceChildren(tiles());
+document.getElementById("tiles").replaceChildren(...tiles());
 document.getElementById("switch").replaceChildren(statSwitch(draw));
 document.getElementById("filter").addEventListener("input", draw);
 draw();
