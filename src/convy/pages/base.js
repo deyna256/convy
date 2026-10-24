@@ -77,12 +77,13 @@ const claimMarks = (attempts, i) => attempts.map(a => {
 
 // A panel of the spread or change block: its title, its rows, its scale, and "Show all" past ten.
 const ROWS = 10;
-let every = false;
+const every = new Set();  // the panels showing all their rows, by their title before " · "
 function chart(title, rows, scale, redraw) {
   if (!rows.length) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, "No scenario to show"));
-  const more = rows.length > ROWS && el("button", {className: "more", type: "button"}, every ? "Show fewer" : `Show all ${rows.length}`);
-  if (more) more.addEventListener("click", () => { every = !every; redraw(); });
-  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every ? rows.length : ROWS), scale, more);
+  const key = title.split(" · ")[0], all = every.has(key);
+  const more = rows.length > ROWS && el("button", {className: "more", type: "button"}, all ? "Show fewer" : `Show all ${rows.length}`);
+  if (more) more.addEventListener("click", () => { all ? every.delete(key) : every.add(key); redraw(); });
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, all ? rows.length : ROWS), scale, more);
 }
 
 // The statistic of each time and token spread that the charts and tables after the switch show,

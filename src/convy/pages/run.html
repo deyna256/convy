@@ -129,15 +129,16 @@ function failedClaims() {
   const {failed, held, undecided} = DATA.claims;
   if (!failed.length && !held) return null;
   const total = failed.length + held + undecided;
-  const rest = [held && `${plural(held, "claim")} held in every attempt`, undecided && `${undecided} without a trusted verdict`].filter(Boolean).join(" · ");
+  const rest = [held && `${plural(held, "claim")} held in every attempt`, undecided && `${undecided} not decided`].filter(Boolean).join(" · ");
   if (!failed.length) return el("section", {className: "chart", "aria-label": "Claims"}, el("h3", {}, "Claims"), el("p", {className: "caption"}, rest));
   const rows = failed.map(f => {
     const s = DATA.scenarios.find(item => item.id === f.scenario);
+    const open = el("button", {className: "open mono", type: "button", "aria-label": `Open ${s.id}`}, s.id);
+    open.addEventListener("click", () => show(s.id, 1));
     return el("div", {className: "crow"}, el("span", {}, s.claims[f.claim].text),
-      el("span", {className: "from"}, el("button", {className: "open mono", type: "button", "aria-label": `Open ${s.id}`}, s.id)),
+      el("span", {className: "from"}, open),
       el("span", {className: "tally"}, squares(claimMarks(s.attempts, f.claim), "Decisions", null, n => show(s.id, n)), `${f.held} of ${f.judged}`));
   });
-  rows.forEach((row, i) => row.querySelector("button").addEventListener("click", () => show(failed[i].scenario, 1)));
   return chart(`Claims that failed · ${failed.length} of ${total}`, rows, rest && el("p", {className: "caption"}, rest), draw);
 }
 
