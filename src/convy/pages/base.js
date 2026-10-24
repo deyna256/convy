@@ -55,3 +55,31 @@ const secs = s => s == null ? "—" : s < 10 ? `${s.toFixed(1)} s` : `${Math.rou
 const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
 const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
 const STATUS = {running: "not finished", interrupted: "interrupted", finished: null};
+
+// Squares, one per attempt: ✓, ✕ or – with its word in the title, the open attempt outlined, a
+// click opening one. Not tab stops: the row's Open button and the window's tabs are the keyboard's.
+const MARK = {passing: "✓", failing: "✕", none: "–"};
+function squares(marks, what, open, go) {
+  return el("span", {className: "squares", role: "img", "aria-label": `${what}: ${marks.map(m => m.word).join(", ")}`},
+    marks.map(m => {
+      const square = el("span", {className: `sq ${m.result}${m.attempt === open ? " open" : ""}${go ? " go" : ""}`, title: `Attempt ${m.attempt}: ${m.word}`}, MARK[m.result]);
+      if (go) square.addEventListener("click", event => { event.stopPropagation(); go(m.attempt); });
+      return square;
+    }));
+}
+const attemptMarks = attempts => attempts.map(a => ({attempt: a.attempt, result: kind(a.passed),
+  word: a.cut ? "not trusted" : a.passed == null ? "no verdict" : a.passed ? "passed" : "failed"}));
+const claimMarks = (attempts, i) => attempts.map(a => {
+  const d = a.claims[i], shown = d.passed != null && d.trusted;
+  return {attempt: a.attempt, result: shown ? kind(d.passed) : "none",
+    word: d.passed == null ? "not decided" : !d.trusted ? "not trusted" : d.passed ? "held" : "failed"};
+});
+
+// A panel of the spread or change block: its title, its rows, its scale, and "Show all" past ten.
+const ROWS = 10;
+let every = false;
+function chart(title, rows, scale, redraw) {
+  const more = rows.length > ROWS && el("button", {className: "more", type: "button"}, every ? "Show fewer" : `Show all ${rows.length}`);
+  if (more) more.addEventListener("click", () => { every = !every; redraw(); });
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every ? rows.length : ROWS), scale, more);
+}
