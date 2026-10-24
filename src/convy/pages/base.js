@@ -119,10 +119,10 @@ function statSwitch(redraw) {
 const scaleLine = top => el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "0"), el("span", {}, top)), el("span"));
 const swatch = (part, word) => el("span", {}, el("i", {className: `key ${part}`}), word);
 
-// A wide tile of a spread: its four statistics at the same size, each with what goes under it,
+// A tile of a spread: its four statistics at the same size, each with what goes under it,
 // then its lines.
 function spreadTile(label, spread, unit, lines, under = () => null) {
-  return el("div", {className: "tile wide"}, el("span", {className: "l"}, label),
+  return el("div", {className: "tile"}, el("span", {className: "l"}, label),
     el("div", {className: "stats"}, STATS.map(k => el("div", {}, el("span", {className: "k"}, STAT[k]), el("span", {className: "v"}, spread ? unit(spread[k]) : "—"), under(k)))),
     lines.map(line => typeof line === "string" ? el("span", {className: "s"}, line) : line));
 }
@@ -130,12 +130,11 @@ function spreadTile(label, spread, unit, lines, under = () => null) {
 // Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
 // what was read from the cache and the new input when every answer reports its cache reads, and a
 // bar of their output; the share cached above, how many answers under. `top` is the shared scale's
-// top; a turn the run has no tokens at, {turn}, is an empty column.
+// top.
 function turnChart(title, turns, top) {
   const h = v => `${top ? v / top * 100 : 0}%`;
-  const split = turns.some(t => t.input && t.cached), whole = turns.some(t => t.input && !t.cached);
+  const split = turns.some(t => t.cached), whole = turns.some(t => !t.cached);
   const cols = turns.map(t => {
-    if (!t.input) return el("div", {className: "turn"}, el("span", {className: "share"}, "—"), el("div", {className: "bars"}), el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub muted"}, "no tokens"));
     const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
     const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
     const parts = cached == null ? [el("span", {className: "seg input"})]
@@ -149,7 +148,7 @@ function turnChart(title, turns, top) {
       el("span", {className: "sub"}, `${plural(t.answers, "answer")} · ${plural(t.scenarios, "scenario")}`));
   });
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
-    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "axis"}, count(top)), cols)),
+    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "axis"}, el("span", {}, count(top)), el("span", {}, "0")), cols)),
     el("div", {className: "legend"}, split && swatch("cache", "read from the cache"),
       swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
     el("p", {className: "caption"}, "Later turns hold only the longer dialogues."));
