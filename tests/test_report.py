@@ -1050,6 +1050,42 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     assert page.scenarios[0].attempts[0].seconds == 12.0
 
 
+def answers(scenario: str, *seconds: float, attempt: int = 1, tokens: int = 10) -> Outcome:
+    """A passed attempt of `scenario` whose answers took `seconds`, each `tokens` in and out."""
+    turns = tuple(Turn(Message("hi"), Answer("hello", Usage(tokens, tokens)), s) for s in seconds)
+    return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
+
+
+def test_a_scenario_spreads_from_its_fastest_answer_and_its_cheapest_attempt(tmp_path):
+    played = (answers("a", 3.0, 1.0, tokens=5), answers("a", 2.0, attempt=2, tokens=50))
+    journal(tmp_path, "bot", "1", 1, *played, k=2)
+    (view,) = Report(only(tmp_path)).page().scenarios
+    assert (view.fastest, view.slowest, view.fewest, view.most) == (1.0, 3.0, 20, 100)
+
+
+def test_the_spread_puts_the_slowest_and_costliest_first_ties_by_id_and_the_unplayed_last(tmp_path):
+    played = (
+        answers("a", 1.0, tokens=30),
+        answers("b", 4.0, tokens=10),
+        answers("c", 4.0, tokens=30),
+    )
+    journal(tmp_path, "bot", "1", 4, *played)
+    page = Report(only(tmp_path)).page()
+    assert (page.by_seconds, page.by_tokens) == (("b", "c", "a", "d"), ("a", "c", "b", "d"))
+
+
+def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
+    silent = Turn(Message("hi"), Answer("hello"), 2.0)
+    unreported = Outcome("a", 1, Transcript((silent,)), PASSED, "max_turns")
+    journal(tmp_path, "bot", "1", 2, unreported, answers("b", 1.0))
+    page = Report(only(tmp_path)).page()
+    assert [(v.id, v.fastest, v.fewest, v.most) for v in page.scenarios] == [
+        ("a", 2.0, None, None),
+        ("b", 1.0, 20, 20),
+    ]
+    assert page.by_tokens == ("b", "a")
+
+
 def test_counts_not_reported_stay_none_at_every_level(tmp_path):
     turn = Turn(Message("hi"), Answer("a", Usage(10, 5)), 1.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))

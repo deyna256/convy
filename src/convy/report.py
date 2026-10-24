@@ -231,6 +231,16 @@ class Tally(Struct, frozen=True):
         return "failing" if self.held == 0 else "flaky"
 
 
+class Ranking(Struct, frozen=True):
+    """Ids by a number, the largest first and ties by id; ids without the number last, by id."""
+
+    numbers: tuple[tuple[str, float | None], ...]
+
+    def ids(self) -> tuple[str, ...]:
+        ranked = sorted(self.numbers, key=lambda pair: (pair[1] is None, -(pair[1] or 0), pair[0]))
+        return tuple(id for id, _ in ranked)
+
+
 class ClaimView(Struct, frozen=True):
     """The judge's decision on one claim in one attempt."""
 
@@ -311,9 +321,12 @@ class ScenarioView(Struct, frozen=True):
     claims: tuple[ClaimSummary, ...]
     seconds: float | None  # mean per answer
     slowest: float | None
+    fastest: float | None  # the quickest answer
     input: float | None  # mean per attempt
     output: float | None
     tokens: float | None
+    fewest: int | None  # the tokens of its cheapest attempt that reports them
+    most: int | None  # and of its costliest
     thinking_tokens: float | None
     cache_read: float | None  # mean per attempt
     cache_write: float | None
@@ -363,6 +376,8 @@ class RunPage(Struct, frozen=True):
     run: RunHead
     metrics: Metrics
     scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
+    by_seconds: tuple[str, ...]  # the scenario ids, slowest answer first: the time panel's order
+    by_tokens: tuple[str, ...]  # costliest attempt first: the tokens panel's order
 
 
 class Delta(Struct, frozen=True):
@@ -581,6 +596,7 @@ class Summary(Struct, frozen=True):
         judged = [a.passed for a in attempts if a.passed is not None]
         tally = Tally(sum(judged), len(judged))
         turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
+        spent = [a.tokens for a in attempts if a.tokens is not None]
         return ScenarioView(
             id=scenario.id,
             user=scenario.instructions,
@@ -595,9 +611,12 @@ class Summary(Struct, frozen=True):
             ),
             seconds=self.average(turns),
             slowest=max(turns, default=None),
+            fastest=min(turns, default=None),
             input=self.average(a.input for a in attempts),
             output=self.average(a.output for a in attempts),
             tokens=self.average(a.tokens for a in attempts),
+            fewest=min(spent, default=None),
+            most=max(spent, default=None),
             thinking_tokens=self.average(a.thinking_tokens for a in attempts),
             cache_read=self.average(a.cache_read for a in attempts),
             cache_write=self.average(a.cache_write for a in attempts),
@@ -785,7 +804,13 @@ class Report(Struct, frozen=True):
         summary = Summary(self.run)
         views = summary.scenarios().values()
         scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
-        return RunPage(summary.head(), summary.metrics(views), tuple(scenarios))
+        return RunPage(
+            summary.head(),
+            summary.metrics(views),
+            tuple(scenarios),
+            Ranking(tuple((s.id, s.slowest) for s in views)).ids(),
+            Ranking(tuple((s.id, s.most) for s in views)).ids(),
+        )
 
     def html(self) -> str:
         return Template("run.html").html(self.page())
