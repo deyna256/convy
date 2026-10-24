@@ -20,6 +20,15 @@
 .colhead .badge { margin-left: auto; }
 .cols .msg { max-width: 100%; }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+.changes { --tail: 24ch; }
+.chart .dev { position: relative; height: 16px; }
+.chart .dev::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+.chart .dbar { position: absolute; top: 4px; height: 8px; border-radius: 3px; }
+.dbar.bad { background: var(--fail); } .dbar.good { background: var(--pass); } .dbar.same { background: var(--muted); }
+.chart .clip { position: absolute; top: -1px; font-weight: 800; color: var(--muted); } .clip.up { right: -2px; } .clip.down { left: -2px; }
+.chart .caption { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+.pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pair .delta { font-size: 13px; margin-left: 6px; }
 </style>
 <script>
 /*include base.js*/
@@ -29,6 +38,7 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="Before and after in numbers"></section>
+  <section id="changes" class="charts changes" aria-label="Changes by scenario"></section>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
 </div>
@@ -55,10 +65,10 @@ function header() {
 
 const percentagePoints = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} percentage points`;
 
-// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data.
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
 function change(delta, unit) {
   if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
-  if (delta.tone === "same") return el("span", {className: "delta same"}, "=");
+  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
   const arrow = delta.value > 0 ? "▲" : "▼";
   const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
   return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
@@ -84,6 +94,28 @@ function tiles() {
     tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v))));
 }
 
+// The change block: per compared scenario a bar from zero on a fixed −100%…+100% scale, its length
+// the change of the scenario's mean; a longer change is clipped with › and its text keeps the value.
+function changes(title, order, field, mean, unit) {
+  const {keep} = filtered();
+  const rows = order.filter(keep).map(id => DATA.rows.find(r => r.id === id)).map(r => {
+    const d = r[field], size = Math.min(Math.abs(d.value), 100) / 2;
+    const sign = d.value > 0 ? "+" : d.value < 0 ? "−" : "";
+    return el("div", {className: "rrow"},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "dev", "aria-hidden": "true"},
+        el("span", {className: `dbar ${d.tone}`, style: `left: ${d.value > 0 ? 50 : 50 - size}%; width: max(2px, ${size}%)`}),
+        Math.abs(d.value) > 100 && el("span", {className: `clip ${d.value > 0 ? "up" : "down"}`}, d.value > 0 ? "›" : "‹")),
+      el("span", {className: "n"}, el("span", {className: `delta ${d.tone}`}, `${sign}${Math.round(Math.abs(d.value))}%`),
+        el("small", {className: "muted"}, ` ${unit(mean(r.before))} → ${unit(mean(r.after))}`)));
+  });
+  const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
+    el("p", {className: "caption"}, "The bar is the change of the scenario's mean, from −100% to +100%; grey under 5%."));
+  return chart(title, rows, scale, draw);
+}
+
+const HELD = v => v > 0 ? `${v} more passed` : v < 0 ? `${-v} fewer passed` : "=";
+
 function table() {
   const {mask, keep} = filtered();
   const shown = DATA.rows.filter(r => keep(r.id));
@@ -96,7 +128,12 @@ function table() {
       const open = el("button", {className: "open", type: "button", "aria-label": `Open ${r.id}`}, r.id);
       const metric = (now, was) => [now, el("small", {}, was)];
       const row = el("tr", {className: "row"}, el("td", {}, open),
-        el("td", {}, r.why ? el("span", {className: "muted"}, r.why) : el("span", {style: "white-space:nowrap"}, badge(r.before.result), el("span", {className: "arrow"}, "→"), badge(r.after.result))),
+        el("td", {}, el("span", {className: "pair"},
+            r.before ? squares(attemptMarks(r.before.attempts), "Before", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            el("span", {className: "arrow"}, "→"),
+            r.after ? squares(attemptMarks(r.after.attempts), "After", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            r.held.value != null && el("span", {className: `delta ${r.held.tone}`}, HELD(r.held.value))),
+          r.why && el("div", {className: "muted", style: "font-size:12.5px;margin-top:4px"}, r.why)),
         el("td", {className: "n metric"}, r.why ? "—" : metric(secs(r.after.seconds), `was ${secs(r.before.seconds)}`)),
         el("td", {className: "n metric"}, r.why ? "—" : metric(count(r.after.tokens), `was ${count(r.before.tokens)}`)));
       row.addEventListener("click", () => show(r.id, 1));
@@ -104,7 +141,7 @@ function table() {
     }
   }
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Attempts · before → after"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
     el("tbody", {}, body.length ? body : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
 }
 
@@ -150,6 +187,9 @@ function show(id, number) {
 }
 
 function draw() {
+  document.getElementById("changes").replaceChildren(
+    changes("Time per answer", DATA.by_seconds, "seconds", v => v.seconds, secs),
+    changes("Tokens per attempt", DATA.by_tokens, "tokens", v => v.tokens, count));
   document.getElementById("table").replaceChildren(table());
 }
 
