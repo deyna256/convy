@@ -8,6 +8,29 @@
 <style>
 /*include base.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
+.group { margin-top: 14px; overflow: hidden; }
+.ghead { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr); gap: 16px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
+.ghead h2 { margin: 0; font: 650 15px/1.3 var(--mono); overflow-wrap: anywhere; }
+.sub { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; font-weight: 400; }
+.runs { min-width: 0; overflow-x: auto; }
+.strip { display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+.strip .bar { flex: none; width: 10px; height: 30px; display: flex; align-items: flex-end; border-radius: 2px; background: var(--side); }
+.strip .bar.now { outline: 1.5px solid var(--ink); outline-offset: 1px; }
+.strip .fill { width: 100%; border-radius: 2px; }
+.fill.passing, .key.passing { background: var(--pass); } .fill.flaky, .key.flaky { background: var(--flaky); }
+.fill.failing, .key.failing { background: var(--fail); } .fill.none, .key.none { background: var(--none); }
+.fill.unfinished { background: transparent; border: 1.5px solid var(--muted); min-height: 6px; }
+.strip .brk { flex: none; width: 2px; height: 30px; margin: 0 3px; border-radius: 1px; background: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.key.line { width: 2px; background: var(--muted); }
+.group th, .group td { white-space: nowrap; }
+td.changed { color: var(--focus); } td.changed::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+.group .more { display: block; margin: 0; padding: 10px 16px; border-top: 1px solid var(--rule); }
+.cmp { position: sticky; bottom: 12px; margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--side); border: 1px solid var(--focus); border-radius: 10px; }
+.cmp:empty { display: none; }
+.cmp code { font-family: var(--mono); background: var(--surface); padding: 3px 8px; border-radius: 6px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .ghead { grid-template-columns: 1fr; } }
 </style>
 <script>
 /*include base.js*/
@@ -16,40 +39,109 @@
 <body>
 <div class="page">
   <header id="head"></header>
-  <div class="panel scroll" id="table"></div>
+  <div id="groups"></div>
+  <div class="cmp" id="compare" aria-live="polite"></div>
   <p class="hint" id="hint"></p>
 </div>
 <script>
-// The index: every run, newest first, with a link to its report.
+// The index: runs grouped by agent, newest first, with a strip of each agent's runs.
 const DATA = __DATA__;
+const RUNS = 5, BARS = 40;
+const RESULT = {passing: "all passed", flaky: "some", failing: "none", none: "no verdict"};
+const NUMBERS = new Set(["Pass rate", "Time / answer", "Tokens / attempt", "Errors"]);
+const opened = new Set();  // agents whose older runs show
+let picked = [];  // the runs ticked to compare, in the order ticked
 
 function header() {
+  const total = DATA.agents.reduce((sum, group) => sum + group.rows.length, 0);
   return el("div", {className: "top"},
     el("div", {}, el("div", {className: "eyebrow"}, "CONVY"), el("h1", {}, "Runs"),
-      el("p", {className: "meta"}, DATA.runs.length ? plural(DATA.runs.length, "run") : "No runs yet. Run convy run <agent> and they appear here.")),
+      el("p", {className: "meta"}, total ? `${plural(total, "run")} · ${plural(DATA.agents.length, "agent")}` : "No runs yet. Run convy run <agent> and they appear here.")),
     themeButton());
 }
 
-function table() {
-  if (!DATA.runs.length) return el("p", {className: "empty"}, "Nothing to list.");
-  return el("table", {},
-    el("thead", {}, el("tr", {}, ["Agent", "Started", "Run", "Version", "Status", "Pass rate", ""].map(t => el("th", {}, t)))),
-    el("tbody", {}, DATA.runs.map(row => {
-      const run = row.run;
-      return el("tr", {},
-        el("td", {className: "mono"}, run.agent),
-        el("td", {}, when(run.started)),
-        el("td", {className: "mono"}, run.short),
-        el("td", {className: "muted"}, run.version || "—"),
-        el("td", {className: "muted"}, STATUS[run.status] ?? "finished"),
-        el("td", {className: "n"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, ` · ${row.passed} of ${row.judged}${notTrusted(row.cut)}${atTrust(run.trust)}`)),
-        el("td", {}, el("a", {href: row.report}, "report")));
-    })));
+// The agent's runs, newest left: a bar per run as high as its pass rate, coloured by its result,
+// and a line where the setup changed. The table under it holds the same facts.
+function strip(group) {
+  const rows = group.rows.slice(0, BARS);
+  const parts = rows.flatMap((row, i) => {
+    const m = row.metrics, rate = m.rate;
+    const bar = el("span", {className: i ? "bar" : "bar now", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${m.passed} of ${m.judged}` : "no verdict"}`},
+      el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${rate == null ? 3 : Math.max(3, rate * 30)}px`}));
+    return i && rows[i - 1].changed.length ? [el("span", {className: "brk"}), bar] : [bar];
+  });
+  const shown = group.rows.length > BARS ? el("span", {}, `newest ${BARS} of ${group.rows.length}`) : null;
+  return el("div", {className: "runs", "aria-hidden": "true"}, el("div", {className: "strip"}, parts),
+    el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
+      el("span", {}, el("i", {className: "key line"}), "setup changed"), shown));
+}
+
+// A setup cell: marked when it differs from the agent's previous run, which the next row holds.
+const SETUP = {user: r => r.run.user, judge: r => r.run.judge, convy: r => r.run.convy, trust: r => r.run.trust ? String(r.run.trust) : "—"};
+function cell(row, older, field, text) {
+  if (!row.changed.includes(field)) return el("td", {className: "mono"}, text);
+  const was = field === "scenarios" ? [row.added && `+${row.added}`, row.dropped && `−${row.dropped}`].filter(Boolean).join(" ") + " scenarios" : `was ${SETUP[field](older)}`;
+  return el("td", {className: "mono changed", title: was}, text);
+}
+
+function line(group, row, older) {
+  const run = row.run, m = row.metrics, state = STATUS[run.status];
+  const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`});
+  box.addEventListener("change", () => pick(row, box.checked));
+  return el("tr", {},
+    el("td", {}, box),
+    el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short)), el("span", {className: "sub"}, when(run.started), state && ` · ${state}`)),
+    el("td", {className: "mono"}, run.version || "—"),
+    cell(row, older, "scenarios", `${run.scenarios} × ${run.k}`),
+    cell(row, older, "user", run.user), cell(row, older, "judge", run.judge), cell(row, older, "convy", run.convy),
+    group.trusted && cell(row, older, "trust", SETUP.trust(row)),
+    el("td", {className: "n"}, el("strong", {}, pct(m.rate)), el("span", {className: "sub"}, `${m.passed} of ${m.judged}${notTrusted(m.cut)}`)),
+    el("td", {className: "n"}, secs(m.seconds)), el("td", {className: "n"}, count(m.tokens)), el("td", {className: "n"}, String(m.errors)));
+}
+
+function section(group) {
+  const all = opened.has(group.agent), older = group.rows.length - RUNS;
+  const rows = all ? group.rows : group.rows.slice(0, RUNS);
+  const more = older > 0 && el("button", {className: "more", type: "button"}, all ? "Show fewer runs" : `Show ${plural(older, "older run")}`);
+  if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(); });
+  const heads = ["", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", "Time / answer", "Tokens / attempt", "Errors"].filter(h => h !== false);
+  return el("section", {className: "panel group", "aria-label": group.agent},
+    el("div", {className: "ghead"}, el("div", {}, el("h2", {}, group.agent), el("span", {className: "sub"}, `${plural(group.rows.length, "run")} · last ${when(group.rows[0].run.started)}`)), strip(group)),
+    el("div", {className: "scroll"}, el("table", {},
+      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h) ? "n" : null}, h)))),
+      el("tbody", {}, rows.map((row, i) => line(group, row, group.rows[i + 1]))))),
+    more);
+}
+
+// Two ticked runs give the command that compares them, the older first; a third replaces the first.
+function pick(row, on) {
+  picked = picked.filter(r => r !== row);
+  if (on) picked.push(row);
+  if (picked.length > 2) picked.shift();
+  draw();
+}
+function compareBar() {
+  const bar = document.getElementById("compare");
+  if (picked.length < 2) return bar.replaceChildren();
+  const [older, newer] = [...picked].sort((a, b) => b.order - a.order);
+  const command = `convy compare ${older.run.id} ${newer.run.id}`;
+  const code = el("code", {}, command);
+  const copy = el("button", {className: "theme", type: "button"}, "Copy");
+  copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(command); copy.textContent = "Copied"; }
+    catch { getSelection().selectAllChildren(code); }  // no clipboard here: the command is selected to copy by hand
+  });
+  bar.replaceChildren(el("span", {}, "Compare them:"), code, copy);
+}
+
+function draw() {
+  document.getElementById("groups").replaceChildren(...(DATA.agents.length ? DATA.agents.map(section) : [el("p", {className: "empty"}, "Nothing to list.")]));
+  compareBar();
 }
 
 document.getElementById("head").replaceChildren(header());
-document.getElementById("table").replaceChildren(table());
-document.getElementById("hint").textContent = "Compare two runs: convy compare <before> <after>";
+document.getElementById("hint").textContent = "Tick two runs to compare them, or run: convy compare <before> <after>";
+draw();
 </script>
 </body>
 </html>
