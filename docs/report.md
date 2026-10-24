@@ -26,6 +26,14 @@ Five tiles sum up the run, in two rows:
   report `cache_read`.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
 
+Under the tiles, **Claims that failed** lists each claim that failed in some trusted decision, the
+least held first: its text, its scenario (a click opens it), a square per attempt and how often it
+held (`1 of 3`). The first ten show, **Show all N** shows the rest; a line under them counts the
+claims that held in every attempt and those without a trusted verdict. Beside it, **How the N
+dialogues ended** is a bar split by why each attempt stopped: the user finished, the turns ran out,
+the agent failed, the agent's service stayed busy, or convy's model failed, each with its count.
+When all ended one way, the panel says only that.
+
 ## Percentiles and the switch
 
 Every time and token number is a spread: how many values, the least, the 10th, 50th and 90th

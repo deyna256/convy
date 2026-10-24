@@ -7,7 +7,7 @@ from importlib.resources import files
 from math import comb
 from pathlib import Path
 from statistics import mean, quantiles
-from typing import Literal
+from typing import Literal, get_args
 
 import msgspec
 from msgspec import Struct
@@ -447,6 +447,28 @@ class CallStats(Struct, frozen=True):
     tokens: Spread | None  # per call that reports them
 
 
+class FailedClaim(Struct, frozen=True):
+    """A claim that failed in some trusted decision: its scenario, its place in the scenario's
+    claims, and how often it held."""
+
+    scenario: str
+    claim: int  # from 0
+    held: int
+    judged: int
+
+
+class Claims(Struct, frozen=True):
+    """The run's claims: the ones that failed, the least held first, and how many of the rest
+    held every time or have no trusted decision."""
+
+    failed: tuple[FailedClaim, ...]
+    held: int
+    undecided: int
+
+
+ENDS: tuple[Stop, ...] = get_args(Stop.__value__)
+
+
 class RunHead(Struct, frozen=True):
     id: str
     short: str
@@ -473,6 +495,8 @@ class RunPage(Struct, frozen=True):
     by_parts: tuple[str, ...]  # the ids with parts, the most tokens per attempt first
     turns: tuple[TurnStats, ...]  # the turns whose answers report tokens, by number
     calls: tuple[CallStats, ...]  # the longest in total first, then by name
+    claims: Claims
+    ends: tuple[tuple[Stop, int], ...]  # how the dialogues ended and how many, in `ENDS` order
 
 
 class Delta(Struct, frozen=True):
@@ -779,6 +803,25 @@ class Summary(Struct, frozen=True):
                 )
         return tuple(stats)
 
+    def claims(self, scenarios: Iterable[ScenarioView]) -> Claims:
+        """The claims of `scenarios`, in their order; the failed ones the least held first."""
+        failed, held, undecided = [], 0, 0
+        for view in scenarios:
+            for number, claim in enumerate(view.claims):
+                if not claim.judged:
+                    undecided += 1
+                elif claim.held == claim.judged:
+                    held += 1
+                else:
+                    failed.append(FailedClaim(view.id, number, claim.held, claim.judged))
+        failed.sort(key=lambda f: f.held / f.judged)
+        return Claims(tuple(failed), held, undecided)
+
+    def ends(self, scenarios: Iterable[ScenarioView]) -> tuple[tuple[Stop, int], ...]:
+        """How many of the attempts of `scenarios` ended each way; a way none ended is left out."""
+        stops = [attempt.stop for view in scenarios for attempt in view.attempts]
+        return tuple((end, stops.count(end)) for end in ENDS if end in stops)
+
     def calls(self, scenarios: Iterable[ScenarioView]) -> tuple[CallStats, ...]:
         """Each name the agent's calls had, with how many, their seconds and tokens; the longest
         in total first, then by name."""
@@ -1019,6 +1062,8 @@ class Report(Struct, frozen=True):
             by_parts=Ranking(with_parts).ids(),
             turns=summary.turns(views),
             calls=summary.calls(views),
+            claims=summary.claims(scenarios),
+            ends=summary.ends(views),
         )
 
     def ranked(self, spreads: Iterable[tuple[str, Spread | None]]) -> PerStat[tuple[str, ...]]:

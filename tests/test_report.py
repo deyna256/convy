@@ -30,9 +30,11 @@ from convy.report import (
     STATS,
     CallStats,
     CallView,
+    Claims,
     Comparison,
     Delta,
     Evidence,
+    FailedClaim,
     Index,
     Parts,
     PerStat,
@@ -1515,6 +1517,46 @@ def test_a_comparison_orders_the_parts_by_the_after_runs_tokens(tmp_path):
     assert Comparison(*both(tmp_path)).page().by_parts == ("b", "c", "a")
 
 
+def test_failed_claims_come_least_held_first_and_the_rest_are_counted(tmp_path):
+    both_held, second_failed = (
+        Verdict((Claim(True), Claim(True))),
+        Verdict((Claim(True), Claim(False))),
+    )
+    first_failed = Verdict((Claim(False), Claim(True)))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        3,
+        outcome("a", second_failed),
+        outcome("a", both_held, attempt=2),
+        outcome("a", both_held, attempt=3),
+        *(outcome("b", first_failed, attempt=n) for n in (1, 2, 3)),
+        *(outcome("c", NoVerdict("judge down"), attempt=n) for n in (1, 2, 3)),
+        k=3,
+        claims=("greets", "thanks"),
+    )
+    claims = Report(only(tmp_path)).page().claims
+    assert claims == Claims((FailedClaim("b", 0, 0, 3), FailedClaim("a", 1, 2, 3)), 2, 2)
+
+
+def test_the_ends_of_the_dialogues_are_counted_in_a_fixed_order(tmp_path):
+    finished = msgspec.structs.replace(outcome("a", PASSED, attempt=3), stop="user_stop")
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        2,
+        outcome("a", PASSED),
+        outcome("a", Failed("down"), attempt=2),
+        finished,
+        outcome("b", PASSED),
+        k=3,
+    )
+    page = Report(only(tmp_path)).page()
+    assert page.ends == (("user_stop", 1), ("max_turns", 2), ("agent_failure", 1))
+
+
 def test_the_turns_calls_and_parts_reach_the_pages(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
@@ -1523,6 +1565,8 @@ def test_the_turns_calls_and_parts_reach_the_pages(tmp_path):
     assert isinstance(run, dict) and isinstance(compared, dict)
     assert [turn["answers"] for turn in run["turns"]] == [1]
     assert (run["calls"], run["by_parts"]) == ([], ["a"])
+    assert run["claims"] == {"failed": [], "held": 1, "undecided": 0}
+    assert run["ends"] == [["max_turns", 1]]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
     assert run["scenarios"][0]["parts"] == parts
     assert [turn["turn"] for turn in compared["turns"]] == [1]
