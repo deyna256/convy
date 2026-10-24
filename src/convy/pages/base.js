@@ -164,7 +164,8 @@ const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} $
 const partBar = (p, total, top, thin = false) => el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
   PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`})));
 function partLegend(parts) {
-  const words = new Map();
-  for (const k of PARTS) for (const p of parts) if (p[k] != null) words.set(`${k} ${partWords(p)[k]}`, swatch(SEG[k], partWords(p)[k]));
-  return el("div", {className: "legend"}, [...words.values()]);
+  const has = k => parts.filter(p => p[k] != null);
+  const split = has("input").filter(p => p.cached != null).length;
+  const input = !split ? "input" : split === has("input").length ? "new input" : "new input; all of it where the cache is not reported";
+  return el("div", {className: "legend"}, PARTS.filter(k => has(k).length).map(k => swatch(SEG[k], k === "cached" ? "from the cache" : k === "input" ? input : k)));
 }

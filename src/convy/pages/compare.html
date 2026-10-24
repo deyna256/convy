@@ -104,9 +104,9 @@ function tiles() {
 
 // The change block: per compared scenario a bar from zero on a fixed −100%…+100% scale, its length
 // the change of the chosen statistic; a longer change is clipped with › and its text keeps the value.
+const byId = new Map(DATA.rows.map(r => [r.id, r]));
 function changes(title, order, field, value, unit) {
   const {keep} = filtered();
-  const byId = new Map(DATA.rows.map(r => [r.id, r]));
   const rows = order.filter(keep).map(id => byId.get(id)).map(r => {
     const d = r[field][stat], size = Math.min(Math.abs(d.value), 100) / 2;
     const sign = d.value > 0 ? "+" : d.value < 0 ? "−" : "";
@@ -126,16 +126,16 @@ function changes(title, order, field, value, unit) {
 // Tokens by part before and after: two thin bars per compared scenario on one scale, the mean
 // tokens per attempt and the share of the input read from the cache as text.
 const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
-const share = p => p.cached == null || !(p.cached + p.input) ? "—" : pct(p.cached / (p.cached + p.input));
+const share = p => p.cached == null ? "not reported" : !(p.cached + p.input) ? "—" : `${pct(p.cached / (p.cached + p.input))} cached`;
 function partPairs() {
   const {keep} = filtered();
-  const rows = DATA.by_parts.filter(keep).map(id => DATA.rows.find(r => r.id === id));
+  const rows = DATA.by_parts.filter(keep).map(id => byId.get(id));
   const top = Math.max(0, ...rows.flatMap(r => [r.before.tokens.mean, r.after.tokens.mean]));
   return chart("Tokens per attempt by part · mean · before and after", rows.map(r => el("div", {className: "rrow", title: `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
       el("span", {className: "rid mono", title: r.id}, r.id),
       el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(r.before.parts, r.before.tokens.mean, top, true), partBar(r.after.parts, r.after.tokens.mean, top, true)),
       el("span", {className: "n"}, `${thousands(r.before.tokens.mean)} → ${thousands(r.after.tokens.mean)}`,
-        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted"}, ` · ${share(r.before.parts)} → ${share(r.after.parts)} cached`)))),
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted"}, ` · ${share(r.before.parts)} → ${share(r.after.parts)}`)))),
     [scaleLine(count(top)), partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])),
       el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
 }
@@ -184,7 +184,7 @@ function column(word, run, view, number) {
 }
 
 function show(id, number) {
-  const r = DATA.rows.find(item => item.id === id);
+  const r = byId.get(id);
   if (!r) return;
   address(id, number);
   const view = r.after ?? r.before;
