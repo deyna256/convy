@@ -160,19 +160,16 @@ function indented(text) {
   try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 }
 
-// The address keeps the open window: #<scenario>&attempt=<n>.
+// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's statistic.
 function address(id, attempt) {
-  history.replaceState(null, "", `#${encodeURIComponent(id)}&attempt=${attempt}`);
+  writeAddress(new URLSearchParams({id, attempt: String(attempt)}));
 }
 function fromAddress() {
-  const hash = location.hash.slice(1);
-  const at = hash.lastIndexOf("&attempt=");
-  if (at < 0) return null;
-  try { return {id: decodeURIComponent(hash.slice(0, at)), attempt: Number(hash.slice(at + 9)) || 1}; }
-  catch { return null; }
+  const params = readAddress(), id = params.get("id");
+  return id ? {id, attempt: Number(params.get("attempt")) || 1} : null;
 }
 function clearAddress() {
-  history.replaceState(null, "", location.pathname + location.search);
+  writeAddress(new URLSearchParams());
 }
 function filtered() {
   const mask = document.getElementById("filter").value.trim() || "*";

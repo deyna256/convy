@@ -43,6 +43,7 @@ td.changed { color: var(--focus); } td.changed::before { content: "● "; font-s
 <body>
 <div class="page">
   <header id="head"></header>
+  <div id="switch"></div>
   <div id="groups"></div>
   <div class="cmp" id="compare" aria-live="polite"></div>
   <p class="hint" id="hint"></p>
@@ -101,7 +102,7 @@ function line(group, row, older) {
     cell(row, older, "user", run.user), cell(row, older, "judge", run.judge), cell(row, older, "convy", run.convy),
     group.trusted && cell(row, older, "trust", setupOf(row, "trust")),
     el("td", {className: "n"}, el("strong", {}, pct(m.rate)), el("span", {className: "sub"}, `${m.passed} of ${m.judged}${notTrusted(m.cut)}`)),
-    el("td", {className: "n"}, secs(m.seconds?.mean)), el("td", {className: "n"}, count(m.tokens?.mean)), el("td", {className: "n"}, String(m.errors)));
+    el("td", {className: "n"}, secs(chosen(m.seconds))), el("td", {className: "n"}, count(chosen(m.tokens))), el("td", {className: "n"}, String(m.errors)));
 }
 
 function section(group) {
@@ -109,11 +110,11 @@ function section(group) {
   const rows = all ? group.rows : group.rows.slice(0, RUNS);
   const more = older > 0 && el("button", {className: "more", type: "button"}, all ? "Show fewer runs" : `Show ${plural(older, "older run")}`);
   if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(() => document.querySelector(`section[aria-label="${CSS.escape(group.agent)}"] .more`)); });
-  const heads = ["", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", "Time / answer", "Tokens / attempt", "Errors"].filter(h => h !== false);
+  const heads = ["", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", `Time / answer · ${STAT[stat]}`, `Tokens / attempt · ${STAT[stat]}`, "Errors"].filter(h => h !== false);
   return el("section", {className: "panel group", "aria-label": group.agent},
     el("div", {className: "ghead"}, el("div", {}, el("h2", {}, group.agent), el("span", {className: "sub"}, `${plural(group.rows.length, "run")} · last ${when(group.rows[0].run.started)}`)), strip(group)),
     el("div", {className: "scroll"}, el("table", {},
-      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h) ? "n" : null, "aria-label": h || "Compare"}, h)))),
+      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h.split(" · ")[0]) ? "n" : null, "aria-label": h || "Compare"}, h)))),
       el("tbody", {}, rows.map((row, i) => line(group, row, group.rows[i + 1]))))),
     more);
 }
@@ -150,6 +151,7 @@ function draw(find) {
 }
 
 document.getElementById("head").replaceChildren(header());
+document.getElementById("switch").replaceChildren(statSwitch(draw));
 document.getElementById("hint").textContent = "Tick two runs to compare them, or run: convy compare <before> <after>";
 draw();
 </script>

@@ -84,3 +84,33 @@ function chart(title, rows, scale, redraw) {
   if (more) more.addEventListener("click", () => { every = !every; redraw(); });
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every ? rows.length : ROWS), scale, more);
 }
+
+// The statistic of each time and token spread that the charts and tables after the switch show,
+// one per page, P50 by default. The address keeps it as stat=, beside the open scenario's id and
+// attempt; P50 is not written.
+const STATS = ["p50", "p90", "max", "mean"];
+const STAT = {p50: "P50", p90: "P90", max: "Max", mean: "Mean"};
+const MEANING = {p50: "P50: half the values are at or under it", p90: "P90: 9 in 10 values are at or under it",
+  max: "Max: the largest value", mean: "Mean: the sum of the values over their count"};
+function readAddress() {
+  const hash = location.hash.slice(1), first = hash.split("&")[0];
+  return new URLSearchParams(first && !first.includes("=") ? `id=${hash}` : hash);  // part 1's #<id>&attempt=<n>
+}
+function writeAddress(params) {
+  params.delete("stat");
+  if (stat !== "p50") params.set("stat", stat);
+  const hash = params.toString();
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
+}
+let stat = STATS.includes(readAddress().get("stat")) ? readAddress().get("stat") : "p50";
+const chosen = spread => spread == null ? null : spread[stat];
+function statSwitch(redraw) {
+  const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
+  buttons.forEach((button, i) => button.addEventListener("click", () => {
+    stat = STATS[i];
+    buttons.forEach((other, j) => other.setAttribute("aria-pressed", String(i === j)));
+    writeAddress(readAddress());
+    redraw();
+  }));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Charts show:"), el("div", {role: "group", "aria-label": "Charts show"}, buttons));
+}

@@ -19,6 +19,7 @@
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
   <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section>
+  <div id="switch"></div>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
   <p class="hint" id="hint"></p>
@@ -59,13 +60,13 @@ function table() {
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
-      el("td", {className: "n metric"}, secs(s.seconds?.mean), el("small", {}, s.seconds == null ? "" : `slowest ${secs(s.seconds.max)}`)),
-      el("td", {className: "n metric"}, count(s.tokens?.mean), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
+      el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : `max ${secs(s.seconds.max)}`)),
+      el("td", {className: "n metric"}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per attempt · ${STAT[stat]}`))),
     el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
 }
 
@@ -132,6 +133,7 @@ function draw() {
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(tiles());
+document.getElementById("switch").replaceChildren(statSwitch(draw));
 document.getElementById("filter").addEventListener("input", draw);
 document.getElementById("hint").textContent = `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();

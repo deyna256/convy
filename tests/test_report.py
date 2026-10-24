@@ -1175,6 +1175,14 @@ def test_every_page_has_the_icon(tmp_path):
         assert '<link rel="icon" href="data:image/svg+xml,' in html
 
 
+def test_every_page_offers_the_statistics_of_a_spread_in_their_order(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+        assert f"const STATS = {json.dumps(list(STATS))};" in html
+
+
 def test_attempts_below_trust_are_cut_out_and_counted(tmp_path):
     journal(
         tmp_path,
