@@ -1001,7 +1001,9 @@ class Comparison(Struct, frozen=True):
         old one is 0 and the new one is not."""
         if was is None or now is None or (was == 0 and now != 0):
             return NO_CHANGE
-        change = round((now - was) / was * 100, 6) if was else 0.0
+        if was == now == 0:
+            return Delta(0.0, "same")
+        change = round((now - was) / was * 100, 6)
         return Delta(change, self.slight(change))
 
     def slight(self, percent: float) -> Tone:
@@ -1063,14 +1065,16 @@ class Index(Struct, frozen=True):
             run=summary.head(),
             metrics=metrics,
             result=Tally(metrics.passed, metrics.judged).result(),
-            changed=() if previous is None else self.changed(previous.spec, run.spec),
+            changed=() if previous is None else self.changed(previous.spec, run.spec, before, ids),
             added=len(ids - before),
             dropped=len(before - ids),
             order=order,
             report=f"{run.path.as_posix()}/report.html",
         )
 
-    def changed(self, was: RunSpec, now: RunSpec) -> tuple[Setup, ...]:
+    def changed(
+        self, was: RunSpec, now: RunSpec, before: set[str], ids: set[str]
+    ) -> tuple[Setup, ...]:
         """What a run is measured with that differs from the agent's previous run. Neither the
         agent's version (comparing versions is the point) nor the number of attempts counts; nor
         a scenario edited under the same id, which the comparison tells apart."""
@@ -1079,7 +1083,7 @@ class Index(Struct, frozen=True):
             ("judge", was.judge, now.judge),
             ("convy", was.convy, now.convy),
             ("trust", was.trust, now.trust),
-            ("scenarios", {s.id for s in was.scenarios}, {s.id for s in now.scenarios}),
+            ("scenarios", before, ids),
         )
         return tuple(name for name, before, after in pairs if before != after)
 

@@ -29,6 +29,7 @@
 .group td.setup { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; }
 .group th, .group td { padding-left: 9px; padding-right: 9px; }
 td.changed { color: var(--focus); } td.changed::before { content: "● "; font-size: 9px; vertical-align: 2px; }
+.group tbody tr:last-child td { border-bottom: 0; }
 .group .more { display: block; margin: 0; padding: 10px 16px; border-top: 1px solid var(--rule); }
 .cmp { position: sticky; bottom: 12px; margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--side); border: 1px solid var(--focus); border-radius: 10px; }
 .cmp:empty { display: none; }
@@ -80,8 +81,7 @@ function strip(group) {
 }
 
 // A setup cell: marked when it differs from the agent's previous run, which the next row holds.
-const SETUP = {trust: r => r.run.trust ? String(r.run.trust) : "—"};
-const setupOf = (row, field) => field === "trust" ? SETUP.trust(row) : String(row.run[field]);
+const setupOf = (row, field) => field === "trust" && !row.run.trust ? "—" : String(row.run[field]);
 function cell(row, older, field, text) {
   const base = ["user", "judge", "convy"].includes(field) ? "mono setup" : "mono";
   if (!row.changed.includes(field)) return el("td", {className: base}, text);
@@ -99,7 +99,7 @@ function line(group, row, older) {
     el("td", {className: "mono"}, run.version || "—"),
     cell(row, older, "scenarios", `${run.scenarios} × ${run.k}`),
     cell(row, older, "user", run.user), cell(row, older, "judge", run.judge), cell(row, older, "convy", run.convy),
-    group.trusted && cell(row, older, "trust", SETUP.trust(row)),
+    group.trusted && cell(row, older, "trust", setupOf(row, "trust")),
     el("td", {className: "n"}, el("strong", {}, pct(m.rate)), el("span", {className: "sub"}, `${m.passed} of ${m.judged}${notTrusted(m.cut)}`)),
     el("td", {className: "n"}, secs(m.seconds)), el("td", {className: "n"}, count(m.tokens)), el("td", {className: "n"}, String(m.errors)));
 }
@@ -134,7 +134,7 @@ function compareBar() {
   const copy = el("button", {className: "theme", type: "button"}, "Copy");
   copy.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(command); copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 2000); }
-    catch { getSelection().selectAllChildren(code); copy.textContent = "Select and copy"; }  // no clipboard here: the command is selected to copy by hand
+    catch { getSelection().selectAllChildren(code); copy.textContent = "Select and copy"; setTimeout(() => { copy.textContent = "Copy"; }, 2000); }  // no clipboard here: the command is selected to copy by hand
   });
   bar.replaceChildren(el("span", {}, "Compare them:"), code, copy);
 }

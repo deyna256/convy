@@ -67,6 +67,8 @@ sent and received, JSON indented, or "not reported" and "empty".
 If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
 did not say. The address keeps the open scenario, so you can send a link to it.
 
+## The index
+
 `results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
 shows the rest). A strip shows each agent's newest 40 runs, newest left: a bar per run as high as
 its pass rate and coloured by its result, and a line where the **setup** changed. The setup is what

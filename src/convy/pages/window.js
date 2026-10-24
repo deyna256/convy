@@ -118,14 +118,19 @@ function answerHead(t, toggle = null) {
 // are one node; the button that unfolds or folds them hands its focus to the one that replaces it.
 function timeline(t) {
   const box = el("div", {className: "bubble flow"});
+  let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
   const draw = (open, focus) => {
     const toggle = el("button", {className: "link", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
-    toggle.addEventListener("click", () => draw(!open, true));
+    toggle.addEventListener("click", () => {
+      if (open) calls = [...box.querySelectorAll("details")].map(d => d.open);
+      draw(!open, true);
+    });
     const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
     const steps = open ? t.steps.map(s => s.type === "thought" ? thoughtNode(s) : callNode(s))
       : [node("steps", el("div", {className: "card fold"}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary), toggle))];
     box.replaceChildren(answerHead(t, open ? toggle : null),
       el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
+    box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
     if (focus) toggle.focus();
   };
   draw(false, false);
@@ -148,7 +153,7 @@ function callNode(c) {
 function said(label, text) {
   const body = text == null ? el("div", {className: "box none"}, "not reported")
     : text === "" ? el("div", {className: "box none"}, "empty")
-    : el("pre", {className: "box", tabIndex: 0, "aria-label": label}, indented(text));
+    : el("pre", {className: "box", tabIndex: 0, role: "region", "aria-label": label}, indented(text));
   return el("div", {}, el("div", {className: "sec"}, label), body);
 }
 function indented(text) {

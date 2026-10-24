@@ -92,7 +92,7 @@ function show(id, number) {
         el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, s.user),
         el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
         el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text),
-          el("span", {className: "tally"}, squares(claimMarks(s.attempts, i), "Decisions", attempt && attempt.attempt, n => show(id, n)), claimTally(c)))))),
+          el("span", {className: "tally"}, squares(claimMarks(s.attempts, i), "Decisions", attempt && attempt.attempt, n => { show(id, n); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); }), claimTally(c)))))),
       el("div", {className: "main"},
         attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
           : el("p", {className: "empty"}, "No attempts recorded yet.")))));
