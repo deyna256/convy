@@ -149,3 +149,4 @@ tbody tr.row:hover td { background: var(--side); }
 .chart .ptrack { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 16px; }
 .pbar { display: flex; gap: 2px; height: 10px; min-width: 2px; }
 .pbar.thin { height: 5px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

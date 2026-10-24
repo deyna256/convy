@@ -102,7 +102,8 @@ function writeAddress(params) {
   const hash = params.toString();
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
-let stat = STATS.includes(readAddress().get("stat")) ? readAddress().get("stat") : "p50";
+const fromHash = readAddress().get("stat");
+let stat = STATS.includes(fromHash) ? fromHash : "p50";
 const chosen = spread => spread == null ? null : spread[stat];
 function statSwitch(redraw) {
   const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
@@ -133,8 +134,11 @@ function spreadTile(label, spread, unit, lines, under = () => null) {
 // top.
 function turnChart(title, turns, top) {
   const h = v => `${top ? v / top * 100 : 0}%`;
-  const split = turns.some(t => t.cached), whole = turns.some(t => !t.cached);
+  const drawn = turns.filter(t => t.input);  // a turn a run did not reach with tokens is an empty column
+  const split = drawn.some(t => t.cached), whole = drawn.some(t => !t.cached);
   const cols = turns.map(t => {
+    if (!t.input) return el("div", {className: "turn few"}, el("span", {className: "share"}), el("div", {className: "bars", "aria-hidden": "true"}),
+      el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub"}, "no tokens"));
     const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
     const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
     const parts = cached == null ? [el("span", {className: "seg input"})]
@@ -149,7 +153,7 @@ function turnChart(title, turns, top) {
   });
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
     el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "axis"}, el("span", {}, count(top)), el("span", {}, "0")), cols)),
-    el("div", {className: "legend"}, split && swatch("cache", "read from the cache"),
+    el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
       swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
     el("p", {className: "caption"}, "Later turns hold only the longer dialogues."));
 }

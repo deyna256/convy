@@ -26,30 +26,6 @@ Five tiles sum up the run, in two rows:
   report `cache_read`.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
 
-Under the tiles, a box plot per scenario shows how it spreads: **Time per answer** over its
-answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
-value, the box from P10 to P90, and a line marks the median; the median and `n`, how many values,
-are written at the end. With few values the box reaches the whiskers; one value is a single tick.
-The largest median comes first, the first ten (**Show all N** shows the rest). Each panel's scale
-runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
-other boxes; the numbers stay in the text and in each row's tooltip.
-
-**Tokens by turn** has a column per turn of the dialogues, from 1: a bar of input, split into what
-was read from the cache and the new input, and a bar of output, each the chosen statistic of that
-turn's answers. The input is split only when every answer of the turn that reports tokens reports
-its cache reads; otherwise it is whole and says `cache not reported`. Above it, the share read
-from the cache (`74% cached`); under it, how many answers and scenarios it holds, greyed under
-three answers. Later turns hold only the longer dialogues.
-
-**Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
-from the cache, the new input (cache writes included), the output and the thinking. A part the
-agent does not report is not split out. It shows the mean whatever the switch says: the parts of a
-P90 do not add up to the P90.
-
-**The agent's calls**, when the answers give their [steps](agents.md#steps): per call name, how
-many calls, their total time, and the chosen statistic of the seconds and the tokens per call
-(`—` when not reported). The longest in total comes first.
-
 ## Percentiles and the switch
 
 Every time and token number is a spread: how many values, the least, the 10th, 50th and 90th
@@ -64,6 +40,31 @@ titles say which (`Time per answer · P90`). The tiles and the box plot show the
 **Tokens by part** the mean; the cache share is a share. The address keeps the switch
 (`#stat=p90`), so a link opens on it.
 
+Under the tiles, a box plot per scenario shows how it spreads: **Time per answer** over its
+answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
+value, the box from P10 to P90, and a line marks the median; the median and `n`, how many values,
+are written at the end. With few values the box reaches the whiskers; one value is a single tick.
+The largest median comes first, the first ten (**Show all N** shows the rest). Each panel's scale
+runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
+other boxes; the numbers stay in the text and in each row's tooltip.
+
+**Tokens by turn** has a column per turn of the dialogues, from 1: a bar of input, split into what
+was read from the cache and the new input, and a bar of output, each the chosen statistic of that
+turn's answers. The input is split only when every answer of the turn that reports tokens reports
+its cache reads; otherwise it is whole and says `cache not reported`. Above it, the share read
+from the cache (`74% cached`); under it, how many answers and scenarios it holds, greyed under
+three answers. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
+have tokens.
+
+**Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
+from the cache, the new input (cache writes included), the output and the thinking. A part the
+agent does not report is not split out. It shows the mean whatever the switch says: the parts of a
+P90 do not add up to the P90.
+
+**The agent's calls**, when the answers give their [steps](agents.md#steps): per call name, how
+many calls, their total time, and the chosen statistic of the seconds and the tokens per call
+(`—` when not reported). The longest in total comes first.
+
 ## Scenarios
 
 Each scenario gets a row and a status:
@@ -74,7 +75,7 @@ Each scenario gets a row and a status:
 - **No verdict**: no attempt was counted: none was played yet, or each had no verdict or a verdict
   not decided at the run's trust.
 
-The row also shows the chosen statistic of the time per answer, with the slowest answer under it,
+The row also shows the chosen statistic of the time per answer, with its Max under it (its P50 when Max is chosen),
 and of the tokens per attempt, with in and out under it.
 **Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict or not trusted. Click one
 to open that attempt. A filter such as `refund-*` narrows the list.
@@ -134,8 +135,8 @@ when neither does.
 
 The Time per answer and Tokens per attempt tiles show the after run's P50, P90, Max and Mean, each
 with its change in seconds or tokens, and the before run's four on one line. A change under 5% of
-the old value, as the page rounds it, is grey. A change of Max is always grey with `~`: one answer
-moves it.
+the old value, as the page rounds it, is grey. A change of Max is grey with `~`: one answer
+moves it. An unchanged Max shows `=`.
 
 Under the tiles, two panels show how each compared scenario changed: a bar from 0, its length the
 change of the chosen statistic of the scenario's time per answer or tokens per attempt as a
@@ -146,7 +147,7 @@ it. Each panel shows ten rows, then **Show all N**.
 
 **Tokens by turn** shows both runs side by side on one scale, the turns lined up, and **Tokens by
 part** two thin bars per compared scenario, before and after, with the mean tokens per attempt
-(`1,018 → 1,522`) and the share read from the cache (`78% → 21%`).
+(`1,018 → 1,522`) and, under it, the share read from the cache (`78% → 21%`).
 
 - Green means better, red means worse.
 - Grey with `~` means the pass rate's change may be chance. convy looks at the scenarios both

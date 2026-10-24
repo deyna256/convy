@@ -25,10 +25,9 @@
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
   <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section>
-  <div id="switch"></div>
   <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section>
   <section id="calls" aria-label="The agent's calls"></section>
-  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <div class="tools" id="scenarios"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
   <p class="hint" id="hint"></p>
 </div>
@@ -75,7 +74,7 @@ function table() {
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
-      el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : `max ${secs(s.seconds.max)}`)),
+      el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : stat === "max" ? `p50 ${secs(s.seconds.p50)}` : `max ${secs(s.seconds.max)}`)),
       el("td", {className: "n metric"}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
@@ -171,17 +170,21 @@ function draw() {
   document.getElementById("spread").replaceChildren(
     boxes("Time per answer by scenario", DATA.by_seconds.p50, "seconds", secs, "answer", s => s.attempts.length ? "no answers" : "not played"),
     boxes("Tokens per attempt by scenario", DATA.by_tokens.p50, "tokens", count, "attempt", s => s.attempts.length ? "not reported" : "not played"));
+  const byTurn = DATA.turns.length > 1;
   document.getElementById("tokens").replaceChildren(...[
-    DATA.turns.length > 1 && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
+    byTurn && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
     DATA.by_parts.length > 0 && parts()].filter(Boolean));
   document.getElementById("calls").replaceChildren(...calls());
+  // The switch sits just before the first panel that follows it.
+  const first = byTurn ? "tokens" : DATA.calls.length ? "calls" : "scenarios";
+  document.getElementById(first).before(chooser);
   document.getElementById("table").replaceChildren(table());
 }
 
+const chooser = statSwitch(draw);
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(...tiles());
-document.getElementById("switch").replaceChildren(statSwitch(draw));
 document.getElementById("filter").addEventListener("input", draw);
 document.getElementById("hint").textContent = `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();

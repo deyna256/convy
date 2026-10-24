@@ -798,7 +798,7 @@ class Summary(Struct, frozen=True):
                 tokens = self.spread(call.tokens for call in calls)
                 total = sum(call.seconds for call in calls)
                 stats.append(CallStats(name, len(calls), total, seconds, tokens))
-        return tuple(sorted(stats, key=lambda stats: (-stats.total, stats.name)))
+        return tuple(sorted(stats, key=lambda s: (-s.total, s.name)))
 
     def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:
         """A claim over the attempts the judge decided, cut or not: its trusted decisions are
@@ -1211,8 +1211,8 @@ class Comparison(Struct, frozen=True):
     def units(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
         """A tile's change of each statistic in its own unit. Max's is noise, as one answer moves
         it, unless it did not change."""
-        p50, p90, top, mean = (self.unit(self.at(was, s), self.at(now, s)) for s in STATS)
-        return PerStat(p50, p90, Delta(top.value, "noise") if top.value else top, mean)
+        p50, p90, top, average = (self.unit(self.at(was, s), self.at(now, s)) for s in STATS)
+        return PerStat(p50, p90, Delta(top.value, "noise") if top.value else top, average)
 
     def unit(self, was: float | None, now: float | None) -> Delta:
         """A tile's change of a statistic in its own unit, toned as the scenarios' rows are; a

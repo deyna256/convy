@@ -87,12 +87,16 @@ function strip(group) {
         el("span", {className: values[i] == null ? "fill stub" : `fill ${fill}`, style: `height: ${values[i] == null || !top ? 2 : Math.max(2, values[i] / top * 18)}px`}))))));
   };
   const shown = group.rows.length > BARS ? el("span", {}, `newest ${BARS} of ${group.rows.length}`) : null;
-  return el("div", {className: "runs", tabindex: "-1", "aria-hidden": "true"}, el("div", {className: "trend first"}, el("span"), el("span"), el("div", {className: "strip"}, lined(passes))),
-    el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
-      el("span", {}, el("i", {className: "key line"}), "setup changed"), shown),
+  const reported = rows.filter(row => row.metrics.cached != null).length;
+  const legend = el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
+    el("span", {}, el("i", {className: "key line"}), "setup changed"), shown);
+  return el("div", {className: "runs", tabindex: "-1"}, el("div", {"aria-hidden": "true"},
+    el("div", {className: "trend first"}, el("span", {}, "Pass rate"), el("span", {className: "tv"}, pct(rows[0].metrics.rate)), el("div", {className: "strip"}, lined(passes))),
     trend(`Time / answer · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.seconds)), secs, "value"),
     trend(`Tokens / attempt · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.tokens)), count, "value"),
-    trend("From the cache", rows.map(row => row.metrics.cached), pct, "cache"));
+    trend("From the cache", rows.map(row => row.metrics.cached), pct, "cache"),
+    legend),
+    el("span", {className: "sr-only"}, `From the cache: ${pct(rows[0].metrics.cached)} in the newest run; ${reported} of ${plural(rows.length, "run")} report it`));
 }
 
 // A setup cell: marked when it differs from the agent's previous run, which the next row holds.

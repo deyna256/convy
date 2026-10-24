@@ -30,6 +30,7 @@
 .pair .delta { font-size: 13px; }
 .tile .stats .delta { font-size: 12.5px; }
 #tokens { --tail: 24ch; }
+#tokens .n small.block { display: block; }
 #tokens > .chart:last-child:nth-child(odd) { grid-column: 1 / -1; }
 </style>
 <script>
@@ -135,7 +136,7 @@ function partPairs() {
       el("span", {className: "rid mono", title: r.id}, r.id),
       el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(r.before.parts, r.before.tokens.mean, top, true), partBar(r.after.parts, r.after.tokens.mean, top, true)),
       el("span", {className: "n"}, `${thousands(r.before.tokens.mean)} → ${thousands(r.after.tokens.mean)}`,
-        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted"}, ` · ${share(r.before.parts)} → ${share(r.after.parts)}`)))),
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before.parts)} → ${share(r.after.parts)}`)))),
     [scaleLine(count(top)), partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])),
       el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
 }
