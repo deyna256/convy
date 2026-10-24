@@ -391,6 +391,10 @@ class ScenarioView(Struct, frozen=True):
     parts: Parts | None  # None: no attempt reports tokens
     attempts: tuple[AttemptView, ...]
 
+    def parted(self) -> float | None:
+        """The mean tokens per attempt when the parts are known, which orders `by_parts`."""
+        return None if self.parts is None or self.tokens is None else self.tokens.mean
+
 
 class Metrics(Struct, frozen=True):
     """The tiles of a run: the numbers behind them."""
@@ -480,6 +484,7 @@ class Delta(Struct, frozen=True):
 
 
 NO_CHANGE = Delta(None, "none")
+NO_CHANGES = PerStat(NO_CHANGE, NO_CHANGE, NO_CHANGE, NO_CHANGE)
 
 
 class Deltas(Struct, frozen=True):
@@ -1004,9 +1009,7 @@ class Report(Struct, frozen=True):
         summary = Summary(self.run)
         views = summary.scenarios().values()
         scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
-        with_parts = tuple(
-            (s.id, s.tokens.mean) for s in views if s.parts is not None and s.tokens is not None
-        )
+        with_parts = tuple((s.id, tokens) for s in views if (tokens := s.parted()) is not None)
         return RunPage(
             run=summary.head(),
             metrics=summary.metrics(views),
@@ -1060,13 +1063,12 @@ class Comparison(Struct, frozen=True):
             turns=self.pairs(was.turns(before.values()), now.turns(after.values())),
             by_parts=Ranking(
                 tuple(
-                    (r.id, r.after.tokens.mean)
+                    (r.id, tokens)
                     for r in compared
                     if r.before is not None
-                    and r.before.parts is not None
+                    and r.before.parted() is not None
                     and r.after is not None
-                    and r.after.parts is not None
-                    and r.after.tokens is not None
+                    and (tokens := r.after.parted()) is not None
                 )
             ).ids(),
         )
@@ -1146,8 +1148,7 @@ class Comparison(Struct, frozen=True):
         self, id: str, why: str, was: ScenarioView | None, now: ScenarioView | None
     ) -> CompareRow:
         """A scenario not compared: why, and no change of any number."""
-        none = PerStat(NO_CHANGE, NO_CHANGE, NO_CHANGE, NO_CHANGE)
-        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, none, none)
+        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, NO_CHANGES, NO_CHANGES)
 
     def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
         changes = []

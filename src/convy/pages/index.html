@@ -24,9 +24,11 @@
 .key.line { width: 2px; background: var(--muted); }
 .trend { display: grid; grid-template-columns: 22ch 7ch max-content; align-items: end; gap: 0 8px; margin-top: 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .trend.first { margin-top: 0; }
+.trend .tl { display: contents; }
 .trend .tv { color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
 .strip.thin, .strip.thin .bar, .strip.thin .brk { height: 18px; }
 .strip.thin .bar { background: none; }
+.strip.thin .fill.unfinished { min-height: 0; background: transparent; }
 .fill.value { background: var(--muted); } .fill.cache { background: var(--cache); } .fill.stub { background: var(--rule); }
 .group th { white-space: normal; }
 .group td { white-space: nowrap; }
@@ -38,7 +40,14 @@ td.changed { color: var(--focus); } td.changed::before { content: "● "; font-s
 .cmp { position: sticky; bottom: 12px; margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--side); border: 1px solid var(--focus); border-radius: 10px; }
 .cmp:empty { display: none; }
 .cmp code { font-family: var(--mono); background: var(--surface); padding: 3px 8px; border-radius: 6px; overflow-wrap: anywhere; }
-@media (max-width: 700px) { .ghead { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .ghead { grid-template-columns: 1fr; }
+  /* the labels and the legend stay in view as the bars scroll */
+  .runs > div { width: max-content; min-width: 100%; }
+  .trend { grid-template-columns: max-content; gap: 2px; }
+  .trend .tl { display: flex; gap: 8px; position: sticky; left: 0; justify-self: start; }
+  .runs .legend { position: sticky; left: 0; max-width: calc(100vw - 66px); }
+}
 </style>
 <script>
 /*include base.js*/
@@ -57,7 +66,6 @@ td.changed { color: var(--focus); } td.changed::before { content: "● "; font-s
 const DATA = __DATA__;
 const RUNS = 5, BARS = 40;
 const RESULT = {passing: "all passed", flaky: "some", failing: "none", none: "no verdict"};
-const NUMBERS = new Set(["Pass rate", "Time / answer", "Tokens / attempt", "Errors"]);
 const opened = new Set();  // agents whose older runs show
 let picked = [];  // the runs ticked to compare, in the order ticked
 
@@ -82,16 +90,16 @@ function strip(group) {
   });
   const trend = (label, values, unit, fill) => {
     const top = Math.max(0, ...values.filter(v => v != null));
-    return el("div", {className: "trend"}, el("span", {}, label), el("span", {className: "tv"}, unit(values[0])),
+    return el("div", {className: "trend"}, el("span", {className: "tl"}, el("span", {}, label), el("span", {className: "tv"}, unit(values[0]))),
       el("div", {className: "strip thin"}, lined(rows.map((row, i) => el("span", {className: "bar", title: `${row.run.short} · ${when(row.run.started)} · ${label}: ${values[i] == null ? "not reported" : unit(values[i])}`},
-        el("span", {className: values[i] == null ? "fill stub" : `fill ${fill}`, style: `height: ${values[i] == null || !top ? 2 : Math.max(2, values[i] / top * 18)}px`}))))));
+        el("span", {className: values[i] == null ? "fill stub" : `fill ${fill}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${values[i] == null || !top ? 2 : Math.max(2, values[i] / top * 18)}px`}))))));
   };
   const shown = group.rows.length > BARS ? el("span", {}, `newest ${BARS} of ${group.rows.length}`) : null;
   const reported = rows.filter(row => row.metrics.cached != null).length;
   const legend = el("div", {className: "legend"}, Object.entries(RESULT).map(([result, word]) => el("span", {}, el("i", {className: `key ${result}`}), word)),
     el("span", {}, el("i", {className: "key line"}), "setup changed"), shown);
   return el("div", {className: "runs", tabindex: "-1"}, el("div", {"aria-hidden": "true"},
-    el("div", {className: "trend first"}, el("span", {}, "Pass rate"), el("span", {className: "tv"}, pct(rows[0].metrics.rate)), el("div", {className: "strip"}, lined(passes))),
+    el("div", {className: "trend first"}, el("span", {className: "tl"}, el("span", {}, "Pass rate"), el("span", {className: "tv"}, pct(rows[0].metrics.rate))), el("div", {className: "strip"}, lined(passes))),
     trend(`Time / answer · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.seconds)), secs, "value"),
     trend(`Tokens / attempt · ${STAT[stat]}`, rows.map(row => chosen(row.metrics.tokens)), count, "value"),
     trend("From the cache", rows.map(row => row.metrics.cached), pct, "cache"),
@@ -128,11 +136,12 @@ function section(group) {
   const rows = all ? group.rows : group.rows.slice(0, RUNS);
   const more = older > 0 && el("button", {className: "more", type: "button"}, all ? "Show fewer runs" : `Show ${plural(older, "older run")}`);
   if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(() => document.querySelector(`section[aria-label="${CSS.escape(group.agent)}"] .more`)); });
-  const heads = ["", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", `Time / answer · ${STAT[stat]}`, `Tokens / attempt · ${STAT[stat]}`, "Errors"].filter(h => h !== false);
+  const heads = [  // the last four hold numbers
+    "", "Run", "Version", "Scenarios × attempts", "User", "Judge", "convy", group.trusted && "Trust", "Pass rate", `Time / answer · ${STAT[stat]}`, `Tokens / attempt · ${STAT[stat]}`, "Errors"].filter(h => h !== false);
   return el("section", {className: "panel group", "aria-label": group.agent},
     el("div", {className: "ghead"}, el("div", {}, el("h2", {}, group.agent), el("span", {className: "sub"}, `${plural(group.rows.length, "run")} · last ${when(group.rows[0].run.started)}`)), strip(group)),
     el("div", {className: "scroll"}, el("table", {},
-      el("thead", {}, el("tr", {}, heads.map(h => el("th", {className: NUMBERS.has(h.split(" · ")[0]) ? "n" : null, "aria-label": h || "Compare"}, h)))),
+      el("thead", {}, el("tr", {}, heads.map((h, i) => el("th", {className: i >= heads.length - 4 ? "n" : null, "aria-label": h || "Compare"}, h)))),
       el("tbody", {}, rows.map((row, i) => line(group, row, group.rows[i + 1]))))),
     more);
 }
