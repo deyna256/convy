@@ -90,7 +90,8 @@ tbody tr.row:hover td { background: var(--side); }
 .chart .track::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--rule); }
 .chart .range { position: absolute; top: 5px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--focus) 45%, transparent); }
 .chart .mean { position: absolute; top: 1px; width: 2px; height: 14px; margin-left: -1px; background: var(--ink); }
-.chart .scale { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.chart .scale { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.chart .scale > span { font-size: 11px; }
 .chart .scale > span:nth-child(2) { display: flex; justify-content: space-between; }
 .more { all: unset; display: inline-block; cursor: pointer; color: var(--focus); font-size: 12.5px; margin-top: 8px; }
 .more:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
