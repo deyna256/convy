@@ -114,3 +114,58 @@ function statSwitch(redraw) {
   }));
   return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Charts show:"), el("div", {role: "group", "aria-label": "Charts show"}, buttons));
 }
+
+// A scale under a panel's rows: 0 at the left, its top at the right.
+const scaleLine = top => el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "0"), el("span", {}, top)), el("span"));
+const swatch = (part, word) => el("span", {}, el("i", {className: `key ${part}`}), word);
+
+// A wide tile of a spread: its four statistics at the same size, each with what goes under it,
+// then its lines.
+function spreadTile(label, spread, unit, lines, under = () => null) {
+  return el("div", {className: "tile wide"}, el("span", {className: "l"}, label),
+    el("div", {className: "stats"}, STATS.map(k => el("div", {}, el("span", {className: "k"}, STAT[k]), el("span", {className: "v"}, spread ? unit(spread[k]) : "—"), under(k)))),
+    lines.map(line => typeof line === "string" ? el("span", {className: "s"}, line) : line));
+}
+
+// Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
+// what was read from the cache and the new input when every answer reports its cache reads, and a
+// bar of their output; the share cached above, how many answers under. `top` is the shared scale's
+// top; a turn the run has no tokens at, {turn}, is an empty column.
+function turnChart(title, turns, top) {
+  const h = v => `${top ? v / top * 100 : 0}%`;
+  const split = turns.some(t => t.input && t.cached), whole = turns.some(t => t.input && !t.cached);
+  const cols = turns.map(t => {
+    if (!t.input) return el("div", {className: "turn"}, el("span", {className: "share"}, "—"), el("div", {className: "bars"}), el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub muted"}, "no tokens"));
+    const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
+    const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
+    const parts = cached == null ? [el("span", {className: "seg input"})]
+      : [el("span", {className: "seg input", style: `flex-grow: ${input - cached}`}), el("span", {className: "seg cache", style: `flex-grow: ${cached}`})];
+    return el("div", {className: t.answers < 3 ? "turn few" : "turn", title: said},
+      el("span", {className: "share"}, cached == null ? "cache not reported" : `${pct(input ? cached / input : null)} cached`),
+      el("div", {className: "bars", "aria-hidden": "true"},
+        el("span", {className: "bar", style: `height: ${h(input)}`}, parts),
+        el("span", {className: "bar", style: `height: ${h(output)}`}, el("span", {className: "seg output"}))),
+      el("span", {className: "tn"}, `Turn ${t.turn}`),
+      el("span", {className: "sub"}, `${plural(t.answers, "answer")} · ${plural(t.scenarios, "scenario")}`));
+  });
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
+    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "axis"}, count(top)), cols)),
+    el("div", {className: "legend"}, split && swatch("cache", "read from the cache"),
+      swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
+    el("p", {className: "caption"}, "Later turns hold only the longer dialogues."));
+}
+const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
+
+// Tokens by part: a scenario's mean tokens per attempt as one bar split into the parts the agent
+// reports. A sum of parts is true only for the mean, so these bars do not follow the switch.
+const PARTS = ["cached", "input", "output", "thinking"];
+const SEG = {cached: "cache", input: "input", output: "output", thinking: "thinking"};
+const partWords = p => ({cached: "from the cache", input: p.cached == null ? "input" : "new input", output: "output", thinking: "thinking"});
+const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} ${partWords(p)[k]}`).join(" · ");
+const partBar = (p, total, top, thin = false) => el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
+  PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`})));
+function partLegend(parts) {
+  const words = new Map();
+  for (const k of PARTS) for (const p of parts) if (p[k] != null) words.set(`${k} ${partWords(p)[k]}`, swatch(SEG[k], partWords(p)[k]));
+  return el("div", {className: "legend"}, [...words.values()]);
+}
