@@ -263,6 +263,7 @@ class CallView(Struct, frozen=True, tag="call", kw_only=True):
     seconds: float
     left: float  # where its bar starts on the answer's time line of calls, 0..1
     width: float  # how much of that line it takes, 0..1
+    start: float  # seconds after the answer's first call started
     tokens: int | None  # input + output; None: not reported
     sent: str | None  # None: not reported; "" was reported empty
     received: str | None
@@ -281,6 +282,7 @@ class TurnView(Struct, frozen=True):
     steps: tuple[ThoughtView | CallView, ...]
     thoughts: int  # how many of the steps are thoughts
     calls: int  # and how many are calls
+    span: float  # seconds from the first call's start to the last call's end; 0 without calls
 
 
 class AttemptView(Struct, frozen=True):
@@ -737,7 +739,14 @@ class Summary(Struct, frozen=True):
                     calls += 1
         steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
         return TurnView(
-            turn.message.text, turn.answer.text, turn.seconds, *tokens, steps, thoughts, calls
+            turn.message.text,
+            turn.answer.text,
+            turn.seconds,
+            *tokens,
+            steps,
+            thoughts,
+            calls,
+            length,
         )
 
     def count(self, count: int | NotReported) -> int | None:
@@ -777,6 +786,7 @@ class Summary(Struct, frozen=True):
                     seconds=step.seconds,
                     left=offset / length if length else 0.0,
                     width=step.seconds / length if length else 0.0,
+                    start=offset,
                     tokens=self.tokens(step.usage),
                     sent=self.reported(step.sent),
                     received=self.reported(step.received),

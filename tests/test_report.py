@@ -523,12 +523,14 @@ def bar(
     tokens: int | None = None,
     sent: str | None = None,
     received: str | None = None,
+    start: float = 0.0,
 ) -> CallView:
     return CallView(
         name=name,
         seconds=seconds,
         left=left,
         width=width,
+        start=start,
         tokens=tokens,
         sent=sent,
         received=received,
@@ -537,12 +539,14 @@ def bar(
 
 def test_calls_sit_on_their_own_time_line(tmp_path):
     turn = shown(tmp_path, call("search", 0, 1), call("gpt", 2, 2))
-    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5))
+    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5, start=2))
+    assert turn.span == 4
 
 
 def test_overlapping_calls_share_the_time_line(tmp_path):
     turn = shown(tmp_path, call("search", 0, 4), call("embed", 1, 1))
-    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25))
+    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25, start=1))
+    assert turn.span == 4
 
 
 def test_an_instant_call_has_a_time_line(tmp_path):
@@ -565,7 +569,7 @@ def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
     turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2)))
     assert turn.steps == (
         bar("search", 1, 0, 0.5, sent="refund rules", received=""),
-        bar("gpt", 1, 0.5, 0.5, tokens=7),
+        bar("gpt", 1, 0.5, 0.5, tokens=7, start=1),
     )
 
 
@@ -579,9 +583,8 @@ def test_steps_keep_their_order_and_counts(tmp_path):
     assert (turn.thoughts, turn.calls) == (2, 1)
 
 
-def test_an_answer_without_steps_counts_none(tmp_path):
-    turn = shown(tmp_path)
-    assert (turn.steps, turn.thoughts, turn.calls) == ((), 0, 0)
+def test_an_answer_without_calls_has_no_time_line(tmp_path):
+    assert (shown(tmp_path).span, shown(tmp_path / "thought", Thought("hmm")).span) == (0, 0)
 
 
 def test_calls_in_other_time_zones_share_the_time_line(tmp_path):
