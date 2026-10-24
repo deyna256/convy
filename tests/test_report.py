@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, get_args
 
 import msgspec
 import pytest
@@ -25,15 +26,25 @@ from convy.dialog import (
     Verdict,
 )
 from convy.report import (
+    NO_CHANGE,
+    STATS,
+    CallStats,
     CallView,
     Comparison,
+    Delta,
     Evidence,
     Index,
+    Parts,
+    PerStat,
     Report,
     Run,
     Runs,
+    Spread,
+    Stat,
+    Summary,
     Tally,
     ThoughtView,
+    TurnStats,
     TurnView,
 )
 from convy.scenario import Outcome, Scenario
@@ -385,8 +396,12 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     metrics = page.metrics
     assert (metrics.passed, metrics.judged, metrics.rate) == (3, 4, 0.75)
     assert metrics.stable == 1  # only a passed both
-    assert (metrics.seconds, metrics.slowest) == (2.0, 2.0)
-    assert (metrics.input, metrics.output, metrics.tokens) == (30, 30, 60)
+    assert metrics.seconds == Spread(5, 2, 2, 2, 2, 2, 2)  # five answers of 2 s
+    assert (metrics.input, metrics.output) == (30, 30)
+    # tokens 20, 40, 60, 80, 100: p10 at 4 * 0.1 = 0.4 of the way from 20 to 40, 28; p50 the
+    # third, 60; p90 at 3.6, 0.6 of the way from 80 to 100, 92
+    assert metrics.tokens == Spread(5, 20, 28, 60, 92, 100, 60)
+    assert (metrics.attempts, metrics.reported) == (5, 5)
     assert (metrics.agent_errors, metrics.busy, metrics.model_errors, metrics.errors) == (
         1,
         0,
@@ -401,7 +416,8 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
         3,
     )
     a = next(s for s in page.scenarios if s.id == "a")
-    assert (a.rate, a.tokens) == (1, 30)  # 20 then 40 tokens: their mean
+    # 20 then 40 tokens: p10 0.1 of the way, 22; p50 halfway, 30; p90 0.9 of the way, 38
+    assert (a.rate, a.tokens) == (1, Spread(2, 20, 22, 30, 38, 40, 30))
     first = a.attempts[0]
     assert (first.tokens, first.slowest, first.turns[0].tokens) == (20, 2.0, 20)
 
@@ -522,12 +538,14 @@ def bar(
     tokens: int | None = None,
     sent: str | None = None,
     received: str | None = None,
+    start: float = 0.0,
 ) -> CallView:
     return CallView(
         name=name,
         seconds=seconds,
         left=left,
         width=width,
+        start=start,
         tokens=tokens,
         sent=sent,
         received=received,
@@ -536,12 +554,14 @@ def bar(
 
 def test_calls_sit_on_their_own_time_line(tmp_path):
     turn = shown(tmp_path, call("search", 0, 1), call("gpt", 2, 2))
-    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5))
+    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5, start=2))
+    assert turn.span == 4
 
 
 def test_overlapping_calls_share_the_time_line(tmp_path):
     turn = shown(tmp_path, call("search", 0, 4), call("embed", 1, 1))
-    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25))
+    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25, start=1))
+    assert turn.span == 4
 
 
 def test_an_instant_call_has_a_time_line(tmp_path):
@@ -564,7 +584,7 @@ def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
     turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2)))
     assert turn.steps == (
         bar("search", 1, 0, 0.5, sent="refund rules", received=""),
-        bar("gpt", 1, 0.5, 0.5, tokens=7),
+        bar("gpt", 1, 0.5, 0.5, tokens=7, start=1),
     )
 
 
@@ -578,9 +598,11 @@ def test_steps_keep_their_order_and_counts(tmp_path):
     assert (turn.thoughts, turn.calls) == (2, 1)
 
 
-def test_an_answer_without_steps_counts_none(tmp_path):
-    turn = shown(tmp_path)
-    assert (turn.steps, turn.thoughts, turn.calls) == ((), 0, 0)
+def test_an_answer_without_calls_has_no_time_line(tmp_path):
+    bare = shown(tmp_path)
+    thought = shown(tmp_path / "thought", Thought("hmm"))
+    assert (bare.span, thought.span) == (0, 0)
+    assert (bare.steps, bare.thoughts, bare.calls) == ((), 0, 0)
 
 
 def test_calls_in_other_time_zones_share_the_time_line(tmp_path):
@@ -830,9 +852,119 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
             k=1, started=at(6))  # fmt: skip
     deltas = Comparison(*both(tmp_path)).page().deltas
     assert (deltas.stable.value, deltas.stable.tone) == (-1, "bad")
-    assert (deltas.tokens.value, deltas.tokens.tone) == (30, "bad")  # mean in + out per attempt
-    assert (deltas.seconds.value, deltas.seconds.tone) == (0, "same")
+    # tokens per attempt 20 and 20, then 80 and 20: p50 20 to 50, p90 20 to 74 (0.9 of the way
+    # from 20 to 80), max 20 to 80, mean 20 to 50; Max moves with one attempt
+    assert deltas.tokens == PerStat(
+        Delta(30, "bad"), Delta(54, "bad"), Delta(60, "noise"), Delta(30, "bad")
+    )
+    assert deltas.seconds == alike(Delta(0, "same"))  # an unchanged Max is the same
     assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
+
+
+def test_a_scenario_changes_by_a_percent_of_each_old_statistic(tmp_path):
+    before = (answers(s, 2.0, tokens=50) for s in "abc")
+    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
+    after = (
+        answers("a", 3.0, tokens=52),
+        answers("b", 1.0, tokens=60),
+        answers("c", 2.0, tokens=50),
+    )
+    journal(tmp_path, "bot", "1", 3, *after, started=at(6))
+    rows = Comparison(*both(tmp_path)).page().rows  # one answer each: every statistic alike
+    assert [(r.id, r.seconds) for r in rows] == [
+        ("a", alike(Delta(50, "bad"))),
+        ("b", alike(Delta(-50, "good"))),
+        ("c", alike(Delta(0, "same"))),
+    ]
+    assert [r.tokens for r in rows] == [
+        alike(Delta(4, "same")),
+        alike(Delta(20, "bad")),
+        alike(Delta(0, "same")),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tokens", "tone"),
+    [(522, "same"), (523, "bad"), (525, "bad"), (478, "same"), (477, "good")],
+    ids=["4.4%", "4.6% shows as 5%", "5%", "-4.4%", "-4.6% shows as -5%"],
+)
+def test_a_change_under_5_percent_as_the_page_rounds_it_is_the_same(tmp_path, tokens, tone):
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=500), started=at(5))
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    (row,) = page.rows
+    assert (row.tokens.p50.tone, page.deltas.tokens.p50.tone) == (tone, tone)
+    assert page.deltas.tokens.p50.value == 2 * tokens - 1000  # the tile keeps its unit
+
+
+@pytest.mark.parametrize(("tokens", "row", "tile"), [(0, (0, "same"), (0, "same")),
+                                                     (5, (None, "none"), (10, "bad"))])  # fmt: skip
+def test_a_change_from_0_tokens_has_no_percent(tmp_path, tokens, row, tile):
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=0), started=at(5))
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.rows[0].tokens.p50.value, page.rows[0].tokens.p50.tone) == row
+    assert (page.deltas.tokens.p50.value, page.deltas.tokens.p50.tone) == tile
+
+
+def test_the_change_panels_hold_compared_scenarios_by_their_rise_then_id(tmp_path):
+    before = (answers("a", 2.0, tokens=0), answers("b", 2.0), answers("c", 2.0))
+    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
+    after = (answers("a", 3.0, tokens=5), answers("b", 3.0), answers("c", 1.0), answers("d", 9.0))
+    journal(tmp_path, "bot", "1", 4, *after, started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.by_seconds, page.by_tokens) == (alike(("a", "b", "c")), alike(("b", "c")))
+
+
+def test_each_statistic_changes_and_orders_the_scenarios_its_own_way(tmp_path):
+    journal(tmp_path, "bot", "1", 2, answers("a", 2, 2, 2), answers("b", 2, 2, 2), started=at(5))
+    journal(tmp_path, "bot", "1", 2, answers("a", 3, 3, 3), answers("b", 2, 2, 4), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    a, b = page.rows
+    assert a.seconds == alike(Delta(50, "bad"))
+    # b: 2, 2, 4 has p50 2, p90 at 1.8, 0.8 of the way from 2 to 4, 3.6, max 4, mean 8 / 3
+    assert b.seconds == PerStat(
+        Delta(0, "same"), Delta(80, "bad"), Delta(100, "bad"), Delta(33.333333, "bad")
+    )
+    assert page.by_seconds == PerStat(("a", "b"), ("b", "a"), ("b", "a"), ("a", "b"))
+    # the after run's answers 2, 2, 3, 3, 3, 4 against six of 2: p50 at 2.5, between two 3s; max 4
+    assert (page.deltas.seconds.p50, page.deltas.seconds.max) == (
+        Delta(1, "bad"),
+        Delta(2, "noise"),
+    )
+
+
+def test_a_statistic_that_was_0_has_no_percent_while_the_others_do(tmp_path):
+    before = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 0), (3, 50)))
+    journal(tmp_path, "bot", "1", 1, *before, k=3, started=at(5))
+    after = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 5), (3, 60)))
+    journal(tmp_path, "bot", "1", 1, *after, k=3, started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    # tokens 0, 0, 100: p50 0, p90 at 1.8, 0.8 of the way from 0 to 100, 80, max 100, mean
+    # 100 / 3; then 0, 10, 120: p50 10, p90 10 + 0.8 * 110 = 98, max 120, mean 130 / 3
+    assert page.rows[0].tokens == PerStat(
+        NO_CHANGE, Delta(22.5, "bad"), Delta(20, "bad"), Delta(30, "bad")
+    )
+    assert page.deltas.tokens == PerStat(
+        Delta(10, "bad"), Delta(18, "bad"), Delta(20, "noise"), Delta(10, "bad")
+    )
+    assert page.by_tokens == PerStat((), ("a",), ("a",), ("a",))
+
+
+def test_a_row_counts_the_change_of_passed_attempts_in_its_groups_tone(tmp_path):
+    before = [outcome("a", v, attempt=n) for n, v in enumerate((PASSED, PASSED, FAILED, FAILED), 1)]
+    before += [outcome("b", PASSED, attempt=n) for n in (1, 2, 3)] + [outcome("c", PASSED)]
+    journal(tmp_path, "bot", "1", 3, *before, k=4, started=at(5))
+    after = [outcome("a", PASSED, attempt=n) for n in (1, 2)]
+    after += [outcome("b", v, attempt=n) for n, v in enumerate((PASSED, FAILED, FAILED), 1)]
+    journal(tmp_path, "bot", "1", 2, *after, k=3, started=at(6))
+    rows = Comparison(*both(tmp_path)).page().rows
+    assert [(r.id, r.group, r.held.value, r.held.tone) for r in rows] == [
+        ("b", "worse", -2, "bad"),
+        ("a", "better", 0, "good"),  # 2 of 4 to 2 of 2: as many passed, a higher rate
+        ("c", "apart", None, "none"),
+    ]
+    assert (rows[2].seconds, rows[2].tokens) == (alike(NO_CHANGE), alike(NO_CHANGE))
 
 
 def cached(directory: Path, read: int | None, day: int) -> RunJournal:
@@ -915,20 +1047,83 @@ def test_a_comparison_names_another_convy(tmp_path, then: str, shown: str):
     assert Comparison(*both(tmp_path)).page().differences == (f"convy: {shown} → {CONVY}",)
 
 
-def test_the_index_lists_runs_newest_first_with_their_reports(tmp_path):
+def test_the_index_groups_runs_by_agent_newest_first_and_ranks_them_all(tmp_path):
     first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    second = journal(tmp_path, "bot", "2", 2, outcome("a", FAILED), started=at(6))
+    journal(tmp_path, "ann", "1", 1, outcome("a", FAILED), started=at(6))
+    played = (outcome("a", FAILED), outcome("a", PASSED, attempt=2))
+    journal(tmp_path, "bot", "2", 1, *played, k=2, started=at(7))
     page = Index(Runs(tmp_path)).page()
-    assert [(row.run.version, row.passed, row.judged, row.rate) for row in page.runs] == [
-        ("2", 0, 1, 0),
-        ("1", 1, 1, 1),
+    assert [
+        (g.agent, [(r.run.version, r.order, r.result) for r in g.rows]) for g in page.agents
+    ] == [
+        ("ann", [("1", 1, "failing")]),
+        ("bot", [("2", 0, "flaky"), ("1", 2, "passing")]),
     ]
-    assert page.runs[0].report == f"bot/{second.spec.id}/report.html"
-    assert page.runs[1].report == f"bot/{first.spec.id}/report.html"
+    older = page.agents[1].rows[1]
+    assert older.report == f"bot/{first.spec.id}/report.html"
+    assert (older.metrics.passed, older.metrics.judged, older.metrics.tokens) == (1, 1, single(20))
+
+
+def test_the_index_orders_runs_by_the_instant_they_started(tmp_path):
+    east = timezone(timedelta(hours=3))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=datetime(2026, 10, 6, 12, tzinfo=east),
+    )
+    journal(
+        tmp_path, "bot", "2", 1, outcome("a", PASSED), started=datetime(2026, 10, 6, 10, tzinfo=UTC)
+    )
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [(r.run.version, r.order) for r in group.rows] == [("2", 0), ("1", 1)]
 
 
 def test_no_runs_make_an_empty_index(tmp_path):
-    assert '"runs":[]' in Index(Runs(tmp_path / "results")).html()
+    assert '"agents":[]' in Index(Runs(tmp_path / "results")).html()
+
+
+@pytest.mark.parametrize(
+    ("setup", "changed"),
+    [
+        ({"models": ("other", "fake")}, ("user",)),
+        ({"models": ("fake", "other")}, ("judge",)),
+        ({"convy": "0.1.0"}, ("convy",)),
+        ({"trust": 0.5}, ("trust",)),
+        ({"k": 3}, ()),  # more attempts measure the same thing
+        ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
+    ],
+    ids=["user", "judge", "convy", "trust", "attempts", "edited scenario"],
+)
+def test_a_run_names_the_setup_that_differs_from_the_agents_previous_run(
+    tmp_path, setup: dict[str, Any], changed
+):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", 1, outcome("a", PASSED), started=at(6), **setup)
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [r.changed for r in group.rows] == [changed, ()]
+
+
+@pytest.mark.parametrize(("then", "now", "moved"), [(2, 3, (1, 0)), (3, 2, (0, 1))])
+def test_a_run_counts_the_scenarios_it_added_and_dropped(tmp_path, then, now, moved):
+    journal(tmp_path, "bot", "1", then, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", now, outcome("a", PASSED), started=at(6))
+    (group,) = Index(Runs(tmp_path)).page().agents
+    newer, older = group.rows
+    assert (newer.changed, (newer.added, newer.dropped)) == (("scenarios",), moved)
+    assert (older.changed, older.added, older.dropped) == ((), 0, 0)
+
+
+def test_an_agent_says_whether_any_run_has_a_trust_and_a_run_names_its_convy(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), trust=0.5, convy="")
+    journal(tmp_path, "ann", "1", 1, outcome("a", PASSED), started=at(6))
+    page = Index(Runs(tmp_path)).page()
+    assert [(g.agent, g.trusted, g.rows[0].run.convy) for g in page.agents] == [
+        ("ann", False, CONVY),
+        ("bot", True, "unknown"),
+    ]
 
 
 def data(html: str) -> object:
@@ -980,6 +1175,14 @@ def test_every_page_has_the_icon(tmp_path):
         assert '<link rel="icon" href="data:image/svg+xml,' in html
 
 
+def test_every_page_offers_the_statistics_of_a_spread_in_their_order(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+        assert f"const STATS = {json.dumps(list(STATS))};" in html
+
+
 def test_attempts_below_trust_are_cut_out_and_counted(tmp_path):
     journal(
         tmp_path,
@@ -1026,10 +1229,8 @@ def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
     assert (page.before.trust, page.after.trust) == (0, 0.8)
     assert (page.was.judged, page.now.judged, page.now.cut) == (1, 0, 1)
     assert page.differences == ()  # trust is not a warning
-    assert [(row.run.trust, row.cut) for row in Index(Runs(tmp_path)).page().runs] == [
-        (0.8, 1),
-        (0, 0),
-    ]
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [(row.run.trust, row.metrics.cut) for row in group.rows] == [(0.8, 1), (0, 0)]
 
 
 def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
@@ -1045,9 +1246,111 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     played = Outcome("a", 1, Transcript(turns), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 1, played)
     page = Report(only(tmp_path)).page()
-    assert page.metrics.seconds == 3.0
-    assert page.scenarios[0].seconds == 3.0
+    # 1, 2, 3, 6: p10 at 3 * 0.1 = 0.3 from 1 to 2, 1.3; p50 halfway from 2 to 3, 2.5; p90 at
+    # 2.7, 0.7 of the way from 3 to 6, 5.1; mean 12 / 4 = 3
+    assert page.metrics.seconds == Spread(4, 1, 1.3, 2.5, 5.1, 6, 3)
+    assert page.scenarios[0].seconds == page.metrics.seconds
     assert page.scenarios[0].attempts[0].seconds == 12.0
+
+
+def answers(scenario: str, *seconds: float, attempt: int = 1, tokens: int = 10) -> Outcome:
+    """A passed attempt of `scenario` whose answers took `seconds`, each `tokens` in and out."""
+    turns = tuple(Turn(Message("hi"), Answer("hello", Usage(tokens, tokens)), s) for s in seconds)
+    return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
+
+
+def single(value: float) -> Spread:
+    """The spread of one value: every statistic is the value."""
+    return Spread(1, value, value, value, value, value, value)
+
+
+def alike[T](value: T) -> PerStat[T]:
+    """The same value for every statistic."""
+    return PerStat(value, value, value, value)
+
+
+@pytest.mark.parametrize(
+    ("values", "spread"),
+    [
+        ([], None),
+        ([None, None], None),
+        ([7], single(7)),
+        # two: p10 0.1 of the way from 1 to 3, 1.2; p50 halfway, 2; p90 0.9 of the way, 2.8
+        ([3.0, 1.0], Spread(2, 1, 1.2, 2, 2.8, 3, 2)),
+        # ties, even count: p10 at 3 * 0.1 = 0.3, between two 2s; p50 at 1.5, between two 2s;
+        # p90 at 2.7, 0.7 of the way from 2 to 8, 6.2; mean 14 / 4 = 3.5
+        ([2, 2, 8, 2], Spread(4, 2, 2, 2, 6.2, 8, 3.5)),
+        # odd count: p10 at 4 * 0.1 = 0.4 from 1 to 2, 1.4; p50 the third, 3; p90 at 3.6, 0.6 of
+        # the way from 4 to 5, 4.6
+        ([5, 1, None, 4, 2, 3], Spread(5, 1, 1.4, 3, 4.6, 5, 3)),
+        # eleven values: p10 at 10 * 0.1 = 1, p50 at 5, p90 at 9: the values there
+        (list(range(1, 12)), Spread(11, 1, 2, 6, 10, 11, 6)),
+    ],
+    ids=["none", "none reported", "one", "two", "ties", "odd", "on a value"],
+)
+def test_a_spread_holds_every_statistic_of_its_values(tmp_path, values, spread):
+    journal(tmp_path, "bot", "1", 1)
+    assert Summary(only(tmp_path)).spread(values) == spread
+
+
+def test_a_spread_of_ints_is_of_floats(tmp_path):
+    journal(tmp_path, "bot", "1", 1)
+    spread = Summary(only(tmp_path)).spread([2, 2, 8, 2])
+    assert msgspec.json.encode(spread) == (
+        b'{"n":4,"min":2.0,"p10":2.0,"p50":2.0,"p90":6.2,"max":8.0,"mean":3.5}'
+    )
+
+
+def test_every_statistic_the_switch_offers_is_a_field_of_a_spread_and_of_a_per_stat():
+    assert get_args(Stat.__value__) == STATS
+    assert set(STATS) <= set(Spread.__struct_fields__)
+    assert PerStat.__struct_fields__ == STATS
+    spread = Spread(4, 2, 2, 2, 6.2, 8, 3.5)
+    assert [spread.of(stat) for stat in STATS] == [2, 6.2, 8, 3.5]
+    assert [PerStat("a", "b", "c", "d").of(stat) for stat in STATS] == ["a", "b", "c", "d"]
+
+
+def test_a_scenario_spreads_its_answers_time_and_its_attempts_tokens(tmp_path):
+    played = (answers("a", 3.0, 1.0, tokens=5), answers("a", 2.0, attempt=2, tokens=50))
+    journal(tmp_path, "bot", "1", 1, *played, k=2)
+    (view,) = Report(only(tmp_path)).page().scenarios
+    # answers 1, 2, 3: p10 at 2 * 0.1 = 0.2 from 1 to 2, 1.2; p90 at 1.8, 0.8 from 2 to 3, 2.8
+    assert view.seconds == Spread(3, 1, 1.2, 2, 2.8, 3, 2)
+    # attempts of 2 * 2 * 5 = 20 and 2 * 50 = 100 tokens: p10 at 0.1, 28; p90 at 0.9, 92
+    assert view.tokens == Spread(2, 20, 28, 60, 92, 100, 60)
+
+
+def test_the_spread_puts_the_largest_first_ties_by_id_and_the_unplayed_last(tmp_path):
+    played = (
+        answers("a", 1.0, tokens=30),
+        answers("b", 4.0, tokens=10),
+        answers("c", 4.0, tokens=30),
+    )
+    journal(tmp_path, "bot", "1", 4, *played)
+    page = Report(only(tmp_path)).page()
+    assert page.by_seconds == alike(("b", "c", "a", "d"))
+    assert page.by_tokens == alike(("a", "c", "b", "d"))
+
+
+def test_each_statistic_has_its_own_order(tmp_path):
+    journal(tmp_path, "bot", "1", 2, answers("a", 1.0, 1.0, 10.0), answers("b", 3.0, 3.0, 3.0))
+    # a: p50 1, p90 at 1.8, 0.8 of the way from 1 to 10, 8.2, max 10, mean 4; b: 3 for each
+    assert Report(only(tmp_path)).page().by_seconds == PerStat(
+        ("b", "a"), ("a", "b"), ("a", "b"), ("a", "b")
+    )
+
+
+def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
+    silent = Turn(Message("hi"), Answer("hello"), 2.0)
+    unreported = Outcome("a", 1, Transcript((silent,)), PASSED, "max_turns")
+    journal(tmp_path, "bot", "1", 2, unreported, answers("b", 1.0))
+    page = Report(only(tmp_path)).page()
+    assert [(v.id, v.seconds, v.tokens) for v in page.scenarios] == [
+        ("a", single(2.0), None),
+        ("b", single(1.0), single(20)),
+    ]
+    assert page.by_tokens == alike(("b", "a"))
+    assert (page.metrics.tokens, page.metrics.reported) == (single(20), 1)
 
 
 def test_counts_not_reported_stay_none_at_every_level(tmp_path):
@@ -1073,6 +1376,158 @@ def test_cache_means_cover_only_the_attempts_that_report_them(tmp_path):
     journal(tmp_path, "bot", "1", 1, reported, silent, k=2)
     page = Report(only(tmp_path)).page()
     assert (page.scenarios[0].cache_read, page.metrics.cache_read) == (80, 80)
+
+
+def talk(scenario: str, *usages: Usage | NoUsage, attempt: int = 1) -> Outcome:
+    """A passed attempt of `scenario` with an answer of 1 s per usage."""
+    turns = tuple(Turn(Message("hi"), Answer("hello", usage), 1.0) for usage in usages)
+    return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
+
+
+def test_each_turn_counts_its_answers_and_scenarios_and_spreads_their_tokens(tmp_path):
+    played = (
+        talk("a", Usage(100, 10, cache_read=80), Usage(200, 20, cache_read=150)),
+        talk("a", Usage(120, 12, cache_read=60), attempt=2),
+        talk("b", Usage(100, 10), NoUsage(), NoUsage()),
+    )
+    journal(tmp_path, "bot", "1", 2, *played, k=2)
+    first, second = Report(only(tmp_path)).page().turns  # turn 3: no answer reports tokens
+    # input 100, 100, 120: p10 at 2 * 0.1 = 0.2, between two 100s; p50 the second, 100; p90 at
+    # 1.8, 0.8 of the way from 100 to 120, 116; mean 320 / 3; output a tenth of each
+    assert first == TurnStats(
+        1,
+        3,
+        2,
+        Spread(3, 100, 100, 100, 116, 120, 320 / 3),
+        Spread(3, 10, 10, 10, 11.6, 12, 32 / 3),
+        None,  # b does not report its cache reads
+    )
+    assert second == TurnStats(2, 2, 2, single(200), single(20), single(150))
+
+
+@pytest.mark.parametrize(
+    ("reads", "cached"),
+    [((80, 60), Spread(2, 60, 62, 70, 78, 80, 70)), ((80, None), None), ((None, None), None)],
+    ids=["every answer", "some", "none"],
+)
+def test_a_turns_cache_reads_spread_only_when_every_answer_reports_them(tmp_path, reads, cached):
+    usages = (Usage(100, 10) if r is None else Usage(100, 10, cache_read=r) for r in reads)
+    played = (talk("a", usage, attempt=n) for n, usage in enumerate(usages, 1))
+    journal(tmp_path, "bot", "1", 1, *played, k=2)
+    (turn,) = Report(only(tmp_path)).page().turns
+    assert turn.cached == cached  # 60 and 80: p10 at 0.1, 62; p90 at 0.9, 78
+
+
+@pytest.mark.parametrize(
+    ("attempts", "parts"),
+    [
+        (
+            [
+                [Usage(100, 40, 10, cache_read=60, cache_write=5), Usage(50, 20, 0, cache_read=30)],
+                [Usage(30, 10, 4, cache_read=0)],
+            ],
+            # over 2 attempts: 90 from the cache; 180 - 90 new input, the 5 written included;
+            # 70 - 14 output besides the 14 thinking
+            Parts(45, 45, 28, 7),
+        ),
+        ([[NoUsage()]], None),
+        ([[Usage(100, 40, 10)], [NoUsage()]], Parts(None, 100, 30, 10)),  # one attempt counts
+        ([[Usage(0, 0)]], Parts(None, 0, 0, None)),
+    ],
+    ids=["every part", "none reported", "thinking without cache", "no tokens at all"],
+)
+def test_a_scenario_splits_its_mean_tokens_per_attempt_into_the_parts_reported(
+    tmp_path, attempts, parts
+):
+    played = (talk("a", *usages, attempt=n) for n, usages in enumerate(attempts, 1))
+    journal(tmp_path, "bot", "1", 1, *played, k=len(attempts))
+    assert Report(only(tmp_path)).page().scenarios[0].parts == parts
+
+
+def test_the_parts_put_the_most_tokens_first_ties_by_id_and_leave_out_the_unreported(tmp_path):
+    played = (
+        answers("a", 1.0),
+        answers("b", 1.0, tokens=30),
+        answers("c", 1.0),
+        talk("d", NO_USAGE),
+    )
+    journal(tmp_path, "bot", "1", 4, *played)
+    assert Report(only(tmp_path)).page().by_parts == ("b", "a", "c")  # 60, 20 and 20 tokens
+
+
+def test_the_agents_calls_are_summed_up_by_name(tmp_path):
+    first = Answer(
+        "hello",
+        steps=(Thought("plan"), call("search", 0, 1, Usage(3, 4)), call("gpt", 1, 2)),
+    )
+    second = Answer("hello", steps=(call("search", 0, 3, Usage(5, 6)),))
+    other = Answer("hello", steps=(call("gpt", 0, 2), call("lookup", 0, 5)))
+    played = (
+        Outcome(
+            "a",
+            1,
+            Transcript((Turn(Message("hi"), first, 2.0), Turn(Message("hi"), second, 3.0))),
+            PASSED,
+            "max_turns",
+        ),
+        Outcome("b", 1, Transcript((Turn(Message("hi"), other, 5.0),)), PASSED, "max_turns"),
+    )
+    journal(tmp_path, "bot", "1", 2, *played)
+    assert Report(only(tmp_path)).page().calls == (
+        CallStats("lookup", 1, 5, single(5), None),
+        CallStats("gpt", 2, 4, Spread(2, 2, 2, 2, 2, 2, 2), None),
+        # 1 and 3 s: p10 at 0.1, 1.2; p90 at 0.9, 2.8; 7 and 11 tokens: 7.4 and 10.6
+        CallStats(
+            "search", 2, 4, Spread(2, 1, 1.2, 2, 2.8, 3, 2), Spread(2, 7, 7.4, 9, 10.6, 11, 9)
+        ),
+    )
+
+
+def test_a_comparison_pairs_each_turn_either_run_has(tmp_path):
+    usage = Usage(10, 10)
+    journal(
+        tmp_path, "bot", "1", 2, talk("a", usage, usage, usage), talk("b", usage), started=at(5)
+    )
+    journal(tmp_path, "bot", "1", 2, talk("a", usage), talk("b", usage, usage), started=at(6))
+    turns = Comparison(*both(tmp_path)).page().turns
+    answered = [
+        (
+            t.turn,
+            None if t.before is None else t.before.answers,
+            None if t.after is None else t.after.answers,
+        )
+        for t in turns
+    ]
+    assert answered == [(1, 2, 2), (2, 1, 1), (3, 1, None)]
+
+
+def test_a_comparison_orders_the_parts_by_the_after_runs_tokens(tmp_path):
+    before = (answers(s, 1.0) for s in "abce")
+    journal(tmp_path, "bot", "1", 5, *before, started=at(5))
+    after = (
+        answers("a", 1.0),
+        answers("b", 1.0, tokens=30),
+        answers("c", 1.0, tokens=30),
+        answers("d", 1.0),  # not played before: not compared
+        talk("e", NO_USAGE),  # no tokens after
+    )
+    journal(tmp_path, "bot", "1", 5, *after, started=at(6))
+    assert Comparison(*both(tmp_path)).page().by_parts == ("b", "c", "a")
+
+
+def test_the_turns_calls_and_parts_reach_the_pages(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
+    before, after = both(tmp_path)
+    run, compared = data(Report(after).html()), data(Comparison(before, after).html())
+    assert isinstance(run, dict) and isinstance(compared, dict)
+    assert [turn["answers"] for turn in run["turns"]] == [1]
+    assert (run["calls"], run["by_parts"]) == ([], ["a"])
+    parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
+    assert run["scenarios"][0]["parts"] == parts
+    assert [turn["turn"] for turn in compared["turns"]] == [1]
+    assert compared["by_parts"] == ["a"]
+    assert set(run["by_seconds"]) == set(compared["by_tokens"]) == set(STATS)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

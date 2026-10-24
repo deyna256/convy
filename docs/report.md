@@ -6,7 +6,7 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-Five tiles sum up the run:
+Five tiles sum up the run, in two rows:
 
 - **Pass rate**: the share of counted attempts that passed, with the count
   (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
@@ -15,15 +15,55 @@ Five tiles sum up the run:
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
   `--trust`, the tile says how many were not trusted (`· 4 not trusted`).
 - **Stable scenarios**: those whose `k` attempts were all played, counted and passed.
-- **Time per answer**: the mean of the answers' seconds, and the slowest. Only the agent's own
-  time counts, not the simulated user's or the judge's.
-- **Tokens per attempt**: in and out, as the agent reports them, with the parts it reports: how
+- **Time per answer**: P50, P90, Max and Mean of the answers' seconds, and how many answers. Only
+  the agent's own time counts, not the simulated user's or the judge's.
+- **Tokens per attempt**: P50, P90, Max and Mean of in and out together, over the attempts that
+  report them (`12 of 18 attempts report tokens`), then in and out with the parts it reports: how
   many of the input it read from or wrote to the model's cache, and how many of the output went to
-  thinking. A part the agent does not report is left out; a 0 it reports is shown. Each is the mean,
-  over the attempts that report it, of the sum of their answers'. The share of input read from the
-  cache is the sum of `cache_read` over the sum of input, both over the answers that report
-  `cache_read`.
+  thinking. A part the agent does not report is left out; a 0 it reports is shown. Each part is the
+  mean, over the attempts that report it, of the sum of their answers'. The share of input read
+  from the cache is the sum of `cache_read` over the sum of input, both over the answers that
+  report `cache_read`.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
+
+## Percentiles and the switch
+
+Every time and token number is a spread: how many values, the least, the 10th, 50th and 90th
+percentiles, the most and the mean. **P50**, the median, is the value half the values are at or
+under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** the sum over the
+count. Percentiles are linear between the sorted values, as numpy's default. Nothing is left out
+as an outlier: a long whisker or a high Max shows it.
+
+Each page has one switch, **Charts show: P50 · P90 · Max · Mean**, P50 by default. It sets the one
+number per scenario, turn, call or run that the charts and table cells after it show, and their
+titles say which (`Time per answer · P90`). The tiles and the box plot show the whole spread;
+**Tokens by part** the mean; the cache share is a share. The address keeps the switch
+(`#stat=p90`), so a link opens on it.
+
+Under the tiles, a box plot per scenario shows how it spreads: **Time per answer** over its
+answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
+value, the box from P10 to P90, and a line marks the median; the median and `n`, how many values,
+are written at the end. With few values the box reaches the whiskers; one value is a single tick.
+The largest median comes first, the first ten (**Show all N** shows the rest). Each panel's scale
+runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
+other boxes; the numbers stay in the text and in each row's tooltip.
+
+**Tokens by turn** has a column per turn of the dialogues, from 1: a bar of input, split into what
+was read from the cache and the new input, and a bar of output, each the chosen statistic of that
+turn's answers. The input is split only when every answer of the turn that reports tokens reports
+its cache reads; otherwise it is whole and says `cache not reported`. Above it, the share read
+from the cache (`74% cached`); under it, how many answers and scenarios it holds, greyed under
+three answers. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
+have tokens.
+
+**Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
+from the cache, the new input (cache writes included), the output and the thinking. A part the
+agent does not report is not split out. It shows the mean whatever the switch says: the parts of a
+P90 do not add up to the P90.
+
+**The agent's calls**, when the answers give their [steps](agents.md#steps): per call name, how
+many calls, their total time, and the chosen statistic of the seconds and the tokens per call
+(`—` when not reported). The longest in total comes first.
 
 ## Scenarios
 
@@ -35,28 +75,46 @@ Each scenario gets a row and a status:
 - **No verdict**: no attempt was counted: none was played yet, or each had no verdict or a verdict
   not decided at the run's trust.
 
-The row also shows time per answer and tokens. A filter such as `refund-*` narrows the list.
+The row also shows the chosen statistic of the time per answer, with its Max under it (its P50 when Max is chosen),
+and of the tokens per attempt, with in and out under it.
+**Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict or not trusted. Click one
+to open that attempt. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
-many attempts it held in and how many of its decisions were not trusted. A claim's count is over its
-trusted decisions. Its typical grade is the middle one of its trusted grades; with two in the
-middle, the worse. A graded claim also says how often it got each grade
-(`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you see the judge's decision on
-every claim with its grade, if it has one, and its reason, and the dialogue with the time and tokens
-of each answer; **Total answer time** adds them up for the attempt. An answer's tokens show their
-parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached tokens are part of the
-input, and thinking part of the output, not added to them. A part the agent does not report is left
-out; a 0 it reports is shown.
+many attempts it held in, a square per attempt with the judge's decision on it, and how many of its
+decisions were not trusted. A claim's count is over its trusted decisions. Its typical grade is the
+middle one of its trusted grades; with two in the middle, the worse. A graded claim also says how
+often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you see
+the judge's decision on every claim with its grade, if it has one, and its reason, and the dialogue
+with the time and tokens of each answer; **Total answer time** adds them up for the attempt. An
+answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached
+tokens are part of the input, and thinking part of the output, not added to them. A part the agent
+does not report is left out; a 0 it reports is shown.
 
-An answer that gives its [steps](agents.md#steps) has them folded under "Steps": its thoughts as
-text, and its calls on a time line of their own, each with its time, its tokens and what it sent
-and received ("not reported" or "empty"). The line is the agent's clock, from its first call to its
-last.
+An answer that gives its [steps](agents.md#steps) shows them as a line that ends in the answer.
+By default the steps are folded into one node, such as `2 thoughts · 4 calls · calls ran 2.1 s`; **Show steps**
+unfolds them. A thought shows its text. A call shows its bar on the line of the answer's calls,
+from the first call's start to the last call's end: bars that overlap ran at the same time. It
+shows when it started (`from +0.6 s`), how long it took and its tokens; open it to see what it
+sent and received, JSON indented, or "not reported" and "empty".
 
 If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
 did not say. The address keeps the open scenario, so you can send a link to it.
 
-`results/index.html` lists every run, newest first, with a link to its report.
+## The index
+
+`results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
+shows the rest). A strip shows each agent's newest 40 runs, newest left: a bar per run as high as
+its pass rate and coloured by its result, and a line where the **setup** changed. The setup is what
+a run is measured with: the user's model, the judge, convy's version, the trust and the set of
+scenarios. The agent's version and the number of attempts are not part of it. In the table, a setup
+cell that changed since the agent's previous run is marked; point at it to see the old value. Tick
+two runs to get the `convy compare` command for them.
+
+Under the strip, three more strips cover the same runs: the chosen statistic of the time per
+answer and of the tokens per attempt, and the share of input read from the cache. Each has its own
+scale from 0, and the newest run's number is written beside it; a run without the number has a
+stub. The table's Time / answer and Tokens / attempt follow the switch.
 
 ## Compare two runs
 
@@ -75,6 +133,22 @@ Under Tokens per attempt, the share of input read from the cache shows how it ch
 you point at it. It says `not reported` when only one of the runs reports it, and is not there
 when neither does.
 
+The Time per answer and Tokens per attempt tiles show the after run's P50, P90, Max and Mean, each
+with its change in seconds or tokens, and the before run's four on one line. A change under 5% of
+the old value, as the page rounds it, is grey. A change of Max is grey with `~`: one answer
+moves it. An unchanged Max shows `=`.
+
+Under the tiles, two panels show how each compared scenario changed: a bar from 0, its length the
+change of the chosen statistic of the scenario's time per answer or tokens per attempt as a
+percent of the old one, on a scale from −100% to +100% (a larger change is cut at the edge, its
+text keeps the number, such as `+59% · 1.9 s → 3.0 s`). Right and red is worse, left and green is
+better; grey under 5%, as on the tiles. A scenario whose statistic was 0 before has no percent for
+it. Each panel shows ten rows, then **Show all N**.
+
+**Tokens by turn** shows both runs side by side on one scale, the turns lined up, and **Tokens by
+part** two thin bars per compared scenario, before and after, with the mean tokens per attempt
+(`1,018 → 1,522`) and, under it, the share read from the cache (`78% → 21%`).
+
 - Green means better, red means worse.
 - Grey with `~` means the pass rate's change may be chance. convy looks at the scenarios both
   runs played unchanged and asks how often the same agent would give a result this unlikely by
@@ -84,7 +158,8 @@ when neither does.
   worse weigh against each other. The tile is also grey when these scenarios and the whole pass
   rate point different ways.
 
-Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**. A scenario is not
+Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**; each row shows the
+squares of its attempts before and after and how many more or fewer passed. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.
 

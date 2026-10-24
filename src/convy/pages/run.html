@@ -9,6 +9,12 @@
 /*include base.css*/
 /*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
+#spread { --tail: 13ch; }
+#calls table { min-width: 620px; }
+#calls .cname { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tot { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+.tot .track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--side); }
+.tot .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--muted); }
 </style>
 <script>
 /*include base.js*/
@@ -18,7 +24,10 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section>
+  <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section>
+  <section id="calls" aria-label="The agent's calls"></section>
+  <div class="tools" id="scenarios"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
   <p class="hint" id="hint"></p>
 </div>
@@ -26,7 +35,7 @@
 <script>
 /*include window.js*/
 
-// The run's page: its tiles, its scenarios, and the window of one scenario.
+// The run's page: its tiles, its charts, its scenarios, and the window of one scenario.
 const DATA = __DATA__;
 const RUN = DATA.run, M = DATA.metrics;
 
@@ -43,12 +52,19 @@ function header() {
 
 function tiles() {
   const tile = (label, value, detail, hero = false) => el("div", {className: hero ? "tile hero" : "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, detail));
-  return el("div", {className: "tiles"},
-    tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
-    tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
-    tile("Time per answer", M.seconds == null ? "—" : [secs(M.seconds).replace(" s", ""), el("small", {}, "s")], M.slowest == null ? "no answers" : `mean · slowest ${secs(M.slowest)}`),
-    tile("Tokens per attempt", count(M.tokens), M.tokens == null ? "not reported" : tokenParts(M)),
-    tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`));
+  const attempts = M.attempts;
+  const tokens = M.tokens == null ? ["not reported"] : [
+    M.reported === attempts ? plural(attempts, "attempt") : `${M.reported} of ${plural(attempts, "attempt")} report tokens`,
+    tokenParts(M), M.cached != null && `${pct(M.cached)} of the input from the cache`];
+  return [
+    el("div", {className: "tiles"},
+      tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
+      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
+      tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`)),
+    el("div", {className: "tiles two"},
+      spreadTile("Time per answer", M.seconds, secs, [M.seconds ? plural(M.seconds.n, "answer") : "no answers"]),
+      spreadTile("Tokens per attempt", M.tokens, count, tokens)),
+  ];
 }
 
 function table() {
@@ -57,14 +73,15 @@ function table() {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
-      el("td", {className: "n metric"}, secs(s.seconds), el("small", {}, s.slowest == null ? "" : `slowest ${secs(s.slowest)}`)),
-      el("td", {className: "n metric"}, count(s.tokens), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
+      el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
+      el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : stat === "max" ? `p50 ${secs(s.seconds.p50)}` : `max ${secs(s.seconds.max)}`)),
+      el("td", {className: "n metric"}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
-    el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per attempt · ${STAT[stat]}`))),
+    el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
 }
 
 const dialog = document.getElementById("window");
@@ -89,20 +106,85 @@ function show(id, number) {
       el("div", {className: "side"},
         el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, s.user),
         el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
-        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text), el("span", {className: "tally"}, claimTally(c)))))),
+        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text),
+          el("span", {className: "tally"}, squares(claimMarks(s.attempts, i), "Decisions", attempt && attempt.attempt, n => { show(id, n); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); }), claimTally(c)))))),
       el("div", {className: "main"},
         attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
           : el("p", {className: "empty"}, "No attempts recorded yet.")))));
   if (!dialog.open) dialog.showModal();
 }
 
+// The box plot: per scenario whiskers from its least to its largest value, a box from p10 to p90,
+// a line at the median, and the median and n as text; one value is a single tick. The order and
+// every number come from the data.
+function boxes(title, order, field, unit, what, missing) {
+  const {keep} = filtered();
+  const views = order.filter(keep).map(id => DATA.scenarios.find(s => s.id === id));
+  const top = Math.max(0, ...views.map(s => s[field] ? s[field].max : 0));
+  const at = v => top ? v / top * 100 : 0;
+  const rows = views.map(s => {
+    const name = el("span", {className: "rid mono", title: s.id}, s.id), d = s[field];
+    if (d == null) return el("div", {className: "rrow"}, name, el("span", {className: "muted"}, missing(s)), el("span"));
+    const marks = d.n === 1 ? el("span", {className: "tick", style: `left: ${at(d.p50)}%`}) : [
+      el("span", {className: "whisker", style: `left: ${at(d.min)}%; width: ${at(d.max) - at(d.min)}%`}),
+      el("span", {className: "box", style: `left: min(${at(d.p10)}%, 100% - 4px); width: max(4px, ${at(d.p90) - at(d.p10)}%)`}),
+      el("span", {className: "median", style: `left: ${at(d.p50)}%`})];
+    return el("div", {className: "rrow", title: `${s.id}: min ${unit(d.min)} · p10 ${unit(d.p10)} · median ${unit(d.p50)} · p90 ${unit(d.p90)} · max ${unit(d.max)} · ${plural(d.n, what)}`}, name,
+      el("span", {className: "track", "aria-hidden": "true"}, marks),
+      el("span", {className: "n"}, unit(d.p50), el("small", {className: "muted"}, ` · n ${d.n}`)));
+  });
+  const scale = [scaleLine(unit(top)), el("p", {className: "caption"}, "whiskers: min to max · box: p10 to p90 · line: the median · n: values; with few values the box reaches the whiskers")];
+  return chart(title, rows, scale, draw);
+}
+
+// Tokens by part, per scenario, the most first.
+function parts() {
+  const {keep} = filtered();
+  const views = DATA.by_parts.filter(keep).map(id => DATA.scenarios.find(s => s.id === id));
+  const top = Math.max(0, ...views.map(s => s.tokens.mean));
+  const rows = views.map(s => el("div", {className: "rrow", title: `${s.id}: ${count(s.tokens.mean)} per attempt · ${partText(s.parts)}`},
+    el("span", {className: "rid mono", title: s.id}, s.id),
+    el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(s.parts, s.tokens.mean, top)),
+    el("span", {className: "n"}, count(s.tokens.mean))));
+  return chart("Tokens per attempt by part · mean", rows, [scaleLine(count(top)), partLegend(views.map(s => s.parts))], draw);
+}
+
+// The agent's calls by name: how many, their total time as a bar on a scale from 0 to the largest
+// total, and the chosen statistic of the seconds and tokens per call.
+function calls() {
+  if (!DATA.calls.length) return [];
+  const top = Math.max(...DATA.calls.map(c => c.total));
+  return [el("div", {className: "tools"}, el("h2", {}, "The agent's calls")),
+    el("div", {className: "panel scroll"}, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Call"), el("th", {className: "n"}, "Calls"), el("th", {}, "Total time"),
+        el("th", {className: "n"}, `Seconds per call · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per call · ${STAT[stat]}`))),
+      el("tbody", {}, DATA.calls.map(c => el("tr", {},
+        el("td", {}, el("div", {className: "cname mono", title: c.name}, c.name)),
+        el("td", {className: "n"}, String(c.calls)),
+        el("td", {}, el("span", {className: "tot"}, el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "fill", style: `width: max(3px, ${top ? c.total / top * 100 : 0}%)`})), el("span", {className: "n"}, secs(c.total)))),
+        el("td", {className: "n"}, secs(chosen(c.seconds))),
+        el("td", {className: "n"}, count(chosen(c.tokens))))))))];
+}
+
 function draw() {
+  document.getElementById("spread").replaceChildren(
+    boxes("Time per answer by scenario", DATA.by_seconds.p50, "seconds", secs, "answer", s => s.attempts.length ? "no answers" : "not played"),
+    boxes("Tokens per attempt by scenario", DATA.by_tokens.p50, "tokens", count, "attempt", s => s.attempts.length ? "not reported" : "not played"));
+  const byTurn = DATA.turns.length > 1;
+  document.getElementById("tokens").replaceChildren(...[
+    byTurn && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
+    DATA.by_parts.length > 0 && parts()].filter(Boolean));
+  document.getElementById("calls").replaceChildren(...calls());
+  // The switch sits just before the first panel that follows it.
+  const first = byTurn ? "tokens" : DATA.calls.length ? "calls" : "scenarios";
+  document.getElementById(first).before(chooser);
   document.getElementById("table").replaceChildren(table());
 }
 
+const chooser = statSwitch(draw);
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
-document.getElementById("tiles").replaceChildren(tiles());
+document.getElementById("tiles").replaceChildren(...tiles());
 document.getElementById("filter").addEventListener("input", draw);
 document.getElementById("hint").textContent = `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();
