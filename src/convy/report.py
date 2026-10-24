@@ -212,6 +212,8 @@ type Change = Literal["unchanged", "worse", "better"]
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
 GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
+SLIGHT = 5  # percent: a smaller change of a mean time or token count is drawn as the same
+TONES: dict[Group, Tone] = {"worse": "bad", "better": "good", "same": "same", "apart": "none"}
 
 
 class Tally(Struct, frozen=True):
@@ -381,10 +383,14 @@ class RunPage(Struct, frozen=True):
 
 
 class Delta(Struct, frozen=True):
-    """A change from before to after, in the metric's own unit, and how to read it."""
+    """A change from before to after and how to read it: in the metric's own unit, or, for a
+    scenario's time and tokens on the comparison, a percent of the old value."""
 
     value: float | None
     tone: Tone
+
+
+NO_CHANGE = Delta(None, "none")
 
 
 class Deltas(Struct, frozen=True):
@@ -413,6 +419,9 @@ class CompareRow(Struct, frozen=True):
     before: ScenarioView | None
     after: ScenarioView | None
     claims: tuple[ClaimChange, ...]
+    held: Delta  # the change in passed attempts, in the tone of the row's group
+    seconds: Delta  # the change of the mean time per answer, a percent
+    tokens: Delta  # the change of the mean tokens per attempt, a percent
 
 
 class ComparePage(Struct, frozen=True):
@@ -423,6 +432,8 @@ class ComparePage(Struct, frozen=True):
     deltas: Deltas
     differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
     rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
+    by_seconds: tuple[str, ...]  # compared scenarios with both times, the largest rise first
+    by_tokens: tuple[str, ...]
 
 
 class IndexRow(Struct, frozen=True):
@@ -829,6 +840,7 @@ class Comparison(Struct, frozen=True):
         unchanged = self.unchanged()
         rows = [self.row(id, before.get(id), after.get(id), unchanged) for id in {*before, *after}]
         rows.sort(key=lambda row: (GROUPS[row.group], row.id))
+        compared = [row for row in rows if row.group != "apart"]
         old, new = was.metrics(before.values()), now.metrics(after.values())
         return ComparePage(
             before=was.head(),
@@ -838,6 +850,12 @@ class Comparison(Struct, frozen=True):
             deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
             differences=self.differences(),
             rows=tuple(rows),
+            by_seconds=Ranking(
+                tuple((r.id, r.seconds.value) for r in compared if r.seconds.value is not None)
+            ).ids(),
+            by_tokens=Ranking(
+                tuple((r.id, r.tokens.value) for r in compared if r.tokens.value is not None)
+            ).ids(),
         )
 
     def html(self) -> str:
@@ -868,15 +886,31 @@ class Comparison(Struct, frozen=True):
     ) -> CompareRow:
         if was is None or now is None:
             why = "only in the after run" if was is None else "only in the before run"
-            return CompareRow(id, "apart", why, was, now, ())
+            return self.apart(id, why, was, now)
         if id not in unchanged:
-            return CompareRow(id, "apart", "edited between the runs", was, now, ())
+            return self.apart(id, "edited between the runs", was, now)
         if was.rate is None or now.rate is None:
-            return CompareRow(id, "apart", "no verdict in one of the runs", was, now, ())
+            return self.apart(id, "no verdict in one of the runs", was, now)
         group: Group = (
             "worse" if now.rate < was.rate else "better" if now.rate > was.rate else "same"
         )
-        return CompareRow(id, group, "", was, now, self.claims(was, now))
+        return CompareRow(
+            id,
+            group,
+            "",
+            was,
+            now,
+            self.claims(was, now),
+            Delta(now.held - was.held, TONES[group]),
+            self.relative(was.seconds, now.seconds),
+            self.relative(was.tokens, now.tokens),
+        )
+
+    def apart(
+        self, id: str, why: str, was: ScenarioView | None, now: ScenarioView | None
+    ) -> CompareRow:
+        """A scenario not compared: why, and no change of any number."""
+        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, NO_CHANGE, NO_CHANGE)
 
     def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
         changes = []
@@ -914,8 +948,8 @@ class Comparison(Struct, frozen=True):
         return Deltas(
             rate=rate,
             stable=self.delta(was.stable, now.stable, more_is_better=True),
-            seconds=self.delta(was.seconds, now.seconds, more_is_better=False),
-            tokens=self.delta(was.tokens, now.tokens, more_is_better=False),
+            seconds=self.mean(was.seconds, now.seconds),
+            tokens=self.mean(was.tokens, now.tokens),
             cached=self.points(was.cached, now.cached),
             errors=self.delta(was.errors, now.errors, more_is_better=False),
         )
@@ -932,6 +966,29 @@ class Comparison(Struct, frozen=True):
         change = round((now - was) * 100, 6)
         shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
         return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
+
+    def mean(self, was: float | None, now: float | None) -> Delta:
+        """A tile's change of a mean in its own unit, toned as the scenarios' rows are; a rise
+        from 0 is worse."""
+        if was is None or now is None:
+            return NO_CHANGE
+        relative = self.relative(was, now)
+        return Delta(now - was, "bad" if relative.value is None else relative.tone)
+
+    def relative(self, was: float | None, now: float | None) -> Delta:
+        """The change of a mean as a percent of the old one; none when either is missing, or the
+        old one is 0 and the new one is not."""
+        if was is None or now is None or (was == 0 and now != 0):
+            return NO_CHANGE
+        change = round((now - was) / was * 100, 6) if was else 0.0
+        return Delta(change, self.slight(change))
+
+    def slight(self, percent: float) -> Tone:
+        """A rise of time or tokens is worse; under 5% as the page rounds it, the same, so a
+        change shown as 5% is never grey."""
+        if math.floor(abs(percent) + 0.5) < SLIGHT:
+            return "same"
+        return "bad" if percent > 0 else "good"
 
     def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
         if change == 0:

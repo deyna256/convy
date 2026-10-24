@@ -835,6 +835,76 @@ def test_other_tiles_are_coloured_by_direction(tmp_path):
     assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
 
 
+def test_a_scenario_changes_by_a_percent_of_its_old_mean(tmp_path):
+    before = (answers(s, 2.0, tokens=50) for s in "abc")
+    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
+    after = (
+        answers("a", 3.0, tokens=52),
+        answers("b", 1.0, tokens=60),
+        answers("c", 2.0, tokens=50),
+    )
+    journal(tmp_path, "bot", "1", 3, *after, started=at(6))
+    rows = Comparison(*both(tmp_path)).page().rows
+    assert [(r.id, r.seconds.value, r.seconds.tone) for r in rows] == [
+        ("a", 50, "bad"),
+        ("b", -50, "good"),
+        ("c", 0, "same"),
+    ]
+    assert [(r.tokens.value, r.tokens.tone) for r in rows] == [
+        (4, "same"),
+        (20, "bad"),
+        (0, "same"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("tokens", "tone"),
+    [(522, "same"), (523, "bad"), (525, "bad"), (478, "same"), (477, "good")],
+    ids=["4.4%", "4.6% shows as 5%", "5%", "-4.4%", "-4.6% shows as -5%"],
+)
+def test_a_change_under_5_percent_as_the_page_rounds_it_is_the_same(tmp_path, tokens, tone):
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=500), started=at(5))
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    (row,) = page.rows
+    assert (row.tokens.tone, page.deltas.tokens.tone) == (tone, tone)
+    assert page.deltas.tokens.value == 2 * tokens - 1000  # the tile keeps its unit
+
+
+@pytest.mark.parametrize(("tokens", "row", "tile"), [(0, (0, "same"), (0, "same")),
+                                                     (5, (None, "none"), (10, "bad"))])  # fmt: skip
+def test_a_change_from_0_tokens_has_no_percent(tmp_path, tokens, row, tile):
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=0), started=at(5))
+    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.rows[0].tokens.value, page.rows[0].tokens.tone) == row
+    assert (page.deltas.tokens.value, page.deltas.tokens.tone) == tile
+
+
+def test_the_change_panels_hold_compared_scenarios_by_their_rise_then_id(tmp_path):
+    before = (answers("a", 2.0, tokens=0), answers("b", 2.0), answers("c", 2.0))
+    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
+    after = (answers("a", 3.0, tokens=5), answers("b", 3.0), answers("c", 1.0), answers("d", 9.0))
+    journal(tmp_path, "bot", "1", 4, *after, started=at(6))
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.by_seconds, page.by_tokens) == (("a", "b", "c"), ("b", "c"))
+
+
+def test_a_row_counts_the_change_of_passed_attempts_in_its_groups_tone(tmp_path):
+    before = [outcome("a", v, attempt=n) for n, v in enumerate((PASSED, PASSED, FAILED, FAILED), 1)]
+    before += [outcome("b", PASSED, attempt=n) for n in (1, 2, 3)] + [outcome("c", PASSED)]
+    journal(tmp_path, "bot", "1", 3, *before, k=4, started=at(5))
+    after = [outcome("a", PASSED, attempt=n) for n in (1, 2)]
+    after += [outcome("b", v, attempt=n) for n, v in enumerate((PASSED, FAILED, FAILED), 1)]
+    journal(tmp_path, "bot", "1", 2, *after, k=3, started=at(6))
+    rows = Comparison(*both(tmp_path)).page().rows
+    assert [(r.id, r.group, r.held.value, r.held.tone) for r in rows] == [
+        ("b", "worse", -2, "bad"),
+        ("a", "better", 0, "good"),  # 2 of 4 to 2 of 2: as many passed, a higher rate
+        ("c", "apart", None, "none"),
+    ]
+
+
 def cached(directory: Path, read: int | None, day: int) -> RunJournal:
     """A run on `day` whose one answer read `read` of its 100 input tokens from the cache."""
     usage = Usage(100, 10) if read is None else Usage(100, 10, cache_read=read)
