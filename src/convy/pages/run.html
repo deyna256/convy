@@ -11,11 +11,9 @@
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
 .tiles.five { grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)); }
 @media (max-width: 1100px) { .tiles.five { grid-template-columns: repeat(4, minmax(0, 1fr)); } .tiles.five > :first-child { grid-column: 1 / -1; } }
-@media (max-width: 640px) { .tiles.five { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .controls { justify-content: flex-start; } }
 .tile .s.bad { color: var(--fail); }
-.big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
-.big .k { font-size: 12px; font-weight: 650; color: var(--muted); margin-left: 5px; letter-spacing: 0; }
-.since { font-size: 12.5px; margin-left: auto; } .since .delta { font-size: 12.5px; }
+.since { font-size: 12.5px; white-space: nowrap; } .since .delta { font-size: 12.5px; }
 .meta.changed { color: var(--flaky); margin-top: 4px; }
 .meter { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; }
 .meter > span { min-width: 3px; border-radius: 2px; }
@@ -26,7 +24,7 @@
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
 .rates .meter { height: 24px; margin: 4px 0 6px; }
-.rates .cap { margin-top: 10px; }
+.rates .cap { margin-top: 12px; }
 .rates .meter > span { display: grid; place-items: center; color: #fff; font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgb(0 0 0 / .45); overflow: hidden; }
 .rates .meter .flaky { background: var(--flaky); }
 .rates .meter .none { background: var(--none); }
@@ -34,7 +32,6 @@
 .rates .endlist li { display: inline-flex; align-items: center; gap: 5px; }
 .rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none); }
-.lrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
 #charts { grid-template-columns: minmax(0, 1fr); }
 .chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .chart .cat:hover { background: var(--side); }
@@ -45,8 +42,8 @@
 .chart .cat .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
 .chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
 .chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: color-mix(in srgb, var(--muted) 75%, var(--surface)); }
-.chart .cat[aria-expanded] .who b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
-.chart .cat[aria-expanded="true"] .who b::before { transform: rotate(45deg); }
+.chart .cat[aria-expanded] .cname b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+.chart .cat[aria-expanded="true"] .cname b::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
 .chart.cats .scale { grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; }
 .places { list-style: none; margin: 2px 0 8px 12px; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
@@ -121,22 +118,24 @@ const since = (delta, unit) => B && delta && delta.tone !== "none" && !(delta.to
 // The tiles: the pass rate, the flaky scenarios, the errors, and the chosen statistic of the time
 // and tokens per answer.
 function tiles() {
-  const tile = (label, value, delta, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("div", {className: "big"}, el("span", {className: "v"}, value), delta), rest);
+  // Every tile alike: its label, its number, its change, then what it counts; the numbers line up.
+  const top = (label, value, delta) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value), delta];
+  const tile = (label, value, delta, ...rest) => el("div", {className: "tile"}, top(label, value, delta), rest);
   const open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
   const left = (m, unit) => m.out ? ` · ${m.out} cut over ${unit(m.over)}` : "";
-  const measured = (label, m, unit, note, delta) => tile(label, [unit(chosen(m.spread)), el("span", {className: "k"}, "mean")], since(delta, unit), el("span", {className: "s"}, note + left(m, unit)));
+  const measured = (label, m, unit, note, delta) => tile(label, unit(chosen(m.spread)), since(delta, unit), el("span", {className: "s"}, `mean of ${note}${left(m, unit)}`));
   return el("div", {className: "tiles five"},
-    el("div", {className: "tile rates"}, el("div", {className: "lrow"}, el("span", {className: "l"}, "Pass rate"), el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")} passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`)),
-      el("div", {className: "big"}, el("span", {className: "v"}, pct(M.rate)), since(B?.deltas.rate, points)), rates()),
+    el("div", {className: "tile rates"}, top("Pass rate", pct(M.rate), since(B?.deltas.rate, points)),
+      el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")} passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), rates()),
     tile("Flaky scenarios", [String(M.flaky), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.flaky, String),
       el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
         DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
-      el("span", {className: "s"}, RUN.k > 1 ? "some attempts passed, some failed" : "one attempt each: none can be flaky")),
-    el("div", {className: "tile", "data-tip": errors || null}, el("span", {className: "l"}, "Errors"), el("div", {className: "big"}, el("span", {className: "v"}, String(M.errors)), since(B?.deltas.errors, String))),
+      el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
+    tile("Errors", String(M.errors), since(B?.deltas.errors, String), el("span", {className: "s"}, errors || "none failed")),
     measured("Time per answer", V.seconds, secs, plural(answers, "answer"), V.since?.seconds.mean),
-    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `${V.tokens.answers} of ${answers} answers report tokens`, V.since?.tokens.mean));
+    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `the ${V.tokens.answers} of ${answers} answers that report tokens`, V.since?.tokens.mean));
 }
 
 // The scenarios by pass rate on one line, from 0: a part per rate as long as how many scenarios
@@ -144,7 +143,7 @@ function tiles() {
 function rates() {
   const total = DATA.results.reduce((sum, r) => sum + r.scenarios.length, 0);
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
-  return [el("span", {className: "s cap"}, "Scenarios by the share of their attempts that passed"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
+  return [el("span", {className: "s cap"}, "Scenarios by pass rate"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
       DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.scenarios.length}`, "data-tip": `${name(r)} of the attempts passed: ${r.scenarios.join(", ")}`}, r.scenarios.length / total >= .04 ? String(r.scenarios.length) : ""))),
     el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
 }

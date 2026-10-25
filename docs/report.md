@@ -9,9 +9,10 @@ offline, with system, light and dark themes.
 The page reads from the top down: five tiles, where the tokens and the time go, then the
 **Scenarios**, the failing first.
 
-From the agent's second run on, a tile that changed since the agent's run just before says how,
-such as `▼ 44 pts vs 5e85`, coloured and greyed under noise as on a
-[comparison](#compare-two-runs). When the models or convy changed since then, the header says so.
+Each tile has its label, its number and, under the number, how it changed: from the agent's second
+run on, a tile that changed since the agent's run just before says how, such as `▼ 44 pts vs 5e85`,
+coloured and greyed under noise as on a [comparison](#compare-two-runs). When the models or convy
+changed since then, the header says so.
 The command at the foot of the page compares the two runs in full.
 
 - **Pass rate**: the share of counted attempts that passed, with the count
@@ -25,12 +26,12 @@ The command at the foot of the page compares the two runs in full.
   a verdict last. Point at a part for its scenarios.
 - **Flaky scenarios**: those with passed and failed counted attempts, with a square per scenario,
   the flaky ones coloured.
-- **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models; point
-  at the tile for their kinds.
+- **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models, with
+  their kinds (`1 agent failure · 2 model failures`), or `none failed`.
 - **Time per answer**: the mean over the answers kept, how many, and how many were cut. Only the
   agent's own time counts, not the simulated user's or the judge's.
 - **Tokens per answer**: the same for an answer's input and output together, over the answers
-  that report them (`40 of 44 answers report tokens`).
+  that report them (`mean of the 40 of 44 answers that report tokens`).
 
 ## Cutting outliers
 
