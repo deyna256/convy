@@ -136,17 +136,16 @@ did not say. The address keeps the open scenario, so you can send a link to it.
 ## The index
 
 `results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
-shows the rest). A strip shows each agent's newest 40 runs, newest left: a bar per run as high as
-its pass rate and coloured by its result, and a line where the **setup** changed. The setup is what
-a run is measured with: the user's model, the judge, convy's version, the trust and the set of
-scenarios. The agent's version and the number of attempts are not part of it. In the table, a setup
-cell that changed since the agent's previous run is marked; point at it to see the old value. Tick
-two runs to get the `convy compare` command for them.
+shows the rest). Each agent's header names its newest run's **setup**, what a run is measured
+with: the user's model, the judge, the scenarios and attempts, and the trust when there is one.
+Beside it a strip shows the agent's newest 40 runs, newest left: a bar per run as high as its pass
+rate and coloured by its result, and a line where the setup changed. The agent's version and the
+number of attempts are not part of the setup.
 
-Under the strip, three more strips cover the same runs: the chosen statistic of the time per
-answer and of the tokens per attempt, and the share of input read from the cache. Each has its own
-scale from 0, and the newest run's number is written beside it; a run without the number has a
-stub. The table's Time / answer and Tokens / attempt follow the switch.
+A run's row gives its pass rate with how many attempts passed, its version and when it started,
+and how many errors it had if any. Under the run where the setup changed, a line says what changed
+(`Changed: judge: a → b`, `scenarios: +1 −2`). Tick two runs to get the `convy compare` command for
+them. Time and tokens are on each run's page.
 
 ## Compare two runs
 

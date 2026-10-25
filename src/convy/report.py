@@ -209,7 +209,6 @@ type Result = Literal["failing", "flaky", "passing", "none"]
 type Tone = Literal["good", "bad", "same", "noise", "none"]
 type Group = Literal["worse", "better", "same", "apart"]
 type Change = Literal["unchanged", "worse", "better"]
-type Setup = Literal["user", "judge", "convy", "trust", "scenarios"]  # what a run is measured with
 type Stat = Literal["p50", "p90", "max", "mean"]  # what a chart shows of a spread
 
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
@@ -605,16 +604,15 @@ class IndexRow(Struct, frozen=True):
     run: RunHead
     metrics: Metrics
     result: Result
-    changed: tuple[Setup, ...]  # what differs from the agent's previous run; () for its first
-    added: int  # scenario ids the previous run did not have
-    dropped: int  # and ids it had that this run does not
+    changes: tuple[
+        str, ...
+    ]  # the setup that differs from the agent's run before, as `judge: a → b`
     order: int  # the run's place among every run of the index, 0 the newest
     report: str  # the run's report, relative to the index
 
 
 class AgentRuns(Struct, frozen=True):
     agent: str
-    trusted: bool  # some run of the agent has a trust: its table shows a Trust column
     rows: tuple[IndexRow, ...]  # newest first
 
 
@@ -1468,39 +1466,42 @@ class Index(Struct, frozen=True):
                 self.row(order, run, previous)
                 for (order, run), previous in zip(runs, older, strict=True)
             )
-            agents.append(AgentRuns(agent, any(run.spec.trust for _, run in runs), rows))
+            agents.append(AgentRuns(agent, rows))
         return IndexPage(tuple(agents))
 
     def row(self, order: int, run: Run, previous: Run | None) -> IndexRow:
         summary = Summary(run)
         metrics = summary.metrics(summary.scenarios().values())
-        ids = {scenario.id for scenario in run.spec.scenarios}
-        before = ids if previous is None else {s.id for s in previous.spec.scenarios}
         return IndexRow(
             run=summary.head(),
             metrics=metrics,
             result=Tally(metrics.passed, metrics.judged).result(),
-            changed=() if previous is None else self.changed(previous.spec, run.spec, before, ids),
-            added=len(ids - before),
-            dropped=len(before - ids),
+            changes=() if previous is None else self.changes(previous.spec, run.spec),
             order=order,
             report=f"{run.path.as_posix()}/report.html",
         )
 
-    def changed(
-        self, was: RunSpec, now: RunSpec, before: set[str], ids: set[str]
-    ) -> tuple[Setup, ...]:
-        """What a run is measured with that differs from the agent's previous run. Neither the
+    def changes(self, was: RunSpec, now: RunSpec) -> tuple[str, ...]:
+        """What a run is measured with that differs from the agent's previous run, as
+        `judge: a → b`, and the scenarios as `scenarios: +1 -2`, with a minus sign. Neither the
         agent's version (comparing versions is the point) nor the number of attempts counts; nor
         a scenario edited under the same id, which the comparison tells apart."""
-        pairs: tuple[tuple[Setup, object, object], ...] = (
+        pairs = (
             ("user", was.user, now.user),
             ("judge", was.judge, now.judge),
-            ("convy", was.convy, now.convy),
-            ("trust", was.trust, now.trust),
-            ("scenarios", before, ids),
+            ("convy", was.convy or "unknown", now.convy or "unknown"),
+            ("trust", f"{was.trust:g}", f"{now.trust:g}"),
         )
-        return tuple(name for name, before, after in pairs if before != after)
+        changes = [f"{name}: {a} → {b}" for name, a, b in pairs if a != b]
+        before, ids = {s.id for s in was.scenarios}, {s.id for s in now.scenarios}
+        moved = " ".join(
+            f"{sign}{len(found)}"
+            for sign, found in (("+", ids - before), ("\N{MINUS SIGN}", before - ids))
+            if found
+        )
+        if moved:
+            changes.append(f"scenarios: {moved}")
+        return tuple(changes)
 
     def html(self) -> str:
         return Template("index.html").html(self.page())

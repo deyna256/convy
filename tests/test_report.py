@@ -1089,43 +1089,44 @@ def test_no_runs_make_an_empty_index(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("setup", "changed"),
+    ("setup", "changes"),
     [
-        ({"models": ("other", "fake")}, ("user",)),
-        ({"models": ("fake", "other")}, ("judge",)),
-        ({"convy": "0.1.0"}, ("convy",)),
-        ({"trust": 0.5}, ("trust",)),
+        ({"models": ("other", "fake")}, ("user: fake → other",)),
+        ({"models": ("fake", "other")}, ("judge: fake → other",)),
+        ({"convy": "0.1.0"}, (f"convy: {CONVY} → 0.1.0",)),
+        ({"convy": ""}, (f"convy: {CONVY} → unknown",)),
+        ({"trust": 0.5}, ("trust: 0 → 0.5",)),
         ({"k": 3}, ()),  # more attempts measure the same thing
         ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
     ],
-    ids=["user", "judge", "convy", "trust", "attempts", "edited scenario"],
+    ids=["user", "judge", "convy", "no convy", "trust", "attempts", "edited scenario"],
 )
 def test_a_run_names_the_setup_that_differs_from_the_agents_previous_run(
-    tmp_path, setup: dict[str, Any], changed
+    tmp_path, setup: dict[str, Any], changes
 ):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "2", 1, outcome("a", PASSED), started=at(6), **setup)
     (group,) = Index(Runs(tmp_path)).page().agents
-    assert [r.changed for r in group.rows] == [changed, ()]
+    assert [r.changes for r in group.rows] == [changes, ()]
 
 
-@pytest.mark.parametrize(("then", "now", "moved"), [(2, 3, (1, 0)), (3, 2, (0, 1))])
+@pytest.mark.parametrize(
+    ("then", "now", "moved"), [(2, 3, "scenarios: +1"), (3, 2, "scenarios: \N{MINUS SIGN}1")]
+)
 def test_a_run_counts_the_scenarios_it_added_and_dropped(tmp_path, then, now, moved):
     journal(tmp_path, "bot", "1", then, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "2", now, outcome("a", PASSED), started=at(6))
     (group,) = Index(Runs(tmp_path)).page().agents
-    newer, older = group.rows
-    assert (newer.changed, (newer.added, newer.dropped)) == (("scenarios",), moved)
-    assert (older.changed, older.added, older.dropped) == ((), 0, 0)
+    assert [r.changes for r in group.rows] == [(moved,), ()]
 
 
-def test_an_agent_says_whether_any_run_has_a_trust_and_a_run_names_its_convy(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), trust=0.5, convy="")
+def test_a_run_names_its_convy(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), convy="")
     journal(tmp_path, "ann", "1", 1, outcome("a", PASSED), started=at(6))
     page = Index(Runs(tmp_path)).page()
-    assert [(g.agent, g.trusted, g.rows[0].run.convy) for g in page.agents] == [
-        ("ann", False, CONVY),
-        ("bot", True, "unknown"),
+    assert [(g.agent, g.rows[0].run.convy) for g in page.agents] == [
+        ("ann", CONVY),
+        ("bot", "unknown"),
     ]
 
 
