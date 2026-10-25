@@ -1437,19 +1437,17 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
     )
     journal(tmp_path, "bot", "1", 2, *played)
     view = Report(only(tmp_path)).page().views.all
-    # answers of 2, 3 and 5 s; their calls span 2, 3 and 5 s, so nothing is outside them
     assert [(c.name, c.answers, c.calls, c.total) for c in view.time] == [
         ("lookup", 1, 1, 5),
         ("gpt", 2, 2, 4),
         ("search", 2, 2, 4),
-        (None, 3, 0, 0),
     ]
     # three answers: what each call name adds to an answer on average, its total over three
-    assert [c.average for c in view.time] == [5 / 3, 4 / 3, 4 / 3, 0]
+    assert [c.average for c in view.time] == [5 / 3, 4 / 3, 4 / 3]
     gpt = view.time[1]
     assert gpt.places == (CallPlace("a", 1, 0, 2, 2, None), CallPlace("b", 1, 0, 0, 2, None))
     # only search reports tokens, 7 and 11: 18 over three answers; no answer reports its own
-    assert [c.tokens for c in view.time] == [None, None, 6, None]
+    assert [c.tokens for c in view.time] == [None, None, 6]
     assert view.time[2] == Category(
         "search",
         2,
@@ -1459,28 +1457,25 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
         (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
         4 / 3,
         6,
-        4 / 13,  # of 5 + 4 + 4 + 0 s
+        4 / 13,  # of 5 + 4 + 4 s
     )
     assert view.parts is None
 
 
-def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_path):
+def test_calls_that_ran_together_each_count_their_own_time_and_nothing_else_is_timed(tmp_path):
     steps = (call("search", 0, 1), call("gpt", 0.5, 1), call("lookup", 2.5, 0.5))
     turn = Turn(Message("hi"), Answer("hello", Usage(10, 20), steps=steps), 4.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
     view = Report(only(tmp_path)).page().views.all
-    # calls run 0 to 1.5 s and 2.5 to 3 s: 2 of the 4 s; the gap between them is the agent's own
-    assert [(c.name, c.total) for c in view.time] == [
-        (None, 2),
-        ("gpt", 1),
-        ("search", 1),
-        ("lookup", 0.5),
+    # the answer's own 4 s are convy's clock and stay out: only the calls' 2.5 s count
+    assert [(c.name, c.total, c.average) for c in view.time] == [
+        ("gpt", 1, 1),
+        ("search", 1, 1),
+        ("lookup", 0.5, 0.5),
     ]
-    assert [c.average for c in view.time] == [2, 1, 1, 0.5]  # one answer: its totals
+    assert [c.share for c in view.time] == [1 / 2.5, 1 / 2.5, 0.5 / 2.5]
     assert view.parts == Parts(None, 10, 20, None)
     assert view.shares == Shares(None, 1 / 3, 2 / 3, None, None)
-    # time: 2 s untracked, gpt and search 1 s, lookup 0.5 s; 4.5 s in all
-    assert [c.share for c in view.time] == [2 / 4.5, 1 / 4.5, 1 / 4.5, 0.5 / 4.5]
 
 
 def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_path):
@@ -1515,7 +1510,6 @@ def test_a_scenario_is_cut_by_its_tokens_out_of_its_time_too(tmp_path):
     views = Report(only(tmp_path)).page().views
     assert views.cut.out == ("c",)
     assert views.cut.seconds.answers == 20
-    assert all(category.answers == 20 for category in views.cut.time)
 
 
 @pytest.mark.parametrize(

@@ -457,18 +457,18 @@ class Answered(Struct, frozen=True):
 
 
 class Category(Struct, frozen=True):
-    """Where the answers' time went: the calls of one name, or the answer's time no call covers.
-    Its seconds are per answer it has a number in."""
+    """The agent's calls of one name, as its answers report them. Its seconds are per answer it
+    has calls in."""
 
-    name: str | None  # None: the time no call covers
-    answers: int  # the answers kept that it has a number in
-    calls: int  # 0 for the time no call covers
+    name: str
+    answers: int  # the answers kept that it has calls in
+    calls: int
     total: float  # its seconds together
     spread: Spread  # per answer it has a number in
     places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest first
     average: float  # its total over every answer kept: what it adds to an answer on average
     tokens: float | None  # its calls' tokens over every answer kept; None: none reported
-    share: float  # its part of every category's total, 0..1
+    share: float  # its part of every call name's seconds together, 0..1
 
 
 class Measure(Struct, frozen=True):
@@ -901,42 +901,23 @@ class Summary(Struct, frozen=True):
         return Measure(self.spread(known), len(known))
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
-        """Where the answers' time went: each call name's seconds per answer it ran in, calls that
-        ran together each with their own, and the tokens its calls report; and the answer's time
-        while no call ran, all of it without calls. The most in total first, then by name, the
-        time no call covers before calls. The calls' tokens are apart from the answer's own:
-        convy does not know whether the answer's usage holds them."""
+        """Where the answers' calls spent their time: each call name's seconds per answer it ran
+        in, calls that ran together each with their own, and the tokens its calls report; the most
+        in total first, then by name. The calls' times and tokens are the agent's own: convy sets
+        them against neither its own time of the answer nor the answer's tokens (decision 10)."""
         per, places, tokens = self.called(answers)
-        groups: list[tuple[str | None, list[float], list[CallPlace]]] = [
-            (name, per[name], sorted(made, key=lambda p: -p.seconds))
-            for name, made in places.items()
-        ]
-        own = [max(0.0, a.turn.seconds - self.busy(a.turn)) for a in answers]
-        if own:
-            groups.append((None, own, []))
-        whole = sum(sum(amounts) for _, amounts, _ in groups)
-        groups.sort(key=lambda g: (-sum(g[1]), g[0] is not None, g[0] or ""))
+        whole = sum(sum(amounts) for amounts in per.values())
         return tuple(
             self.category(
-                name, amounts, made, len(answers), whole, None if name is None else tokens.get(name)
+                name,
+                per[name],
+                sorted(places[name], key=lambda p: -p.seconds),
+                len(answers),
+                whole,
+                tokens.get(name),
             )
-            for name, amounts, made in groups
+            for name in sorted(per, key=lambda name: (-sum(per[name]), name))
         )
-
-    def busy(self, turn: TurnView) -> float:
-        """How long some call of an answer ran: its calls' times laid together, overlaps once."""
-        runs = []
-        for step in turn.steps:
-            match step:
-                case CallView(start=start, seconds=seconds):
-                    runs.append((start, start + seconds))
-                case ThoughtView():
-                    pass
-        total, end = 0.0, -math.inf
-        for start, stop in sorted(runs):
-            total += max(0.0, stop - max(start, end))
-            end = max(end, stop)
-        return total
 
     def called(
         self, answers: list[Answered]
@@ -964,7 +945,7 @@ class Summary(Struct, frozen=True):
 
     def category(
         self,
-        name: str | None,
+        name: str,
         amounts: list[float],
         places: list[CallPlace],
         answers: int,

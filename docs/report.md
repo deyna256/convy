@@ -7,7 +7,7 @@ offline, with system, light and dark themes.
 ## Tiles
 
 The page reads from the top down: five tiles, the pass rate beside the other four, the tokens by
-part and where the time goes, then the **Scenarios**, the failing first.
+part and the time by call, then the **Scenarios**, the failing first.
 
 Each tile has its label, its number and what the number counts. The run's page shows the run
 alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
@@ -62,26 +62,25 @@ kept that report tokens. The parts add up to the answer's tokens;
 a part the agent does not report stays in the whole: without cache reads, the new input is all the
 input.
 
-**Time by category** shows where the answers' time went. Each category shows its share of the
-time, large and as its bar, and under it what it adds to an answer on average: its total over
-every answer kept. Under each name: how many calls, and in how many answers; point at a row for
-its spread over the answers it is in. The shares are of the categories' time together, which is
-more than the answers' time when calls run together.
+**Time by call** shows where the answers' calls spent their time, a row per call name. Each shows
+its share of the calls' time together, large and as its bar, and under it what it adds to an
+answer on average: its total over every answer kept. Under each name: how many calls, and in how
+many answers; point at a row for its spread over the answers it is in. Calls that ran together
+each count their own time, so their shares are of more than the answers' time.
+
+- A call name whose calls report tokens shows them under its time, per answer on average. They
+  are apart from the answer's tokens: convy does not know whether the answer's usage holds its
+  calls' tokens, so it never adds the two.
+- The answer's time outside its calls is not shown. The calls are timed by the agent's clock and
+  the answer by convy's, which also counts the network; setting one against the other would mix
+  the two ([decision 10](decisions/0010-answer-steps.md)). Without [steps](agents.md#steps) the
+  chart is empty.
 
 Both charts give a mean per answer, not the run's total: a total grows with the scenarios, the
 attempts and the turns, so two runs of different size could not be set side by side; a mean per
 answer can, and it matches the tiles. The shares are the same either way.
 
-- Each call name is a category; calls that ran together each count their own seconds. A call name
-  whose calls report tokens shows them under its time, per answer on average. They are apart from
-  the answer's tokens: convy does not know whether the answer's usage holds its calls' tokens, so
-  it never adds the two.
-- **Untracked time** is the part of an answer's time that no reported call covers: the agent's own
-  code, waits, and any model work it does not report as a call. Calls that ran together cover
-  their time once. Without [steps](agents.md#steps), all of an answer's time is untracked; report
-  the model's calls as steps to see them apart.
-
-Open a call to see its largest calls, five at first, each with its scenario, attempt and turn;
+Open a call name to see its slowest calls, five at first, each with its scenario, attempt and turn;
 click one to open that answer with the call unfolded.
 
 ## Percentiles and the switch
