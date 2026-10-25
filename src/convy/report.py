@@ -499,19 +499,6 @@ class RunHead(Struct, frozen=True):
     convy: str  # the convy that played the run; "unknown" when the run does not say
 
 
-class RunPage(Struct, frozen=True):
-    run: RunHead
-    metrics: Metrics
-    scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
-    by_seconds: PerStat[tuple[str, ...]]  # the ids by each statistic of their time, largest first
-    by_tokens: PerStat[tuple[str, ...]]  # and of their tokens
-    by_parts: tuple[str, ...]  # the ids with parts, the most tokens per attempt first
-    turns: tuple[TurnStats, ...]  # the turns whose answers report tokens, by number
-    calls: tuple[CallStats, ...]  # the longest in total first, then by name
-    claims: Claims
-    ends: tuple[tuple[Stop, int], ...]  # how the dialogues ended and how many, in `ENDS` order
-
-
 class Delta(Struct, frozen=True):
     """A change from before to after and how to read it: in the metric's own unit, or, for a
     scenario's time and tokens on the comparison, a percent of the old value."""
@@ -531,6 +518,29 @@ class Deltas(Struct, frozen=True):
     tokens: PerStat[Delta]  # and in tokens
     cached: Delta  # percentage points
     errors: Delta
+
+
+class Before(Struct, frozen=True):
+    """The agent's run just before a run: its head, its tiles' numbers and how the run differs."""
+
+    run: RunHead
+    was: Metrics
+    deltas: Deltas
+    differences: tuple[str, ...]  # what of the setup changed, as the comparison names it
+
+
+class RunPage(Struct, frozen=True):
+    run: RunHead
+    metrics: Metrics
+    scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
+    by_seconds: PerStat[tuple[str, ...]]  # the ids by each statistic of their time, largest first
+    by_tokens: PerStat[tuple[str, ...]]  # and of their tokens
+    by_parts: tuple[str, ...]  # the ids with parts, the most tokens per attempt first
+    turns: tuple[TurnStats, ...]  # the turns whose answers report tokens, by number
+    calls: tuple[CallStats, ...]  # the longest in total first, then by name
+    claims: Claims
+    ends: tuple[tuple[Stop, int], ...]  # how the dialogues ended and how many, in `ENDS` order
+    before: Before | None  # None: the agent's first run
 
 
 class ClaimChange(Struct, frozen=True):
@@ -1061,6 +1071,7 @@ class Report(Struct, frozen=True):
     the page only draws."""
 
     run: Run
+    previous: Run | None = None  # the agent's run just before, which the tiles compare with
 
     def page(self) -> RunPage:
         summary = Summary(self.run)
@@ -1078,7 +1089,14 @@ class Report(Struct, frozen=True):
             calls=summary.calls(views),
             claims=summary.claims(scenarios),
             ends=summary.ends(views),
+            before=self.before(),
         )
+
+    def before(self) -> Before | None:
+        if self.previous is None:
+            return None
+        compared = Comparison(self.previous, self.run).page()
+        return Before(compared.before, compared.was, compared.deltas, compared.differences)
 
     def ranked(self, spreads: Iterable[tuple[str, Spread | None]]) -> PerStat[tuple[str, ...]]:
         """The ids by each statistic of their spread, as `Ranking` orders them."""
@@ -1092,6 +1110,16 @@ class Report(Struct, frozen=True):
 
     def html(self) -> str:
         return Template("run.html").html(self.page())
+
+
+def paired(runs: Iterable[Run]) -> list[tuple[Run, Run | None]]:
+    """Each run, oldest first, with its agent's run started just before it; None for the first."""
+    last: dict[str, Run] = {}
+    pairs: list[tuple[Run, Run | None]] = []
+    for run in sorted(runs, key=lambda run: run.spec.started):  # instants
+        pairs.append((run, last.get(run.spec.agent)))
+        last[run.spec.agent] = run
+    return pairs
 
 
 class Comparison(Struct, frozen=True):

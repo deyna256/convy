@@ -42,6 +42,9 @@
 .boxkey .chart { padding: 0; background: none; width: 56px; }
 .boxkey .track { display: block; }
 .tile.range { gap: 6px; }
+.since { font-size: 12.5px; } .since .delta { font-size: 12.5px; }
+.big .since { margin-left: auto; }
+.meta.changed { color: var(--flaky); margin-top: 4px; }
 .lrow { display: flex; justify-content: space-between; gap: 12px; }
 .big { display: flex; align-items: baseline; gap: 8px; }
 .big .k { font-size: 12px; font-weight: 650; color: var(--muted); }
@@ -65,14 +68,14 @@
   <section id="tiles" aria-label="The run in numbers"></section>
   <div class="block"><div class="tools"><h2>Claims</h2></div>
     <section id="outcomes" class="charts" aria-label="Claims that failed"></section></div>
-  <div class="block"><div class="tools"><h2>Spread by scenario</h2>
-    <span class="boxkey" aria-hidden="true"><span class="chart"><span class="track"><span class="whisker" style="left:0;width:100%"></span><span class="box" style="left:25%;width:45%"></span><span class="median" style="left:45%"></span></span></span>min to max · p10 to p90 · median</span></div>
-    <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section></div>
-  <div class="block"><div class="tools" id="tokens-head"><h2>Tokens</h2></div>
-    <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section></div>
-  <section id="calls" aria-label="The agent's calls"></section>
   <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
+  <div class="block"><div class="tools"><h2>Time and tokens by scenario</h2>
+    <span class="boxkey" aria-hidden="true"><span class="chart"><span class="track"><span class="whisker" style="left:0;width:100%"></span><span class="box" style="left:25%;width:45%"></span><span class="median" style="left:45%"></span></span></span>min to max · p10 to p90 · median</span></div>
+    <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section></div>
+  <div class="block"><div class="tools"><h2>Tokens</h2></div>
+    <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section></div>
+  <section id="calls" aria-label="The agent's calls"></section>
   <p class="hint" id="hint"></p>
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
@@ -90,47 +93,54 @@ function header() {
       el("div", {className: "eyebrow"}, el("a", {href: "../../index.html"}, "CONVY"), ` / ${RUN.agent} / ${RUN.short}`),
       el("h1", {}, `Run ${when(RUN.started)}`),
       el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, RUN.trust > 0 && `trust ${RUN.trust}`,
-        RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · "))),
-    themeButton());
+        RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
+      B && B.differences.length > 0 && el("p", {className: "meta changed"}, `Changed since ${B.run.short}: ${B.differences.join(", ")}`)),
+    el("div", {className: "controls"}, chooser, themeButton()));
 }
+
+// A tile's change since the agent's run before; nothing on its first run.
+const B = DATA.before;
+const since = (delta, unit) => B && (delta.tone === "same" && !delta.value
+  ? el("span", {className: "since muted"}, `same as ${B.run.short}`)
+  : el("span", {className: "since"}, change(delta, unit), el("span", {className: "muted"}, ` vs ${B.run.short}`)));
 
 // The tiles: each a number and a small picture of what it is made of, words only where a picture
 // cannot say it.
 const SHORT = {user_stop: "user finished", max_turns: "out of turns", agent_failure: "agent failed", agent_busy: "agent busy", model_failure: "convy's model failed"};
 function tiles() {
-  const tile = (label, value, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), rest);
+  const tile = (label, value, delta, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("div", {className: "big"}, el("span", {className: "v"}, value), delta), rest);
   const bar = parts => el("div", {className: "meter", "aria-hidden": "true"}, parts.filter(([, n]) => n > 0).map(([cls, n, title]) => el("span", {className: cls, style: `flex: ${n}`, title})));
   const failed = M.judged - M.passed, open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const total = DATA.ends.reduce((sum, [, n]) => sum + n, 0);
   return [
     el("div", {className: "tiles four"},
-      tile("Pass rate", pct(M.rate),
+      tile("Pass rate", pct(M.rate), since(B?.deltas.rate, points),
         bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
         el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`)),
-      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)],
+      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.stable, String),
         el("div", {className: "pips", role: "img", "aria-label": DATA.scenarios.map(v => `${v.id}: ${SCENARIO[v.result]}`).join(", ")},
           DATA.scenarios.map(v => el("span", {className: v.result, title: `${v.id}: ${SCENARIO[v.result]}`}))),
         el("span", {className: "s"}, RUN.k > 1 ? "passed every attempt" : "one attempt each")),
-      tile("Errors", String(M.errors), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
+      tile("Errors", String(M.errors), since(B?.deltas.errors, String), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
       total > 0 && el("div", {className: "tile"}, el("span", {className: "l"}, `How the ${plural(total, "dialogue")} ended`),
         el("div", {className: "meter ends", "aria-hidden": "true"}, DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, title: `${STOPS[end]}: ${n}`}))),
         el("ul", {className: "endlist"}, DATA.ends.map(([end, n]) => el("li", {}, el("i", {className: `key end ${end}`}), SHORT[end], el("b", {}, String(n))))))),
     el("div", {className: "tiles two"},
-      rangeTile("Time per answer", M.seconds, secs, M.seconds ? plural(M.seconds.n, "answer") : "no answers"),
+      rangeTile("Time per answer", M.seconds, secs, M.seconds ? plural(M.seconds.n, "answer") : "no answers", since(B?.deltas.seconds.p50, secs)),
       rangeTile("Tokens per attempt", M.tokens, count, M.tokens == null ? "not reported" : M.reported === M.attempts ? plural(M.attempts, "attempt") : `${M.reported} of ${M.attempts} report tokens`,
-        M.parts && composition(M.parts))),
+        since(B?.deltas.tokens.p50, count), M.parts && composition(M.parts))),
   ];
 }
 
 // A spread as a tile: its P50 large, its range drawn as the box plots below draw it, and the other
 // statistics small.
-function rangeTile(label, d, unit, note, extra = null) {
+function rangeTile(label, d, unit, note, delta, extra = null) {
   if (!d) return el("div", {className: "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, "—"), el("span", {className: "s"}, note));
   const at = v => d.max ? v / d.max * 100 : 0;
   return el("div", {className: "tile range"},
     el("div", {className: "lrow"}, el("span", {className: "l"}, label), el("span", {className: "s"}, note)),
-    el("div", {className: "big"}, el("span", {className: "v"}, unit(d.p50)), el("span", {className: "k"}, "P50")),
+    el("div", {className: "big"}, el("span", {className: "v"}, unit(d.p50)), el("span", {className: "k"}, "P50"), delta),
     el("div", {className: "chart"}, el("span", {className: "track", "aria-hidden": "true", title: `min ${unit(d.min)} · p10 ${unit(d.p10)} · median ${unit(d.p50)} · p90 ${unit(d.p90)} · max ${unit(d.max)}`},
       el("span", {className: "whisker", style: `left: ${at(d.min)}%; width: ${at(d.max) - at(d.min)}%`}),
       el("span", {className: "box", style: `left: ${at(d.p10)}%; width: max(4px, ${at(d.p90) - at(d.p10)}%)`}),
@@ -146,7 +156,7 @@ function composition(p) {
   return el("div", {className: "comp"},
     el("div", {className: "meter", "aria-hidden": "true"}, shown.map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex: ${p[k]}`, title: `${count(p[k])} ${words[k]}`}))),
     el("ul", {className: "endlist"}, shown.map(k => el("li", {}, el("i", {className: `key ${SEG[k]}`}), words[k], el("b", {}, count(p[k])))),
-      M.cached != null && el("li", {className: "muted"}, `${pct(M.cached)} of the input cached`)));
+      M.cached != null && el("li", {className: "muted"}, `${pct(M.cached)} of the input cached`, B && B.was.cached != null && ` · was ${pct(B.was.cached)}`)));
 }
 
 function table() {
@@ -157,7 +167,7 @@ function table() {
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
       el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : stat === "max" ? `p50 ${secs(s.seconds.p50)}` : `max ${secs(s.seconds.max)}`)),
-      el("td", {className: "n metric"}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : tokenParts(s))));
+      el("td", {className: "n metric", title: s.tokens == null ? null : tokenParts(s)}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : stat === "max" ? `p50 ${count(s.tokens.p50)}` : `max ${count(s.tokens.max)}`)));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
@@ -234,7 +244,8 @@ function boxes(title, order, field, unit, what, missing) {
       el("span", {className: "track", "aria-hidden": "true"}, marks),
       el("span", {className: "n"}, unit(d.p50)));
   });
-  return chart(title, rows, scaleLine(unit(top)), draw);
+  const lead = views.find(s => s[field]);
+  return lede(chart(title, rows, scaleLine(unit(top)), draw), lead && `${field === "seconds" ? "Slowest" : "Most"}: ${lead.id}, ${unit(lead[field].p50)} at the median`);
 }
 
 // Tokens by part, per scenario, the most first.
@@ -246,7 +257,10 @@ function parts() {
     el("span", {className: "rid mono", title: s.id}, s.id),
     el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(s.parts, s.tokens.mean, top)),
     el("span", {className: "n"}, count(s.tokens.mean))));
-  return chart("Tokens per attempt by part · mean", rows, [scaleLine(count(top)), partLegend(views.map(s => s.parts))], draw);
+  const section = lede(chart("Tokens per attempt by part · mean", rows, scaleLine(count(top)), draw),
+    views.length > 0 && `Most per attempt: ${views[0].id}, ${count(views[0].tokens.mean)}`);
+  (section.querySelector(".lede") ?? section.querySelector("h3")).after(partLegend(views.map(s => s.parts)));  // the key above the bars, in their order
+  return section;
 }
 
 // The agent's calls by name: how many, their total time as a bar on a scale from 0 to the largest
@@ -282,7 +296,9 @@ function calls() {
         return el("li", {}, go, el("span", {className: "muted"}, `${secs(p.seconds)}${p.tokens == null ? "" : ` · ${count(p.tokens)} tokens`}`));
       })), more))];
   });
-  return [el("div", {className: "tools", id: "calls-head"}, el("h2", {}, "The agent's calls")),
+  const lead = DATA.calls[0];
+  return [el("div", {className: "tools"}, el("h2", {}, "The agent's calls")),
+    el("p", {className: "lede"}, `Most time: ${lead.name}, ${secs(lead.total)} over ${plural(lead.calls, "call")}`),
     el("div", {className: "panel scroll"}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Call"), el("th", {className: "n"}, "Calls"), el("th", {}, "Total time"),
         el("th", {className: "n"}, `Seconds per call · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per call · ${STAT[stat]}`))),
@@ -300,9 +316,6 @@ function draw() {
     byTurn && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
     DATA.by_parts.length > 0 && parts()].filter(Boolean));
   document.getElementById("calls").replaceChildren(...calls());
-  // The switch sits in the head of the first section that follows it.
-  const first = byTurn ? "tokens" : DATA.calls.length ? "calls" : "scenarios";
-  document.getElementById(`${first}-head`).append(chooser);
   document.getElementById("table").replaceChildren(table());
 }
 
@@ -311,7 +324,7 @@ document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(...tiles());
 document.getElementById("filter").addEventListener("input", draw);
-document.getElementById("hint").textContent = `Compare with another run: convy compare <run> ${RUN.short}`;
+document.getElementById("hint").textContent = B ? `Compare with the run before: convy compare ${B.run.short} ${RUN.short}` : `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();
 const opened = fromAddress();
 if (opened) show(opened.id, opened.attempt);

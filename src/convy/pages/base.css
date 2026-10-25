@@ -31,8 +31,8 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var
 .page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
-.top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
-.top > div:first-child { flex: 1; min-width: 0; }
+.top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; margin-bottom: 18px; }
+.top > div:first-child { flex: 1 1 320px; min-width: 0; }
 .eyebrow { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
 .eyebrow a { color: inherit; }
 h1 { font-size: 22px; line-height: 1.25; margin: 8px 0 4px; font-weight: 650; overflow-wrap: anywhere; }
@@ -157,3 +157,14 @@ tbody tr.row:hover td { background: var(--side); }
 .pbar.thin { height: 6px; }
 .pbar > .seg:last-child { border-radius: 2px 4px 4px 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* a change from before */
+.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
+
+/* a panel's message, the page's controls */
+.lede { margin: -4px 0 10px; font-size: 14px; font-weight: 550; color: var(--ink); }
+.tools + .lede { margin: -4px 0 10px; }
+.chart h3 + .legend, .chart .lede + .legend { margin: 0 0 10px; }
+.controls { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 14px; }
+.controls .switch { margin: 0; }

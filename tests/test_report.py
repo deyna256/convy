@@ -28,6 +28,7 @@ from convy.dialog import (
 from convy.report import (
     NO_CHANGE,
     STATS,
+    Before,
     CallPlace,
     CallStats,
     CallView,
@@ -49,6 +50,7 @@ from convy.report import (
     ThoughtView,
     TurnStats,
     TurnView,
+    paired,
 )
 from convy.scenario import Outcome, Scenario
 
@@ -1601,3 +1603,25 @@ def test_the_scripts_of_every_page_parse(tmp_path):
         file.write_text(body, encoding="utf-8")
         done = subprocess.run(["node", "--check", str(file)], check=False, capture_output=True)
         assert done.returncode == 0, done.stderr.decode()
+
+
+def test_each_run_is_paired_with_its_agents_run_just_before(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(7))
+    journal(tmp_path, "other", "1", 1, outcome("a", PASSED), started=at(6))
+    pairs = [
+        (run.spec.version, run.spec.agent, None if was is None else was.spec.version)
+        for run, was in paired(Runs(tmp_path))
+    ]
+    assert pairs == [("1", "bot", None), ("1", "other", None), ("2", "bot", "1")]
+
+
+def test_a_run_page_compares_its_tiles_with_the_agents_run_before(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(6))
+    first, second = both(tmp_path)
+    assert Report(first).page().before is None
+    before = Report(second, first).page().before
+    compared = Comparison(first, second).page()
+    assert before == Before(compared.before, compared.was, compared.deltas, compared.differences)
+    assert before is not None and before.deltas.rate == Delta(-100, "noise")  # one attempt: noise

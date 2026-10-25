@@ -8,8 +8,6 @@
 <style>
 /*include base.css*/
 /*include window.css*/
-.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
 .tile .s.good { color: var(--pass); } .tile .s.bad { color: var(--fail); }
 .tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
 .group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
@@ -41,12 +39,12 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="Before and after in numbers"></section>
-  <div class="block"><div class="tools" id="switch"><h2>Changes by scenario</h2></div>
+  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <div class="panel scroll" id="table"></div>
+  <div class="block"><div class="tools"><h2>Changes by scenario</h2></div>
     <section id="changes" class="charts changes" aria-label="Changes by scenario"></section></div>
   <div class="block"><div class="tools"><h2>Tokens</h2></div>
     <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section></div>
-  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
-  <div class="panel scroll" id="table"></div>
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
@@ -66,18 +64,7 @@ function header() {
       el("h1", {}, title),
       el("p", {className: "meta", style: "display:flex;flex-wrap:wrap;align-items:center;gap:8px"}, tag("Before", BEFORE), el("span", {className: "arrow"}, "→"), tag("After", AFTER),
         DATA.differences.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `differences: ${DATA.differences.join(", ")}`) : el("span", {}, "same models, convy version and agent limit"))),
-    themeButton());
-}
-
-const percentagePoints = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} percentage points`;
-
-// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
-function change(delta, unit) {
-  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
-  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
-  const arrow = delta.value > 0 ? "▲" : "▼";
-  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
-  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+    el("div", {className: "controls"}, statSwitch(draw), themeButton()));
 }
 
 // The share of input read from the cache, before and after, coloured by its change; no line when
@@ -85,7 +72,7 @@ function change(delta, unit) {
 function cached() {
   if (WAS.cached == null && NOW.cached == null) return null;
   if (WAS.cached == null || NOW.cached == null) return el("span", {className: "s"}, "from cache: not reported");
-  const title = D.cached.value ? percentagePoints(Math.abs(D.cached.value)) : null;
+  const title = D.cached.value ? points(Math.abs(D.cached.value)) : null;
   return el("span", {className: `s ${D.cached.tone}`, title}, `from cache ${pct(WAS.cached)} → ${pct(NOW.cached)}`);
 }
 
@@ -95,7 +82,7 @@ function tiles() {
   const was = (spread, unit) => spread ? `was ${STATS.map(k => unit(spread[k])).join(" · ")}` : "was —";
   return [
     el("div", {className: "tiles"},
-      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
+      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, points), {hero: true}),
       tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
       tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v)))),
     el("div", {className: "tiles two"},
@@ -121,8 +108,9 @@ function changes(title, order, field, value, unit) {
         el("small", {className: "muted"}, ` · ${unit(value(r.before))} → ${unit(value(r.after))}`)));
   });
   const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
-    el("p", {className: "caption"}, `The bar is the change of the scenario's ${STAT[stat]}, from −100% to +100%; grey under 5%.`));
-  return chart(title, rows, scale, draw);
+    el("p", {className: "caption"}, `The change of each scenario's ${STAT[stat]}, the bar cut at ±100%; grey under 5%.`));
+  const lead = order.filter(keep).map(id => byId.get(id))[0], d = lead && lead[field][stat];
+  return lede(chart(title, rows, scale, draw), d && d.value > 0 && d.tone !== "same" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
 }
 
 // Tokens by part before and after: two thin bars per compared scenario on one scale, the mean
@@ -133,13 +121,14 @@ function partPairs() {
   const {keep} = filtered();
   const rows = DATA.by_parts.filter(keep).map(id => byId.get(id));
   const top = Math.max(0, ...rows.flatMap(r => [r.before.tokens.mean, r.after.tokens.mean]));
-  return chart("Tokens per attempt by part · mean · before and after", rows.map(r => el("div", {className: "rrow", title: `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+  const section = chart("Tokens per attempt by part · mean · before and after", rows.map(r => el("div", {className: "rrow", title: `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
       el("span", {className: "rid mono", title: r.id}, r.id),
       el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(r.before.parts, r.before.tokens.mean, top, true), partBar(r.after.parts, r.after.tokens.mean, top, true)),
       el("span", {className: "n"}, `${thousands(r.before.tokens.mean)} → ${thousands(r.after.tokens.mean)}`,
         (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before.parts)} → ${share(r.after.parts)}`)))),
-    [scaleLine(count(top)), partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])),
-      el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
+    [scaleLine(count(top)), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
+  section.querySelector("h3").after(partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])));  // the key above the bars
+  return section;
 }
 
 const passedChange = v => v > 0 ? `${v} more passed` : v < 0 ? `${-v} fewer passed` : "=";
@@ -229,7 +218,6 @@ function draw() {
 document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(...tiles());
-document.getElementById("switch").append(statSwitch(draw));
 document.getElementById("filter").addEventListener("input", draw);
 draw();
 const opened = fromAddress();

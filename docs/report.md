@@ -6,7 +6,14 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-Six tiles sum up the run, in two rows, each a number and a small picture of it:
+The page reads from the top down: the tiles first, then what failed (**Claims**, then
+**Scenarios**, the failing first), then where the time and tokens go, then the agent's calls.
+
+Six tiles sum up the run, in two rows, each a number and a small picture of it. From the agent's
+second run on, each tile also says how it changed since the agent's run just before, such as
+`▼ 44 pts vs 5e85`, coloured and greyed under noise as on a [comparison](#compare-two-runs);
+`same as 5e85` when nothing changed. When the models or convy changed since then, the header says
+so. The command at the foot of the page compares the two runs in full.
 
 - **Pass rate**: the share of counted attempts that passed, with the count
   (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
@@ -45,13 +52,16 @@ under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** 
 count. Percentiles are linear between the sorted values, as numpy's default. Nothing is left out
 as an outlier: a long whisker or a high Max shows it.
 
-Each page has one switch, **Charts show: P50 · P90 · Max · Mean**, P50 by default. It sets the one
-number per scenario, turn, call or run that the charts and table cells after it show, and their
-titles say which (`Time per answer · P90`). The tiles and the box plot show the whole spread;
+Each page has one switch in its header, **Show P50 · P90 · Max · Mean**, P50 by default. It sets the
+one number per scenario, turn, call or run that the charts and tables show, and their titles say
+which (`Time per answer · P90`). The tiles and the box plot show the whole spread;
 **Tokens by part** the mean; the cache share is a share. The address keeps the switch
 (`#stat=p90`), so a link opens on it.
 
-Under the tiles, a box plot per scenario shows how it spreads: **Time per answer** over its
+Each chart has a line under its title that says what to see first, such as `Slowest: topic-change,
+3.5 s at the median`; its key, when it has one, sits above the bars in their order.
+
+Under **Time and tokens by scenario**, a box plot per scenario shows how it spreads: **Time per answer** over its
 answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
 value, the box from P10 to P90, and a line marks the median; the median is written at the end,
 and the tooltip gives every number and `n`, how many values. With few values the box reaches the whiskers; one value is a single tick.

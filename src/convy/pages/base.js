@@ -114,7 +114,24 @@ function statSwitch(redraw) {
     writeAddress(readAddress());
     redraw();
   }));
-  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Charts show:"), el("div", {role: "group", "aria-label": "Charts show"}, buttons));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Show"), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
+}
+
+const points = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} pts`;  // percentage points
+
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
+function change(delta, unit) {
+  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
+  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
+  const arrow = delta.value > 0 ? "▲" : "▼";
+  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
+  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+}
+
+// A panel's message, in a line under its title.
+function lede(section, text) {
+  if (text) section.querySelector("h3").after(el("p", {className: "lede"}, text));
+  return section;
 }
 
 // A scale under a panel's rows: 0 at the left, its top at the right.
@@ -152,11 +169,13 @@ function turnChart(title, turns, top) {
       el("span", {className: "tn"}, `Turn ${t.turn}`),
       el("span", {className: "sub"}, plural(t.answers, "answer")));
   });
-  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title, el("span", {className: "top"}, `dashed line ${count(top)}`)),
-    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "topline", "aria-hidden": "true"}), cols)),
+  const shares = drawn.filter(t => t.cached).map(t => [t.turn, pct(chosen(t.input) ? chosen(t.cached) / chosen(t.input) : null)]);
+  const told = shares.length > 1 && `From the cache: ${shares[0][1]} on turn ${shares[0][0]}, ${shares.at(-1)[1]} on turn ${shares.at(-1)[0]}`;
+  return lede(el("section", {className: "chart", "aria-label": title}, el("h3", {}, title, el("span", {className: "top"}, `dashed line ${count(top)}`)),
     el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
       swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
-    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache."));
+    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "topline", "aria-hidden": "true"}), cols)),
+    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache.")), told);
 }
 const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
 
