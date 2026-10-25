@@ -10,6 +10,23 @@ const clock = () => {
   return svg;
 };
 
+// The steps' icons: a bulb for a thought, a wrench for a call, a stack for folded steps, a speech
+// bubble for the answer.
+const GLYPHS = {
+  thought: "M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z",
+  call: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z",
+  steps: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  answer: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+};
+function glyph(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({viewBox: "0 0 24 24", width: 15, height: 15, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true"})) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", GLYPHS[name]);
+  svg.append(path);
+  return svg;
+}
+
 // A safe subset of Markdown, built as DOM nodes: paragraphs, line breaks, **bold**, *italic*,
 // `code`, lists and #–### headings. Anything else stays text.
 function inline(text) {
@@ -86,50 +103,86 @@ function judgeLines(attempt, run) {
   }));
 }
 function dialogue(attempt) {
-  return attempt.turns.flatMap(t => [
+  return attempt.turns.flatMap((t, i) => [
     el("div", {className: "msg user"}, el("span", {className: "who"}, "USER"), el("div", {className: "bubble"}, t.user)),
-    el("div", {className: "msg agent"}, el("div", {className: "bubble"},
-      el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
-        el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
-        el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
-          : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)])),
-      steps(t),
-      markdown(t.agent))),
+    el("div", {className: "msg agent", "data-turn": i}, t.steps.length ? timeline(t) : el("div", {className: "bubble"}, answerHead(t), markdown(t.agent))),
   ]);
 }
-// An answer's steps, in their order: thoughts as text, calls on a time line of their own.
-function steps(t) {
-  if (!t.steps.length) return null;
-  const counts = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call")].filter(Boolean).join(", ");
-  return el("details", {className: "steps"}, el("summary", {}, `Steps · ${counts}`),
-    t.steps.map(s => s.type === "thought" ? el("div", {className: "thought"}, s.text) : callRow(s)));
+function answerHead(t, toggle = null) {
+  return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
+    el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
+    el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
+      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
 }
-function callRow(c) {
-  return el("div", {className: "call"},
-    el("span", {className: "name"}, c.name),
-    el("span", {className: "track"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: ${c.width * 100}%`})),
-    el("span", {className: "m"}, secs(c.seconds), " · ", c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`),
-    el("details", {className: "io"}, el("summary", {}, "Sent and received"),
-      el("div", {className: "sec"}, "Sent"), reported(c.sent),
-      el("div", {className: "sec"}, "Received"), reported(c.received)));
+// An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, all the
+// steps show as one node, and clicking it unfolds them. The button that unfolds or folds them stays
+// at the end of the answer's head and hands its focus to the one that replaces it.
+function timeline(t) {
+  const box = el("div", {className: "bubble flow"});
+  let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
+  const draw = (open, focus) => {
+    const flip = () => {
+      if (open) calls = [...box.querySelectorAll("details")].map(d => d.open);
+      draw(!open, true);
+    };
+    const toggle = el("button", {className: "link steps", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
+    toggle.addEventListener("click", flip);
+    const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
+    const steps = open ? t.steps.map((s, i) => s.type === "thought" ? thoughtNode(s) : callNode(s, i))
+      : [node("steps", el("div", {className: "card fold", onclick: flip}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary)))];
+    box.replaceChildren(answerHead(t, toggle),
+      el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
+    box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
+    if (focus) toggle.focus();
+  };
+  draw(false, false);
+  return box;
 }
-// Text the agent reported: "not reported" when it did not say, "empty" when it was empty.
-const reported = text => text == null ? el("div", {className: "muted"}, "not reported")
-  : text === "" ? el("div", {className: "muted"}, "empty") : el("div", {className: "said"}, text);
+const node = (type, card, step = null) => el("li", {className: `node ${type}`, "data-step": step}, el("span", {className: "dot"}, glyph(type)), card);
+const thoughtNode = s => node("thought", el("div", {className: "card"}, el("span", {className: "kind"}, "Thought"), el("div", {className: "said"}, s.text)));
+// A call: its bar on the line of the answer's calls, where it started and how long it took; opened,
+// what it sent and received.
+function callNode(c, step) {
+  return node("call", el("details", {className: "card"},
+    el("summary", {},
+      el("span", {className: "kind"}, "Call"), el("span", {className: "name"}, c.name),
+      el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: max(3px, ${c.width * 100}%)`})),
+      el("span", {className: "m"}, el("span", {className: "muted"}, `from +${secs(c.start)} `), el("strong", {}, secs(c.seconds)), " · ",
+        c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`)),
+    el("div", {className: "io"}, said("Sent", c.sent), said("Received", c.received))), step);
+}
+// Opens one call of the window's dialogue, brings it into view and marks it for a moment.
+function reveal(turn, step) {
+  const folded = document.querySelector(`dialog [data-turn="${turn}"] .steps[aria-expanded="false"]`);
+  if (folded) folded.click();
+  const call = document.querySelector(`dialog [data-turn="${turn}"] [data-step="${step}"]`);
+  if (!call) return;
+  call.querySelector("details").open = true;
+  call.scrollIntoView({block: "center"});
+  call.classList.add("found");
+  setTimeout(() => call.classList.remove("found"), 1600);
+}
+// Text the agent reported, in a box that scrolls: JSON indented, "empty" and "not reported" as words.
+function said(label, text) {
+  const body = text == null ? el("div", {className: "box none"}, "not reported")
+    : text === "" ? el("div", {className: "box none"}, "empty")
+    : el("pre", {className: "box", tabIndex: 0, role: "region", "aria-label": label}, indented(text));
+  return el("div", {}, el("div", {className: "sec"}, label), body);
+}
+function indented(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+}
 
-// The address keeps the open window: #<scenario>&attempt=<n>.
+// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's own settings.
 function address(id, attempt) {
-  history.replaceState(null, "", `#${encodeURIComponent(id)}&attempt=${attempt}`);
+  writeAddress(new URLSearchParams({id, attempt: String(attempt)}));
 }
 function fromAddress() {
-  const hash = location.hash.slice(1);
-  const at = hash.lastIndexOf("&attempt=");
-  if (at < 0) return null;
-  try { return {id: decodeURIComponent(hash.slice(0, at)), attempt: Number(hash.slice(at + 9)) || 1}; }
-  catch { return null; }
+  const params = readAddress(), id = params.get("id");
+  return id ? {id, attempt: Number(params.get("attempt")) || 1} : null;
 }
 function clearAddress() {
-  history.replaceState(null, "", location.pathname + location.search);
+  writeAddress(new URLSearchParams());
 }
 function filtered() {
   const mask = document.getElementById("filter").value.trim() || "*";

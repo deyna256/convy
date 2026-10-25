@@ -7,9 +7,47 @@
 <link rel="icon" href="data:image/svg+xml,/*include icon.svg*/">
 <style>
 /*include base.css*/
+/* what only the comparison draws: the hero tile, the spread tiles, the rows of changes, tokens by turn and by part */
+.tile.hero .v { font-size: 36px; }
+@media (max-width: 600px) { .tile.hero { grid-column: 1 / -1; } }
+.block:has(> .charts:empty) { display: none; }
+.block > .charts { margin-top: 0; }
+.chart .rrow { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
+.chart .rrow { font-size: 13px; min-height: 26px; border-radius: 6px; }
+.chart .rid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart .rrow .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .chart .rrow { grid-template-columns: minmax(0, 1fr) var(--tail, 8ch); }
+  .chart .rrow .rid { grid-column: 1 / -1; }
+}
+/* tiles of a spread: its four statistics at the same size */
+.tiles + .tiles { margin-top: 10px; }
+.tiles.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.tile .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin: 4px 0; }
+.tile .stats > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tile .stats .k { font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.tile .stats .v { font-size: 22px; }
+@media (max-width: 480px) { .tile .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.chart h3 + .legend, .chart .lede + .legend { margin: 0 0 10px; }
+.turns { position: relative; display: grid; grid-template-columns: auto; grid-auto-flow: column; grid-auto-columns: minmax(76px, 1fr); min-width: max-content; padding: 4px 0 2px; }
+.turns .yaxis { display: grid; align-content: start; justify-items: end; gap: 4px; padding-right: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turns .yaxis > div { position: relative; height: 160px; min-width: 4ch; }
+.turns .yaxis .share { height: 1.6em; }
+.turns .yaxis > div > span { position: absolute; right: 0; transform: translateY(50%); font-size: 11px; line-height: 1; }
+.turns .bars { background-image: linear-gradient(to top, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: 100% var(--grid, 100%); background-position: left bottom; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rule) 70%, transparent); }
+.turn { display: grid; justify-items: center; gap: 4px; font-size: 12px; }
+.turn .share { height: 1.6em; display: flex; align-items: flex-end; font-weight: 650; font-variant-numeric: tabular-nums; }
+.turn .bars { display: flex; align-items: flex-end; justify-content: center; gap: 3px; width: 100%; height: 160px; border-bottom: 1px solid var(--muted); }
+.turn .bar { width: 24px; display: flex; flex-direction: column; gap: 2px; }
+.turn .bar > .seg:first-child { border-radius: 4px 4px 1px 1px; }
+.turn .tn { font-weight: 650; margin-top: 2px; }
+.turn .sub { color: var(--muted); text-align: center; }
+.turn.few .bars { opacity: .55; }
+.pbar { display: flex; gap: 2px; height: 12px; min-width: 2px; }
+.pbar.thin { height: 6px; }
+.pbar > .seg:last-child { border-radius: 2px 4px 4px 2px; }
 /*include window.css*/
-.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
 .tile .s.good { color: var(--pass); } .tile .s.bad { color: var(--fail); }
 .tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
 .group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
@@ -20,9 +58,137 @@
 .colhead .badge { margin-left: auto; }
 .cols .msg { max-width: 100%; }
 @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+.changes { --tail: 22ch; }
+.chart .dev { position: relative; height: 16px; }
+.chart .dev::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+.chart .dbar { position: absolute; top: 4px; height: 8px; border-radius: 3px; }
+.dbar.bad { background: var(--fail); } .dbar.good { background: var(--pass); } .dbar.same { background: var(--muted); }
+.chart .clip { position: absolute; top: -1px; font-weight: 800; color: var(--muted); } .clip.up { right: -2px; } .clip.down { left: -2px; }
+.pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.pair .delta { font-size: 13px; }
+.tile .stats .delta { font-size: 12.5px; }
+#tokens { --tail: 24ch; }
+#tokens .n small.block { display: block; }
+#tokens > .chart:last-child:nth-child(odd) { grid-column: 1 / -1; }
 </style>
 <script>
 /*include base.js*/
+
+// What only the comparison draws: the statistic switch, changes, spread tiles, tokens by turn and
+// by part.
+const atTrust = trust => trust > 0 ? ` · trust ${trust}` : "";
+// The statistic of each time and token spread that the charts and tables after the switch show,
+// P50 by default. The address keeps it as stat=, beside the open scenario's id and
+// attempt; P50 is not written.
+const STATS = ["p50", "p90", "max", "mean"];
+const STAT = {p50: "P50", p90: "P90", max: "Max", mean: "Mean"};
+const MEANING = {p50: "P50: half the values are at or under it", p90: "P90: 9 in 10 values are at or under it",
+  max: "Max: the largest value", mean: "Mean: the sum of the values over their count"};
+kept.stat = () => stat === "p50" ? null : stat;
+const fromHash = readAddress().get("stat");
+let stat = STATS.includes(fromHash) ? fromHash : "p50";
+const chosen = spread => spread == null ? null : spread[stat];
+function statSwitch(redraw, label = "Show") {
+  const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
+  buttons.forEach((button, i) => button.addEventListener("click", () => {
+    stat = STATS[i];
+    buttons.forEach((other, j) => other.setAttribute("aria-pressed", String(i === j)));
+    writeAddress(readAddress());
+    redraw();
+  }));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, label), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
+}
+
+
+const points = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} pts`;  // percentage points
+
+
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
+function change(delta, unit) {
+  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
+  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
+  const arrow = delta.value > 0 ? "▲" : "▼";
+  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
+  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+}
+
+
+// A panel of the spread or change block: its title, its rows, its scale, and "Show all" past ten.
+const ROWS = 10;
+function chart(title, rows, scale, redraw) {
+  if (!rows.length) return emptyPanel(title, "No scenario to show");
+  const key = title.split(" · ")[0];
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every.has(key) ? rows.length : ROWS), scale,
+    rows.length > ROWS && moreButton(key, rows.length, redraw));
+}
+
+
+const swatch = (part, word) => el("span", {}, el("i", {className: `key ${part}`}), word);
+
+
+// A tile of a spread: its four statistics at the same size, each with what goes under it,
+// then its lines.
+function spreadTile(label, spread, unit, lines, under = () => null) {
+  return el("div", {className: "tile"}, el("span", {className: "l"}, label),
+    el("div", {className: "stats"}, STATS.map(k => el("div", {}, el("span", {className: "k"}, STAT[k]), el("span", {className: "v"}, spread ? unit(spread[k]) : "—"), under(k)))),
+    lines.map(line => typeof line === "string" ? el("span", {className: "s"}, line) : line));
+}
+
+// Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
+// what was read from the cache and the new input by their share of the summed input when every
+// answer reports its cache reads, and a bar of their output; that share above, how many answers
+// under. A part's tooltip gives its own statistic. `top` is the shared scale's top.
+function turnChart(title, turns, most) {
+  const a = axis(most), top = a.top;
+  const h = v => `${top ? v / top * 100 : 0}%`;
+  const drawn = turns.filter(t => t.input);  // a turn a run did not reach with tokens is an empty column
+  const split = drawn.some(t => t.cached), whole = drawn.some(t => !t.cached);
+  const cols = turns.map(t => {
+    if (!t.input) return el("div", {className: "turn few"}, el("span", {className: "share"}), el("div", {className: "bars", "aria-hidden": "true"}),
+      el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub"}, "no tokens"));
+    const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
+    const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
+    const at = `Turn ${t.turn} · ${STAT[stat]} · `;
+    const parts = cached == null ? [el("span", {className: "seg input", "data-tip": `${at}input: ${count(input)}`})]
+      : [el("span", {className: "seg input", "data-tip": `${at}new input: ${count(chosen(t.fresh))}`}),
+        el("span", {className: "seg cache", style: `flex: 0 0 ${t.share * 100}%`, "data-tip": `${at}from the cache: ${count(cached)}`})];
+    return el("div", {className: t.answers < 3 ? "turn few" : "turn", "data-tip": `${said} · ${plural(t.answers, "answer")} of ${plural(t.scenarios, "scenario")}`},
+      el("span", {className: "share"}, t.share == null ? "" : pct(t.share)),
+      el("div", {className: "bars", role: "img", "aria-label": said},
+        el("span", {className: "bar", style: `height: ${h(input)}`}, parts),
+        el("span", {className: "bar", style: `height: ${h(output)}`}, el("span", {className: "seg output", "data-tip": `${at}output: ${count(output)}`}))),
+      el("span", {className: "tn"}, `Turn ${t.turn}`),
+      el("span", {className: "sub"}, plural(t.answers, "answer")));
+  });
+  const shares = drawn.filter(t => t.share != null).map(t => [t.turn, pct(t.share)]);
+  const told = shares.length > 1 && `From the cache: ${shares[0][1]} on turn ${shares[0][0]}, ${shares.at(-1)[1]} on turn ${shares.at(-1)[0]}`;
+  return lede(el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
+    el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
+      swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
+    el("div", {className: "scroll"}, el("div", {className: "turns", style: gridStyle(a)},
+      el("div", {className: "yaxis", "aria-hidden": "true"}, el("span", {className: "share"}), el("div", {}, a.ticks.map(v => el("span", {style: `bottom: ${h(v)}`}, count(v))))), cols)),
+    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache.")), told);
+}
+const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
+
+
+// Tokens by part: a bar as long as the chosen statistic of a scenario's tokens per attempt, split
+// into the parts the agent reports by their shares, which come from the data; a part's own number
+// is a mean, so its tooltip gives the mean and the share.
+const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} ${partWords(p)[k]}`).join(" · ");
+function partBar(p, shares, total, top, thin = false, what = "", per = "attempt") {
+  const words = partWords(p);
+  return el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
+    PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`,
+      "data-tip": `${what}${words[k]}: ${count(p[k])} per ${per} on average · ${pct(shares[k])}`})));
+}
+function partLegend(parts) {
+  const has = k => parts.filter(p => p[k] != null);
+  const split = has("input").filter(p => p.cached != null).length;
+  const input = !split ? "input" : split === has("input").length ? "new input" : "new input; all of it where the cache is not reported";
+  return el("div", {className: "legend"}, PARTS.filter(k => has(k).length).map(k => swatch(SEG[k], k === "cached" ? "from the cache" : k === "input" ? input : k)));
+}
+
 </script>
 </head>
 <body>
@@ -31,6 +197,10 @@
   <section id="tiles" aria-label="Before and after in numbers"></section>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
+  <div class="block"><div class="tools"><h2>Changes by scenario</h2></div>
+    <section id="changes" class="charts changes" aria-label="Changes by scenario"></section></div>
+  <div class="block"><div class="tools"><h2>Tokens</h2></div>
+    <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section></div>
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
@@ -50,18 +220,7 @@ function header() {
       el("h1", {}, title),
       el("p", {className: "meta", style: "display:flex;flex-wrap:wrap;align-items:center;gap:8px"}, tag("Before", BEFORE), el("span", {className: "arrow"}, "→"), tag("After", AFTER),
         DATA.differences.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `differences: ${DATA.differences.join(", ")}`) : el("span", {}, "same models, convy version and agent limit"))),
-    themeButton());
-}
-
-const percentagePoints = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} percentage points`;
-
-// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data.
-function change(delta, unit) {
-  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
-  if (delta.tone === "same") return el("span", {className: "delta same"}, "=");
-  const arrow = delta.value > 0 ? "▲" : "▼";
-  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
-  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+    el("div", {className: "controls"}, statSwitch(draw), themeButton()));
 }
 
 // The share of input read from the cache, before and after, coloured by its change; no line when
@@ -69,20 +228,70 @@ function change(delta, unit) {
 function cached() {
   if (WAS.cached == null && NOW.cached == null) return null;
   if (WAS.cached == null || NOW.cached == null) return el("span", {className: "s"}, "from cache: not reported");
-  const title = D.cached.value ? percentagePoints(Math.abs(D.cached.value)) : null;
+  const title = D.cached.value ? points(Math.abs(D.cached.value)) : null;
   return el("span", {className: `s ${D.cached.tone}`, title}, `from cache ${pct(WAS.cached)} → ${pct(NOW.cached)}`);
 }
 
 function tiles() {
   const tile = (label, value, was, delta, {hero = false, extra = null} = {}) => el("div", {className: hero ? "tile hero" : "tile"},
     el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta, extra);
-  return el("div", {className: "tiles"},
-    tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, percentagePoints), {hero: true}),
-    tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
-    tile("Time per answer", secs(NOW.seconds), `was ${secs(WAS.seconds)}`, change(D.seconds, secs)),
-    tile("Tokens per attempt", count(NOW.tokens), `was ${count(WAS.tokens)}`, change(D.tokens, count), {extra: cached()}),
-    tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v))));
+  const was = (spread, unit) => spread ? `was ${STATS.map(k => unit(spread[k])).join(" · ")}` : "was —";
+  return [
+    el("div", {className: "tiles"},
+      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, points), {hero: true}),
+      tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
+      tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v)))),
+    el("div", {className: "tiles two"},
+      spreadTile("Time per answer", NOW.seconds, secs, [was(WAS.seconds, secs)], k => change(D.seconds[k], secs)),
+      spreadTile("Tokens per attempt", NOW.tokens, count, [was(WAS.tokens, count), cached()], k => change(D.tokens[k], count))),
+  ];
 }
+
+// The change block: per compared scenario a bar from zero on a fixed −100%…+100% scale, its length
+// the change of the chosen statistic; a longer change is clipped with › and its text keeps the value.
+const byId = new Map(DATA.rows.map(r => [r.id, r]));
+function changes(title, order, field, value, unit) {
+  const {keep} = filtered();
+  const rows = order.filter(keep).map(id => byId.get(id)).map(r => {
+    const d = r[field][stat], size = Math.min(Math.abs(d.value), 100) / 2;
+    const sign = d.value > 0 ? "+" : d.value < 0 ? "−" : "";
+    return el("div", {className: "rrow"},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "dev", "aria-hidden": "true"},
+        el("span", {className: `dbar ${d.tone}`, style: `left: ${d.value > 0 ? "50%" : `calc(50% - max(2px, ${size}%))`}; width: max(2px, ${size}%)`}),
+        Math.abs(d.value) > 100 && el("span", {className: `clip ${d.value > 0 ? "up" : "down"}`}, d.value > 0 ? "›" : "‹")),
+      el("span", {className: "n"}, el("span", {className: `delta ${d.tone}`}, `${sign}${Math.round(Math.abs(d.value))}%`),
+        el("small", {className: "muted"}, ` · ${unit(value(r.before))} → ${unit(value(r.after))}`)));
+  });
+  const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
+    el("p", {className: "caption"}, `The change of each scenario's ${STAT[stat]}, the bar cut at ±100%; grey under 5%.`));
+  const lead = order.filter(keep).map(id => byId.get(id))[0], d = lead && lead[field][stat];
+  return lede(chart(title, rows, scale, draw), d && d.tone === "bad" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
+}
+
+// Tokens by part before and after: two thin bars per compared scenario on one scale, as long as the
+// chosen statistic of its tokens per attempt; the parts keep their shares of the mean, and the share
+// of the input read from the cache is written beside them.
+const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const share = v => v.parts.cached == null ? "not reported" : v.shares.read == null ? "—" : `${pct(v.shares.read)} cached`;
+function partPairs() {
+  const {keep} = filtered();
+  const rows = DATA.by_parts[stat].filter(keep).map(id => byId.get(id));
+  const a = axis(Math.max(0, ...rows.flatMap(r => [chosen(r.before.tokens), chosen(r.after.tokens)])));
+  const section = chart(`Tokens per attempt by part · ${STAT[stat]} · before and after`, rows.map(r => el("div", {className: "rrow"},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "ptrack", role: "img", "aria-label": `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+        partBar(r.before.parts, r.before.shares, chosen(r.before.tokens), a.top, true, `${r.id} · before · `), partBar(r.after.parts, r.after.shares, chosen(r.after.tokens), a.top, true, `${r.id} · after · `)),
+      el("span", {className: "n"}, `${thousands(chosen(r.before.tokens))} → ${thousands(chosen(r.after.tokens))}`,
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before)} → ${share(r.after)}`)))),
+    [scaleLine(a, count), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after; a bar's parts keep their shares of the mean.")], draw);
+  section.classList.add("grid");
+  section.setAttribute("style", gridStyle(a));
+  section.querySelector("h3").after(partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])));  // the key above the bars
+  return section;
+}
+
+const passedChange = v => v > 0 ? `${v} more passed` : v < 0 ? `${-v} fewer passed` : "=";
 
 function table() {
   const {mask, keep} = filtered();
@@ -96,15 +305,20 @@ function table() {
       const open = el("button", {className: "open", type: "button", "aria-label": `Open ${r.id}`}, r.id);
       const metric = (now, was) => [now, el("small", {}, was)];
       const row = el("tr", {className: "row"}, el("td", {}, open),
-        el("td", {}, r.why ? el("span", {className: "muted"}, r.why) : el("span", {style: "white-space:nowrap"}, badge(r.before.result), el("span", {className: "arrow"}, "→"), badge(r.after.result))),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(r.after.seconds), `was ${secs(r.before.seconds)}`)),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(count(r.after.tokens), `was ${count(r.before.tokens)}`)));
+        el("td", {}, el("span", {className: "pair"},
+            r.before ? squares(attemptMarks(r.before.attempts), "Before", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            el("span", {className: "arrow"}, "→"),
+            r.after ? squares(attemptMarks(r.after.attempts), "After", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            r.held.value != null && el("span", {className: `delta ${r.held.tone}`}, passedChange(r.held.value))),
+          r.why && el("div", {className: "muted", style: "font-size:12.5px;margin-top:4px"}, r.why)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(chosen(r.after.seconds)), `was ${secs(chosen(r.before.seconds))}`)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(count(chosen(r.after.tokens)), `was ${count(chosen(r.before.tokens))}`)));
       row.addEventListener("click", () => show(r.id, 1));
       body.push(row);
     }
   }
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {className: "n"}, "Time per answer"), el("th", {className: "n"}, "Tokens per attempt"))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Attempts · before → after"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per attempt · ${STAT[stat]}`))),
     el("tbody", {}, body.length ? body : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
 }
 
@@ -121,7 +335,7 @@ function column(word, run, view, number) {
 }
 
 function show(id, number) {
-  const r = DATA.rows.find(item => item.id === id);
+  const r = byId.get(id);
   if (!r) return;
   address(id, number);
   const view = r.after ?? r.before;
@@ -150,12 +364,20 @@ function show(id, number) {
 }
 
 function draw() {
+  document.getElementById("changes").replaceChildren(
+    changes(`Time per answer · ${STAT[stat]}`, DATA.by_seconds[stat], "seconds", v => chosen(v.seconds), secs),
+    changes(`Tokens per attempt · ${STAT[stat]}`, DATA.by_tokens[stat], "tokens", v => chosen(v.tokens), count));
+  const turns = DATA.turns.length > 1, top = turnTop(DATA.turns.flatMap(p => [p.before, p.after].filter(Boolean)));
+  document.getElementById("tokens").replaceChildren(...[
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · before ${BEFORE.short}`, DATA.turns.map(p => p.before ?? {turn: p.turn}), top),
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · after ${AFTER.short}`, DATA.turns.map(p => p.after ?? {turn: p.turn}), top),
+    DATA.by_parts[stat].length > 0 && partPairs()].filter(Boolean));
   document.getElementById("table").replaceChildren(table());
 }
 
 document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
 document.getElementById("head").replaceChildren(header());
-document.getElementById("tiles").replaceChildren(tiles());
+document.getElementById("tiles").replaceChildren(...tiles());
 document.getElementById("filter").addEventListener("input", draw);
 draw();
 const opened = fromAddress();
