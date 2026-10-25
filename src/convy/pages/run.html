@@ -25,7 +25,8 @@
 .pips .flaky { background: var(--flaky); }
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
-.rates .meter { height: 24px; margin: 10px 0 6px; }
+.rates .meter { height: 24px; margin: 4px 0 6px; }
+.rates .cap { margin-top: 10px; }
 .rates .meter > span { display: grid; place-items: center; color: #fff; font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgb(0 0 0 / .45); overflow: hidden; }
 .rates .meter .flaky { background: var(--flaky); }
 .rates .meter .none { background: var(--none); }
@@ -43,7 +44,7 @@
 .chart .cat .cname small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chart .cat .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
 .chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
-.chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: var(--muted); }
+.chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: color-mix(in srgb, var(--muted) 75%, var(--surface)); }
 .chart .cat[aria-expanded] .who b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
 .chart .cat[aria-expanded="true"] .who b::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
@@ -132,7 +133,7 @@ function tiles() {
     tile("Flaky scenarios", [String(M.flaky), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.flaky, String),
       el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
         DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
-      el("span", {className: "s"}, RUN.k > 1 ? "passed some attempts, failed others" : "one attempt each: none can be flaky")),
+      el("span", {className: "s"}, RUN.k > 1 ? "some attempts passed, some failed" : "one attempt each: none can be flaky")),
     el("div", {className: "tile", "data-tip": errors || null}, el("span", {className: "l"}, "Errors"), el("div", {className: "big"}, el("span", {className: "v"}, String(M.errors)), since(B?.deltas.errors, String))),
     measured("Time per answer", V.seconds, secs, plural(answers, "answer"), V.since?.seconds.mean),
     measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `${V.tokens.answers} of ${answers} answers report tokens`, V.since?.tokens.mean));
@@ -143,27 +144,27 @@ function tiles() {
 function rates() {
   const total = DATA.results.reduce((sum, r) => sum + r.scenarios.length, 0);
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
-  return [el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
+  return [el("span", {className: "s cap"}, "Scenarios by the share of their attempts that passed"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
       DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.scenarios.length}`, "data-tip": `${name(r)} of the attempts passed: ${r.scenarios.join(", ")}`}, r.scenarios.length / total >= .04 ? String(r.scenarios.length) : ""))),
-    el("ul", {className: "endlist"}, el("li", {}, "Scenarios by the share of attempts passed:"), DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), name(r), el("b", {}, String(r.scenarios.length)))))];
+    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
 }
 
 // Where the answers' tokens or time went, by category: the answer itself and each call name. A
-// bar is the chosen statistic per answer it has a number in; a call opens to its largest calls,
-// each a way to the answer that made it.
+// bar is what it adds to an answer on average, its total over every answer kept, so the bars rank
+// as their totals; a call opens to its largest calls, each a way to the answer that made it.
 const PLACES = 5;
 const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
 function categories(title, list, unit, own, ownNote, empty) {
   if (!list.length || (list.length === 1 && list[0].name == null && !list[0].parts)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
-  const a = axis(Math.max(0, ...list.map(c => c.spread[stat]))), at = v => a.top ? v / a.top * 100 : 0;
+  const a = axis(Math.max(0, ...list.map(c => c.average))), at = v => a.top ? v / a.top * 100 : 0;
   const all = list.reduce((sum, c) => sum + c.total, 0);
   const rows = list.flatMap(c => {
-    const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.spread[stat];
+    const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.average;
     const name = c.name ?? own;
     const row = el("div", {className: c.name == null ? "cat own" : "cat", role: c.name == null ? null : "button", tabIndex: c.name == null ? null : 0, "aria-expanded": c.name == null ? null : String(open),
-        "data-tip": `${name} · ${unit(v)} per answer on average · total ${unit(c.total)}, ${pct(all ? c.total / all : null)} · ${spreadWords(c.spread, unit)}`},
+        "data-tip": `${name} · ${unit(v)} per answer on average, ${unit(c.total)} in all · in the ${plural(c.answers, "answer")} it is in: ${spreadWords(c.spread, unit)}`},
       el("span", {className: "cname"}, el("b", {className: c.name == null ? null : "mono", title: name}, name),
-        el("small", {}, [`in ${plural(c.answers, "answer")}`, c.calls && plural(c.calls, "call"), `${pct(all ? c.total / all : null)} of all`].filter(Boolean).join(" · "))),
+        el("small", {}, [`${pct(all ? c.total / all : null)} of all`, c.calls && plural(c.calls, "call"), `in ${plural(c.answers, "answer")}`].filter(Boolean).join(" · "))),
       el("span", {className: "ptrack"}, c.parts ? partBar(c.parts, v, a.top, false, `${name} · `, "answer") : el("span", {className: "fill", style: `width: ${at(v)}%`})),
       el("span", {className: "n"}, unit(v)));
     if (c.name == null) return [row];
@@ -182,9 +183,9 @@ function categories(title, list, unit, own, ownNote, empty) {
     }), more && el("li", {}, more))];
   });
   const lead = list[0];
-  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · mean per answer`),
+  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · per answer on average`),
     list.some(c => c.parts) && partLegend(list.filter(c => c.parts).map(c => c.parts)),
-    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
+    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), list.length > 1 && `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
   return section;
 }
 

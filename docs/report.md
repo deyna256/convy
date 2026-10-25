@@ -55,8 +55,9 @@ The address keeps the cut (`#cut=p95`), so a link opens on it.
 ## Charts
 
 **Tokens by category** and **Time by category** show where the answers' tokens and time went, a
-bar per category as long as its mean per answer it has a number in, the most in total first. Under
-each name: in how many answers, how many calls, and its share of the whole.
+bar per category as long as what it adds to an answer on average: its total over every answer
+kept, so the bars rank as their totals. Under each name: its share of the whole, how many calls,
+and in how many answers; point at a row for its spread over the answers it is in.
 
 - For tokens, **The answer itself** is the tokens the agent reported for the answer, split into
   what was read from the cache, the new input (cache writes included), the output and the thinking

@@ -1459,6 +1459,8 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
         ("search", 2, 2, 4),
         (None, 3, 0, 0),
     ]
+    # three answers: what each call name adds to an answer on average, its total over three
+    assert [c.average for c in view.time] == [5 / 3, 4 / 3, 4 / 3, 0]
     gpt = view.time[1]
     assert gpt.places == (CallPlace("a", 1, 0, 2, 2, None), CallPlace("b", 1, 0, 0, 2, None))
     # only search reports tokens: 7 and 11 per answer, the larger first; no answer reports its own
@@ -1471,6 +1473,7 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
             Spread(2, 7, 7.4, 9, 10.6, 11, 9),
             None,
             (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
+            18 / 3,
         ),
     )
 
@@ -1487,6 +1490,7 @@ def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_pa
         ("search", 1),
         ("lookup", 0.5),
     ]
+    assert [c.average for c in view.time] == [2, 1, 1, 0.5]  # one answer: its totals
     (own,) = view.spent
     assert (own.name, own.total, own.parts) == (None, 30, Parts(None, 10, 20, None))
 

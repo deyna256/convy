@@ -481,9 +481,10 @@ class Category(Struct, frozen=True):
     answers: int  # the answers kept that it has a number in
     calls: int  # 0 for the answer itself
     total: float  # its numbers together
-    spread: Spread  # per answer
+    spread: Spread  # per answer it has a number in
     parts: Parts | None  # the answer's own tokens by part, a mean per answer; None otherwise
-    places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest first
+    places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest or largest first
+    average: float = 0.0  # its total over every answer kept: what it adds to an answer on average
 
 
 class Measure(Struct, frozen=True):
@@ -937,7 +938,7 @@ class Summary(Struct, frozen=True):
         categories = self.called(answers, lambda call: call.seconds, lambda p: -p.seconds)
         if own:
             categories.append(self.category(None, own, []))
-        return self.ordered(categories)
+        return self.ordered(categories, len(answers))
 
     def busy(self, turn: TurnView) -> float:
         """How long some call of an answer ran: its calls' times laid together, overlaps once."""
@@ -961,7 +962,7 @@ class Summary(Struct, frozen=True):
         if turns:
             own = self.category(None, [turn.tokens or 0 for turn in turns], [])
             categories.append(msgspec.structs.replace(own, parts=self.parts(turns)))
-        return self.ordered(categories)
+        return self.ordered(categories, len(answers))
 
     def called(
         self,
@@ -995,9 +996,13 @@ class Summary(Struct, frozen=True):
         assert spread is not None  # a category has an answer
         return Category(name, len(amounts), len(places), sum(amounts), spread, None, tuple(places))
 
-    def ordered(self, categories: list[Category]) -> tuple[Category, ...]:
-        """The most in total first, then by name, the answer itself before calls."""
-        return tuple(sorted(categories, key=lambda c: (-c.total, c.name is not None, c.name or "")))
+    def ordered(self, categories: list[Category], answers: int) -> tuple[Category, ...]:
+        """The most in total first, then by name, the answer itself before calls; each with its
+        total over the `answers` kept."""
+        return tuple(
+            msgspec.structs.replace(c, average=c.total / answers)
+            for c in sorted(categories, key=lambda c: (-c.total, c.name is not None, c.name or ""))
+        )
 
     def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:
         """A claim over the attempts the judge decided, cut or not: its trusted decisions are
