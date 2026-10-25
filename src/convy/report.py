@@ -485,6 +485,7 @@ class Category(Struct, frozen=True):
     places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest first
     average: float = 0.0  # its total over every answer kept: what it adds to an answer on average
     tokens: float | None = None  # its calls' tokens over every answer kept; None: none reported
+    share: float = 0.0  # its part of every category's total, 0..1
 
 
 class Measure(Struct, frozen=True):
@@ -509,6 +510,7 @@ class View(Struct, frozen=True):
     scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
     time: tuple[Category, ...]  # the most in total first, then by name, uncovered time first
     parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
+    shares: Parts | None  # each part's share of the tokens, 0..1
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
@@ -891,7 +893,7 @@ class Summary(Struct, frozen=True):
                 for view in scenarios
             ),
             self.time(kept),
-            self.parts([a.turn for a in kept]),
+            *self.split(self.parts([a.turn for a in kept])),
             tuple(view.id for view in scenarios if view.id in out),
         )
 
@@ -979,10 +981,26 @@ class Summary(Struct, frozen=True):
 
     def ordered(self, categories: list[Category], answers: int) -> tuple[Category, ...]:
         """The most in total first, then by name, uncovered time before calls; each with its
-        total over the `answers` kept."""
+        total over the `answers` kept and its share of them all."""
+        whole = sum(c.total for c in categories)
         return tuple(
-            msgspec.structs.replace(c, average=c.total / answers)
+            msgspec.structs.replace(
+                c, average=c.total / answers, share=c.total / whole if whole else 0.0
+            )
             for c in sorted(categories, key=lambda c: (-c.total, c.name is not None, c.name or ""))
+        )
+
+    def split(self, parts: Parts | None) -> tuple[Parts | None, Parts | None]:
+        """The parts, and each one's share of their sum; a part not reported has none."""
+        if parts is None:
+            return None, None
+        whole = (parts.cached or 0) + parts.input + parts.output + (parts.thinking or 0)
+        share = (lambda part: part / whole) if whole else (lambda part: 0.0)
+        return parts, Parts(
+            cached=None if parts.cached is None else share(parts.cached),
+            input=share(parts.input),
+            output=share(parts.output),
+            thinking=None if parts.thinking is None else share(parts.thinking),
         )
 
     def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:

@@ -57,15 +57,21 @@ The address keeps the cut (`#cut=p95`), so a link opens on it.
 ## Charts
 
 **Tokens per answer by part** splits the tokens the agent reported for an answer: what was read
-from the cache, the new input (cache writes included), the output and the thinking, a bar each, as
-long as its mean over the answers kept that report tokens. The parts add up to the answer's tokens;
+from the cache, the new input (cache writes included), the output and the thinking. Each part shows
+its share of the tokens, large and as its bar, and under it its mean per answer over the answers
+kept that report tokens. The parts add up to the answer's tokens;
 a part the agent does not report stays in the whole: without cache reads, the new input is all the
 input.
 
-**Time by category** shows where the answers' time went, a bar per category as long as what it
-adds to an answer on average: its total over every answer kept, so the bars rank as their totals.
-Under each name: its share of the whole, how many calls, and in how many answers; point at a row
-for its spread over the answers it is in.
+**Time by category** shows where the answers' time went. Each category shows its share of the
+time, large and as its bar, and under it what it adds to an answer on average: its total over
+every answer kept. Under each name: how many calls, and in how many answers; point at a row for
+its spread over the answers it is in. The shares are of the categories' time together, which is
+more than the answers' time when calls run together.
+
+Both charts give a mean per answer, not the run's total: a total grows with the scenarios, the
+attempts and the turns, so two runs of different size could not be set side by side; a mean per
+answer can, and it matches the tiles. The shares are the same either way.
 
 - Each call name is a category; calls that ran together each count their own seconds. A call name
   whose calls report tokens shows them under its time, per answer on average. They are apart from

@@ -42,8 +42,8 @@
 .chart .cat .cname { display: flex; flex-direction: column; min-width: 0; }
 .chart .cat .cname b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart .cat .cname small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chart .cat .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
-.chart .cat .n small { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.chart .cat .n { text-align: right; font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.chart .cat .n small { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); white-space: nowrap; }
 .chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
 .chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: color-mix(in srgb, var(--muted) 75%, var(--surface)); }
 .chart .cat .fill.seg { flex: none; } .chart .cat .fill.cache { background: var(--cache); } .chart .cat .fill.input { background: var(--input); }
@@ -156,17 +156,16 @@ const PLACES = 5;
 const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
 function categories(title, list, unit, own, ownNote, empty) {
   if (!list.length || (list.length === 1 && list[0].name == null)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
-  const a = axis(Math.max(0, ...list.map(c => c.average))), at = v => a.top ? v / a.top * 100 : 0;
-  const all = list.reduce((sum, c) => sum + c.total, 0);
+  const a = axis(Math.max(0, ...list.map(c => c.share))), at = v => a.top ? v / a.top * 100 : 0;
   const rows = list.flatMap(c => {
     const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.average;
     const name = c.name ?? own;
     const row = el("div", {className: c.name == null ? "cat own" : "cat", role: c.name == null ? null : "button", tabIndex: c.name == null ? null : 0, "aria-expanded": c.name == null ? null : String(open),
         "data-tip": `${name} · ${unit(v)} per answer on average, ${unit(c.total)} in all${c.tokens != null ? ` · its calls report ${count(c.tokens)} tokens per answer on average` : ""} · in the ${plural(c.answers, "answer")} it is in: ${spreadWords(c.spread, unit)}`},
       el("span", {className: "cname"}, el("b", {className: c.name == null ? null : "mono", title: name}, name),
-        el("small", {}, [`${pct(all ? c.total / all : null)} of all`, c.calls && plural(c.calls, "call"), `in ${plural(c.answers, "answer")}`].filter(Boolean).join(" · "))),
-      el("span", {className: "ptrack"}, el("span", {className: "fill", style: `width: ${at(v)}%`})),
-      el("span", {className: "n"}, unit(v), c.tokens != null && el("small", {}, `${count(c.tokens)} tokens`)));
+        el("small", {}, [c.calls && plural(c.calls, "call"), `in ${plural(c.answers, "answer")}`].filter(Boolean).join(" · "))),
+      el("span", {className: "ptrack"}, el("span", {className: "fill", style: `width: ${at(c.share)}%`})),
+      el("span", {className: "n"}, pct(c.share), el("small", {}, unit(v)), c.tokens != null && el("small", {}, `${count(c.tokens)} tokens`)));
     if (c.name == null) return [row];
     const toggle = () => { open ? unfolded.delete(key) : unfolded.add(key); draw(); document.querySelector(`.cat[data-key="${CSS.escape(key)}"]`)?.focus(); };
     row.dataset.key = key;
@@ -183,27 +182,26 @@ function categories(title, list, unit, own, ownNote, empty) {
     }), more && el("li", {}, more))];
   });
   const lead = list[0];
-  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · per answer on average`),
-    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), list.length > 1 && `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the time`);
+  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · share of the time, and seconds per answer on average`),
+    rows, scaleLine(a, pct), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), list.length > 1 && `Most: ${lead.name ?? own}, ${pct(lead.share)} of the time`);
   return section;
 }
 
 // The tokens per answer by part: a bar per part, from the cache, new input, output and thinking,
 // as long as its mean over the answers that report tokens; the parts add up to the answer's own
 // usage, the tokens it reported in all. A call's tokens are with its time, beside the calls.
-function byPart(parts) {
+function byPart(parts, shares, mean) {
   const title = "Tokens per answer by part";
   if (!parts) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, "The answers report no tokens."));
   const words = partWords(parts), shown = PARTS.filter(k => parts[k] != null);
-  const whole = shown.reduce((sum, k) => sum + parts[k], 0);
-  const a = axis(Math.max(0, ...shown.map(k => parts[k]))), at = v => a.top ? v / a.top * 100 : 0;
-  return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · on average`),
+  const a = axis(Math.max(0, ...shown.map(k => shares[k]))), at = v => a.top ? v / a.top * 100 : 0;
+  return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · share of the tokens, and tokens per answer on average`),
     shown.map(k => el("div", {className: "cat own"},
-      el("span", {className: "cname"}, el("b", {}, words[k][0].toUpperCase() + words[k].slice(1)), el("small", {}, `${pct(whole ? parts[k] / whole : null)} of the answer's tokens`)),
-      el("span", {className: "ptrack"}, el("span", {className: `fill seg ${SEG[k]}`, style: `width: ${at(parts[k])}%`})),
-      el("span", {className: "n"}, count(parts[k])))),
-    scaleLine(a, count), el("p", {className: "caption"}, "The tokens the agent reported for an answer, split by part. The tokens of its calls are under Time by category, as convy does not know whether the answer's tokens hold them.")),
-    `${count(whole)} tokens per answer`);
+      el("span", {className: "cname"}, el("b", {}, words[k][0].toUpperCase() + words[k].slice(1))),
+      el("span", {className: "ptrack"}, el("span", {className: `fill seg ${SEG[k]}`, style: `width: ${at(shares[k])}%`})),
+      el("span", {className: "n"}, pct(shares[k]), el("small", {}, `${count(parts[k])} tokens`)))),
+    scaleLine(a, pct), el("p", {className: "caption"}, "The tokens the agent reported for an answer, split by part. The tokens of its calls are under Time by category, as convy does not know whether the answer's tokens hold them.")),
+    `${count(mean)} tokens per answer`);
 }
 
 const spreadWords = (d, unit) => `min ${unit(d.min)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · n ${d.n}`;
@@ -263,7 +261,7 @@ function draw() {
   document.getElementById("hint").textContent = (out ? `Cut ${CUTS[trim].toLowerCase()}: ${V.out.join(", ")}. ` : "") + compare;
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
-    byPart(V.parts),
+    byPart(V.parts, V.shares, V.tokens.spread?.mean),
     categories("Time by category", V.time, secs, "Untracked time", "the part of an answer's time that no reported call covers: the agent's own code, waits, and any model work it does not report as a call", "The answers report no calls, so none of their time is tracked. Report the agent's steps to see where it goes."));
   document.getElementById("table").replaceChildren(table());
 }

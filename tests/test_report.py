@@ -1473,6 +1473,7 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
         (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
         4 / 3,
         6,
+        4 / 13,  # of 5 + 4 + 4 + 0 s
     )
     assert view.parts is None
 
@@ -1491,6 +1492,9 @@ def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_pa
     ]
     assert [c.average for c in view.time] == [2, 1, 1, 0.5]  # one answer: its totals
     assert view.parts == Parts(None, 10, 20, None)
+    assert view.shares == Parts(None, 1 / 3, 2 / 3, None)
+    # time: 2 s untracked, gpt and search 1 s, lookup 0.5 s; 4.5 s in all
+    assert [c.share for c in view.time] == [2 / 4.5, 1 / 4.5, 1 / 4.5, 0.5 / 4.5]
 
 
 def test_a_cut_takes_out_every_scenario_with_an_answer_over_its_percentile(tmp_path):
