@@ -1360,27 +1360,29 @@ def test_each_turn_counts_its_answers_and_scenarios_and_spreads_their_tokens(tmp
         Spread(3, 10, 10, 11.6, 12, 32 / 3),
         None,  # b does not report its cache reads
         None,
+        None,
     )
-    assert second == TurnStats(2, 2, 2, single(200), single(20), single(150), 150 / 200)
+    assert second == TurnStats(2, 2, 2, single(200), single(20), single(150), single(50), 150 / 200)
 
 
 @pytest.mark.parametrize(
-    ("reads", "cached", "share"),
+    ("reads", "cached", "fresh", "share"),
     [
-        ((80, 60), Spread(2, 60, 70, 78, 80, 70), 140 / 200),
-        ((80, None), None, None),
-        ((None, None), None, None),
+        ((80, 60), Spread(2, 60, 70, 78, 80, 70), Spread(2, 20, 30, 38, 40, 30), 140 / 200),
+        ((80, None), None, None, None),
+        ((None, None), None, None, None),
     ],
     ids=["every answer", "some", "none"],
 )
 def test_a_turns_cache_reads_spread_only_when_every_answer_reports_them(
-    tmp_path, reads, cached, share
+    tmp_path, reads, cached, fresh, share
 ):
     usages = (Usage(100, 10) if r is None else Usage(100, 10, cache_read=r) for r in reads)
     played = (talk("a", usage, attempt=n) for n, usage in enumerate(usages, 1))
     journal(tmp_path, "bot", "1", 1, *played, k=2)
     (turn,) = turns(tmp_path)
     assert turn.cached == cached  # 60 and 80: p90 at 0.9, 78
+    assert turn.fresh == fresh  # 100 - 80 and 100 - 60: the new input's own spread
     assert turn.share == share  # of the input summed, not a ratio of two statistics
 
 
@@ -1409,6 +1411,19 @@ def test_a_scenario_splits_its_mean_tokens_per_attempt_into_the_parts_reported(
     journal(tmp_path, "bot", "1", 1, *played, k=len(attempts))
     page = Report(only(tmp_path)).page()
     assert page.scenarios[0].parts == parts
+
+
+def test_a_scenario_without_input_has_no_cache_share_of_it(tmp_path):
+    journal(tmp_path, "bot", "1", 1, talk("a", Usage(0, 10, cache_read=0)))
+    (view,) = Report(only(tmp_path)).page().scenarios
+    assert view.shares == Shares(0, 0, 1, None, None)
+
+
+def test_calls_of_no_time_have_no_share_of_it(tmp_path):
+    turn = Turn(Message("hi"), Answer("hello", steps=(call("ping", 0, 0),)), 1.0)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
+    (ping,) = Report(only(tmp_path)).page().views.all.time
+    assert (ping.total, ping.share) == (0, 0)
 
 
 def test_a_scenario_gives_each_parts_share_and_the_caches_share_of_its_input(tmp_path):
@@ -1479,10 +1494,12 @@ def test_calls_that_ran_together_each_count_their_own_time_and_nothing_else_is_t
 
 
 def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_path):
+    slow = Turn(Message("hi"), Answer("hello", Usage(30, 30), steps=(call("slow", 0, 100),)), 100.0)
+    fast = Turn(Message("hi"), Answer("hello", Usage(30, 30)), 1.0)
     played = (
         answers("a", *[1.0] * 10),
         answers("b", *[2.0] * 10),
-        answers("c", 1.0, 100.0),
+        Outcome("c", 1, Transcript((fast, slow)), PASSED, "max_turns"),
     )
     journal(tmp_path, "bot", "1", 3, *played)
     views = Report(only(tmp_path)).page().views
@@ -1493,6 +1510,11 @@ def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_pa
     assert views.cut.seconds.answers == 20
     assert views.cut.seconds.spread is not None and views.cut.seconds.spread.max == 2
     assert views.cut.scenarios[2] == ScenarioNumbers(None, None)
+    # c leaves every other number too: its call and its larger answers
+    assert [c.name for c in views.all.time] == ["slow"]
+    assert views.cut.time == ()
+    assert views.all.parts is not None and views.all.parts.input == (20 * 10 + 2 * 30) / 22
+    assert views.cut.parts == Parts(None, 10, 10, None)
 
 
 def test_a_cut_takes_nothing_when_nothing_is_far_out(tmp_path):

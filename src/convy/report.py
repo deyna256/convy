@@ -415,6 +415,7 @@ class TurnStats(Struct, frozen=True):
     input: Spread | None  # over the answers that report tokens
     output: Spread | None
     cached: Spread | None  # their cache reads, when every one of them reports its own
+    fresh: Spread | None  # and then their input not read from the cache
     share: float | None  # the share of their input read from the cache, when every one reports it
 
 
@@ -490,7 +491,7 @@ class View(Struct, frozen=True):
     seconds: Measure
     tokens: Measure
     scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
-    time: tuple[Category, ...]  # the most in total first, then by name, uncovered time first
+    time: tuple[Category, ...]  # the most in total first, then by name
     parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
     shares: Shares | None
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
@@ -602,6 +603,7 @@ class AgentRuns(Struct, frozen=True):
 
 
 class IndexPage(Struct, frozen=True):
+    runs: int
     agents: tuple[AgentRuns, ...]  # by name
 
 
@@ -818,6 +820,9 @@ class Summary(Struct, frozen=True):
                         input=self.spread(turn.input for turn in spent),
                         output=self.spread(turn.output for turn in spent),
                         cached=None if None in reads else self.spread(reads),
+                        fresh=None
+                        if None in reads
+                        else self.spread((t.input or 0) - (t.cache_read or 0) for t in spent),
                         share=None if None in reads else self.share(spent),
                     )
                 )
@@ -884,7 +889,8 @@ class Summary(Struct, frozen=True):
         """Tukey's far-out fence of the values on a log scale: the upper quartile of their logs
         and three interquartile ranges more. Time and tokens have a long right tail, which the log
         makes even, so the fence cuts only what is far out, and nothing when nothing is. None,
-        nothing cut, under four values above 0 or when half of them or more are the same."""
+        nothing cut, under four values above 0 or when the middle half of them are the same
+        (equal quartiles)."""
         logs = [math.log(value) for value in values if value is not None and value > 0]
         if len(logs) < 4:
             return None
@@ -1239,21 +1245,7 @@ class Comparison(Struct, frozen=True):
             by_seconds=self.ranked((r.id, r.seconds) for r in compared),
             by_tokens=self.ranked((r.id, r.tokens) for r in compared),
             turns=self.pairs(was.turns(before.values()), now.turns(after.values())),
-            by_parts=PerStat(
-                *(
-                    Ranking(
-                        tuple(
-                            (r.id, tokens)
-                            for r in compared
-                            if r.before is not None
-                            and r.before.parted(stat) is not None
-                            and r.after is not None
-                            and (tokens := r.after.parted(stat)) is not None
-                        )
-                    ).ids()
-                    for stat in STATS
-                )
-            ),
+            by_parts=self.parted(compared),
         )
 
     def pairs(
@@ -1262,6 +1254,25 @@ class Comparison(Struct, frozen=True):
         """Each turn number either run has tokens at, with both runs' answers at it."""
         was, now = {t.turn: t for t in before}, {t.turn: t for t in after}
         return tuple(TurnPair(turn, was.get(turn), now.get(turn)) for turn in sorted({*was, *now}))
+
+    def parted(self, rows: list[CompareRow]) -> PerStat[tuple[str, ...]]:
+        """The compared ids with parts in both runs, by each statistic of the after run's tokens,
+        the most first, then by id."""
+        return PerStat(
+            *(
+                Ranking(
+                    tuple(
+                        (r.id, tokens)
+                        for r in rows
+                        if r.before is not None
+                        and r.before.parted(stat) is not None
+                        and r.after is not None
+                        and (tokens := r.after.parted(stat)) is not None
+                    )
+                ).ids()
+                for stat in STATS
+            )
+        )
 
     def ranked(self, changes: Iterable[tuple[str, PerStat[Delta]]]) -> PerStat[tuple[str, ...]]:
         """The ids with a change of each statistic, the largest rise first, then by id."""
@@ -1463,7 +1474,7 @@ class Index(Struct, frozen=True):
                 for (order, run), previous in zip(runs, older, strict=True)
             )
             agents.append(AgentRuns(agent, rows))
-        return IndexPage(tuple(agents))
+        return IndexPage(len(played), tuple(agents))
 
     def row(self, order: int, run: Run, previous: Run | None) -> IndexRow:
         summary = Summary(run)

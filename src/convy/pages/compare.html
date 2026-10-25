@@ -7,6 +7,46 @@
 <link rel="icon" href="data:image/svg+xml,/*include icon.svg*/">
 <style>
 /*include base.css*/
+/* what only the comparison draws: the hero tile, the spread tiles, the rows of changes, tokens by turn and by part */
+.tile.hero .v { font-size: 36px; }
+@media (max-width: 600px) { .tile.hero { grid-column: 1 / -1; } }
+.block:has(> .charts:empty) { display: none; }
+.block > .charts { margin-top: 0; }
+.chart .rrow { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
+.chart .rrow { font-size: 13px; min-height: 26px; border-radius: 6px; }
+.chart .rid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart .rrow .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .chart .rrow { grid-template-columns: minmax(0, 1fr) var(--tail, 8ch); }
+  .chart .rrow .rid { grid-column: 1 / -1; }
+}
+/* tiles of a spread: its four statistics at the same size */
+.tiles + .tiles { margin-top: 10px; }
+.tiles.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.tile .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin: 4px 0; }
+.tile .stats > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tile .stats .k { font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.tile .stats .v { font-size: 22px; }
+@media (max-width: 480px) { .tile .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.chart h3 + .legend, .chart .lede + .legend { margin: 0 0 10px; }
+.turns { position: relative; display: grid; grid-template-columns: auto; grid-auto-flow: column; grid-auto-columns: minmax(76px, 1fr); min-width: max-content; padding: 4px 0 2px; }
+.turns .yaxis { display: grid; align-content: start; justify-items: end; gap: 4px; padding-right: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turns .yaxis > div { position: relative; height: 160px; min-width: 4ch; }
+.turns .yaxis .share { height: 1.6em; }
+.turns .yaxis > div > span { position: absolute; right: 0; transform: translateY(50%); font-size: 11px; line-height: 1; }
+.turns .bars { background-image: linear-gradient(to top, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: 100% var(--grid, 100%); background-position: left bottom; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rule) 70%, transparent); }
+.turn { display: grid; justify-items: center; gap: 4px; font-size: 12px; }
+.turn .share { height: 1.6em; display: flex; align-items: flex-end; font-weight: 650; font-variant-numeric: tabular-nums; }
+.turn .bars { display: flex; align-items: flex-end; justify-content: center; gap: 3px; width: 100%; height: 160px; border-bottom: 1px solid var(--muted); }
+.turn .bar { width: 24px; display: flex; flex-direction: column; gap: 2px; }
+.turn .bar > .seg:first-child { border-radius: 4px 4px 1px 1px; }
+.turn .tn { font-weight: 650; margin-top: 2px; }
+.turn .sub { color: var(--muted); text-align: center; }
+.turn.few .bars { opacity: .55; }
+.pbar { display: flex; gap: 2px; height: 12px; min-width: 2px; }
+.pbar.thin { height: 6px; }
+.pbar > .seg:last-child { border-radius: 2px 4px 4px 2px; }
 /*include window.css*/
 .tile .s.good { color: var(--pass); } .tile .s.bad { color: var(--fail); }
 .tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
@@ -95,9 +135,9 @@ function spreadTile(label, spread, unit, lines, under = () => null) {
 }
 
 // Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
-// what was read from the cache and the new input when every answer reports its cache reads, and a
-// bar of their output; the share of their input read from the cache above, how many answers
-// under. `top` is the shared scale's top.
+// what was read from the cache and the new input by their share of the summed input when every
+// answer reports its cache reads, and a bar of their output; that share above, how many answers
+// under. A part's tooltip gives its own statistic. `top` is the shared scale's top.
 function turnChart(title, turns, most) {
   const a = axis(most), top = a.top;
   const h = v => `${top ? v / top * 100 : 0}%`;
@@ -110,8 +150,8 @@ function turnChart(title, turns, most) {
     const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
     const at = `Turn ${t.turn} · ${STAT[stat]} · `;
     const parts = cached == null ? [el("span", {className: "seg input", "data-tip": `${at}input: ${count(input)}`})]
-      : [el("span", {className: "seg input", style: `flex-grow: ${input - cached}`, "data-tip": `${at}new input: ${count(input - cached)}`}),
-        el("span", {className: "seg cache", style: `flex-grow: ${cached}`, "data-tip": `${at}from the cache: ${count(cached)}`})];
+      : [el("span", {className: "seg input", "data-tip": `${at}new input: ${count(chosen(t.fresh))}`}),
+        el("span", {className: "seg cache", style: `flex: 0 0 ${t.share * 100}%`, "data-tip": `${at}from the cache: ${count(cached)}`})];
     return el("div", {className: t.answers < 3 ? "turn few" : "turn", "data-tip": `${said} · ${plural(t.answers, "answer")} of ${plural(t.scenarios, "scenario")}`},
       el("span", {className: "share"}, t.share == null ? "" : pct(t.share)),
       el("div", {className: "bars", role: "img", "aria-label": said},
@@ -229,8 +269,9 @@ function changes(title, order, field, value, unit) {
   return lede(chart(title, rows, scale, draw), d && d.tone === "bad" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
 }
 
-// Tokens by part before and after: two thin bars per compared scenario on one scale, the mean
-// tokens per attempt and the share of the input read from the cache as text.
+// Tokens by part before and after: two thin bars per compared scenario on one scale, as long as the
+// chosen statistic of its tokens per attempt; the parts keep their shares of the mean, and the share
+// of the input read from the cache is written beside them.
 const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
 const share = v => v.parts.cached == null ? "not reported" : v.shares.read == null ? "—" : `${pct(v.shares.read)} cached`;
 function partPairs() {

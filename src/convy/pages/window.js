@@ -173,7 +173,7 @@ function indented(text) {
   try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
 }
 
-// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's statistic.
+// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's own settings.
 function address(id, attempt) {
   writeAddress(new URLSearchParams({id, attempt: String(attempt)}));
 }

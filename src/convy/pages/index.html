@@ -51,10 +51,9 @@ const opened = new Set();  // agents whose older runs show
 let picked = [];  // the runs ticked to compare, in the order ticked
 
 function header() {
-  const total = DATA.agents.reduce((sum, group) => sum + group.rows.length, 0);
   return el("div", {className: "top"},
     el("div", {}, el("div", {className: "eyebrow"}, "CONVY"), el("h1", {}, "Runs"),
-      el("p", {className: "meta"}, total ? `${plural(total, "run")} · ${plural(DATA.agents.length, "agent")}` : "No runs yet. Run convy run <agent> and they appear here.")),
+      el("p", {className: "meta"}, DATA.runs ? `${plural(DATA.runs, "run")} · ${plural(DATA.agents.length, "agent")}` : "No runs yet. Run convy run <agent> and they appear here.")),
     el("div", {className: "controls"}, themeButton()));
 }
 

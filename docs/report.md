@@ -18,7 +18,8 @@ at the foot of the page.
   the judge's verdict is decided at the run's trust: every decision is trusted, or a trusted
   decision failed. A decision without a confidence is trusted. Attempts with no verdict — convy's
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
-  `--trust`, the tile says how many were not trusted (`· 4 not trusted`). Under it, one line
+  `--trust`, the tile says how many were not trusted (`· 4 not trusted`), and apart from them how
+  many had no verdict (`· 2 without a verdict`). Under it, one line
   splits the scenarios by the share of their counted attempts that passed, from 0%, each part as
   long as how many scenarios have it, coloured by their status and with their count; those without
   a verdict last. Pointing at a part lights it up.
@@ -46,7 +47,8 @@ under it. The pass rate does not change.
   the answers take 2 to 4 s, the fence is at 4 s · 2³ = 32 s. Time and tokens have a long right
   tail, which the log makes even, so ordinary slow answers stay in.
 - When nothing is far out, Cut leaves out nothing. It also cuts nothing with fewer than four
-  answers, when half the answers or more take the same time, or when it would leave no scenario.
+  answers, when the middle half of the answers take the same time (the quartiles are equal), or
+  when it would leave no scenario.
 
 convy does not cut by percentile: a percentile always takes its share, a tenth of the answers at
 P90, even when none of them is an outlier.
@@ -134,11 +136,11 @@ did not say. The address keeps the open scenario, so you can send a link to it.
 ## The index
 
 `results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
-shows the rest). Each agent's header names its newest run's **setup**, what a run is measured
-with: the user's model, the judge, the scenarios and attempts, and the trust when there is one.
-Beside it a strip shows the agent's newest 40 runs, newest left: a bar per run as high as its pass
-rate and coloured by its result, and a line where the setup changed. The agent's version and the
-number of attempts are not part of the setup.
+shows the rest). The **setup** is what a run is measured with: the user's model, the judge,
+convy's version, the trust and the set of scenarios; not the agent's version or the number of
+attempts. Each agent's header names its newest run's user and judge, its scenarios × attempts, and
+its trust when there is one. Beside it a strip shows the agent's newest 40 runs, newest left: a bar
+per run as high as its pass rate and coloured by its result, and a line where the setup changed.
 
 A run's row gives its pass rate with how many attempts passed, its version and when it started,
 and how many errors it had if any. Under the run where the setup changed, a line says what changed
@@ -175,8 +177,9 @@ better; grey under 5%, as on the tiles. A scenario whose statistic was 0 before 
 it. Each panel shows ten rows, then **Show all N**.
 
 **Tokens by turn** shows both runs side by side on one scale, the turns lined up, and **Tokens by
-part** two thin bars per compared scenario, before and after, with the mean tokens per attempt
-(`1,018 → 1,522`) and, under it, the share read from the cache (`78% → 21%`).
+part** two thin bars per compared scenario, before and after, as long as the chosen statistic of
+its tokens per attempt (`1,018 → 1,522`), the parts keeping their shares of the mean; under it,
+the share of the input read from the cache (`78% → 21%`).
 
 - Green means better, red means worse.
 - Grey with `~` means the pass rate's change may be chance. convy looks at the scenarios both
