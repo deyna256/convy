@@ -39,6 +39,7 @@ from convy.report import (
     Parts,
     PerStat,
     Report,
+    Reports,
     Run,
     Runs,
     Share,
@@ -49,7 +50,6 @@ from convy.report import (
     ThoughtView,
     TurnStats,
     TurnView,
-    paired,
 )
 from convy.scenario import Outcome, Scenario
 
@@ -1606,8 +1606,12 @@ def test_each_run_is_paired_with_its_agents_run_just_before(tmp_path):
     journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(7))
     journal(tmp_path, "other", "1", 1, outcome("a", PASSED), started=at(6))
     pairs = [
-        (run.spec.version, run.spec.agent, None if was is None else was.spec.version)
-        for run, was in paired(Runs(tmp_path))
+        (
+            r.run.spec.version,
+            r.run.spec.agent,
+            None if r.previous is None else r.previous.spec.version,
+        )
+        for r in Reports(Runs(tmp_path))
     ]
     assert pairs == [("1", "bot", None), ("1", "other", None), ("2", "bot", "1")]
 

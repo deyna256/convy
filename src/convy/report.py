@@ -942,13 +942,15 @@ class Summary(Struct, frozen=True):
 
     def busy(self, turn: TurnView) -> float:
         """How long some call of an answer ran: its calls' times laid together, overlaps once."""
-        runs = sorted(
-            (step.start, step.start + step.seconds)
-            for step in turn.steps
-            if isinstance(step, CallView)
-        )
+        runs = []
+        for step in turn.steps:
+            match step:
+                case CallView(start=start, seconds=seconds):
+                    runs.append((start, start + seconds))
+                case ThoughtView():
+                    pass
         total, end = 0.0, -math.inf
-        for start, stop in runs:
+        for start, stop in sorted(runs):
             total += max(0.0, stop - max(start, end))
             end = max(end, stop)
         return total
@@ -1250,14 +1252,16 @@ class Report(Struct, frozen=True):
         return Template("run.html").html(self.page())
 
 
-def paired(runs: Iterable[Run]) -> list[tuple[Run, Run | None]]:
-    """Each run, oldest first, with its agent's run started just before it; None for the first."""
-    last: dict[str, Run] = {}
-    pairs: list[tuple[Run, Run | None]] = []
-    for run in sorted(runs, key=lambda run: run.spec.started):  # instants
-        pairs.append((run, last.get(run.spec.agent)))
-        last[run.spec.agent] = run
-    return pairs
+class Reports(Struct, frozen=True):
+    """Every run's page, oldest first, each compared with its agent's run started just before."""
+
+    runs: Iterable[Run]
+
+    def __iter__(self) -> Iterator[Report]:
+        last: dict[str, Run] = {}
+        for run in sorted(self.runs, key=lambda run: run.spec.started):  # instants
+            yield Report(run, last.get(run.spec.agent))
+            last[run.spec.agent] = run
 
 
 class Comparison(Struct, frozen=True):

@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 from convy.agent import Agent
 from convy.bench import Files, Limits, RunSpec
 from convy.model import Models
-from convy.report import ComparePage, Comparison, Index, Report, Run, Runs, Template, paired
+from convy.report import ComparePage, Comparison, Index, Reports, Run, Runs, Template
 from convy.scenario import Scenarios
 from convy.tables import Tables
 
@@ -199,8 +199,8 @@ class Project(Struct, frozen=True):
         whole, relative to `results()`."""
         runs = Runs(self.results())
         read = list(runs)
-        for run, previous in paired(read):
-            self.write(self.report_page(run.spec), Report(run, previous).html())
+        for report in Reports(read):
+            self.write(self.report_page(report.run.spec), report.html())
         self.write(self.index(), Index(read).html())
         return runs.broken(read)
 
