@@ -217,10 +217,8 @@ GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
 SLIGHT = 5  # percent: a smaller change of a time or token statistic is drawn as the same
 TONES: dict[Group, Tone] = {"worse": "bad", "better": "good", "same": "same", "apart": "none"}
 STATS: tuple[Stat, ...] = ("p50", "p90", "max", "mean")  # the switch's order
-type Trim = Literal["all", "out"]  # keep every answer, or leave the outliers out
-TRIMS: tuple[Trim, ...] = ("all", "out")
-FENCE = 1.5  # Tukey's: an answer more than 1.5 IQR past the quartiles is an outlier
-BINS = 24  # of the distribution of each number per answer
+type Trim = Literal["all", "p99", "p95", "p90"]  # every answer, or those up to a percentile
+TRIMS: tuple[Trim, ...] = ("all", "p99", "p95", "p90")
 
 
 class Tally(Struct, frozen=True):
@@ -493,13 +491,8 @@ class Measure(Struct, frozen=True):
 
     spread: Spread | None  # over the answers kept
     answers: int  # the answers with the number
-    out: int  # of them left out as outliers
-    low: (
-        float | None
-    )  # the fences: an answer under `low` or over `high` is left out; None: keep all
-    high: float | None
-    width: float  # of each bin, from 0 up
-    bins: tuple[tuple[int, int], ...]  # per bin, the answers kept and the answers left out
+    out: int  # of them cut as outliers
+    over: float | None  # the percentile an answer is cut over; None: keep all
 
 
 class ScenarioNumbers(Struct, frozen=True):
@@ -530,7 +523,9 @@ class Views(Struct, frozen=True):
     """A view per setting of outliers. Its fields are `TRIMS`."""
 
     all: View
-    out: View
+    p99: View
+    p95: View
+    p90: View
 
 
 class Share(Struct, frozen=True):
@@ -918,46 +913,44 @@ class Summary(Struct, frozen=True):
         )
 
     def measure(self, values: list[float | None], trim: Trim) -> tuple[list[bool], Measure]:
-        """Which answers a number keeps, and how the number spreads over them and over bins from
-        0 to its largest value. An answer without the number is kept: nothing of it counts."""
+        """Which answers a number keeps, and how the number spreads over them. `trim` cuts the
+        answers over that percentile of the number, linear as in `spread()`, the long tail of
+        time or tokens; under two answers nothing is cut. An answer without the number is kept:
+        nothing of it counts."""
         known = [value for value in values if value is not None]
-        low, high = (self.fences(known) if trim == "out" else None) or (None, None)
-        kept = [
-            value is None or low is None or high is None or low <= value <= high for value in values
-        ]
-        width = max(known, default=0.0) / BINS
-        bins = [[0, 0] for _ in range(BINS)] if known else []
-        for value, keep in zip(values, kept, strict=True):
-            if value is not None:
-                bins[min(BINS - 1, int(value / width)) if width else 0][0 if keep else 1] += 1
+        over = None
+        if trim != "all" and len(known) > 1:
+            over = quantiles(known, n=100, method="inclusive")[int(trim[1:]) - 1]
+        kept = [value is None or over is None or value <= over for value in values]
         return kept, Measure(
             spread=self.spread(v for v, keep in zip(values, kept, strict=True) if keep),
             answers=len(known),
             out=len(values) - sum(kept),
-            low=low,
-            high=high,
-            width=width,
-            bins=tuple((a, b) for a, b in bins),
+            over=over,
         )
-
-    def fences(self, values: list[float]) -> tuple[float, float] | None:
-        """Tukey's fences, `FENCE` IQR past the quartiles, which are linear as in `spread()`; None
-        under four values."""
-        if len(values) < 4:
-            return None
-        first, _, third = quantiles(values, n=4, method="inclusive")
-        reach = FENCE * (third - first)
-        return first - reach, third + reach
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' time went: each call name's seconds per answer it ran in, calls that
-        ran together each with their own; and the answer outside its calls, from the first call's
-        start to the last one's end, or all of it without calls."""
-        own = [max(0.0, a.turn.seconds - a.turn.span) for a in answers]
+        ran together each with their own; and the answer's time while no call ran, all of it
+        without calls."""
+        own = [max(0.0, a.turn.seconds - self.busy(a.turn)) for a in answers]
         categories = self.called(answers, lambda call: call.seconds, lambda p: -p.seconds)
         if own:
             categories.append(self.category(None, own, []))
         return self.ordered(categories)
+
+    def busy(self, turn: TurnView) -> float:
+        """How long some call of an answer ran: its calls' times laid together, overlaps once."""
+        runs = sorted(
+            (step.start, step.start + step.seconds)
+            for step in turn.steps
+            if isinstance(step, CallView)
+        )
+        total, end = 0.0, -math.inf
+        for start, stop in runs:
+            total += max(0.0, stop - max(start, end))
+            end = max(end, stop)
+        return total
 
     def spent(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' tokens went: their own usage, by part, and each call name's tokens
@@ -1234,7 +1227,9 @@ class Report(Struct, frozen=True):
                         compared.units(then.tokens.spread, now.tokens.spread),
                     ),
                 )
-                for then, now in ((old.all, numbers.all), (old.out, numbers.out))
+                for then, now in zip(
+                    msgspec.structs.astuple(old), msgspec.structs.astuple(numbers), strict=True
+                )
             )
         )
         return RunPage(

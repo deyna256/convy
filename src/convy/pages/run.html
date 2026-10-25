@@ -24,51 +24,18 @@
 .pips span { width: 12px; height: 12px; border-radius: 3px; background: var(--none-bg); }
 .pips .flaky { background: var(--flaky); }
 
-/* the precision: what every time and token number is, and what it leaves out */
-.precision { margin-top: 14px; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr); }
-.precision > * { padding: 14px 16px; min-width: 0; }
-.precision > * + * { border-left: 1px solid var(--rule); }
-.precision h2 { font-size: 13px; font-weight: 650; margin: 0 0 10px; }
-.precision .switch { margin: 0; display: grid; gap: 6px; }
-.precision .switch > span { font-size: 12px; font-weight: 600; }
-.precision .switch + .switch { margin-top: 14px; }
-.precision .means { font-size: 12px; color: var(--muted); margin: 0; }
-.dist h3 { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
-.dist h3 b { color: var(--ink); font-weight: 650; }
-.dist .left { color: var(--ink); font-weight: 500; }
-.hist { position: relative; height: 84px; margin-top: 30px; border-bottom: 1px solid var(--muted); background-image: linear-gradient(to right, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: var(--grid, 100%) 100%; }
-.hist .bin { position: absolute; bottom: 0; display: flex; flex-direction: column-reverse; gap: 1px; padding: 0 1px; }
-.hist .bin > span { border-radius: 2px 2px 0 0; min-height: 2px; }
-.hist .kept { background: color-mix(in srgb, var(--focus) 60%, transparent); }
-.hist .out { background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 5px); outline: 1px solid var(--muted); outline-offset: -1px; }
-.hist .bin:hover > span { filter: brightness(1.15); }
-.hist .cut { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--muted) 10%, transparent); border: 0 dashed var(--muted); }
-.hist .cut.low { border-right-width: 1.5px; } .hist .cut.high { border-left-width: 1.5px; }
-.hist .stat { position: absolute; top: -16px; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); }
-.hist .stat span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 650; white-space: nowrap; }
-.hist .stat.right span { left: auto; right: 0; transform: none; }
-.hist .stat.left span { left: 0; transform: none; }
-.dist .scale { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
-.dist .scale .ticks { display: block; position: relative; height: 1.3em; }
-.dist .scale .ticks > span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.dist .scale .ticks > span:first-child { transform: none; } .dist .scale .ticks > span:last-child:not(:first-child) { transform: translateX(-100%); }
-.dist .legend { margin-top: 6px; }
-.key.kept { background: color-mix(in srgb, var(--focus) 60%, transparent); }
-.key.out { background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px); outline: 1px solid var(--muted); outline-offset: -1px; }
-@media (max-width: 1100px) { .precision { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .precision > :first-child { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px 32px; } .precision > :first-child h2 { flex-basis: 100%; margin: 0; } .precision .switch + .switch { margin: 0; } .precision > :nth-child(2) { border-left: 0; } .precision > :nth-child(n+2) { border-top: 1px solid var(--rule); } }
-@media (max-width: 640px) { .precision { grid-template-columns: minmax(0, 1fr); } .precision > :nth-child(3) { border-left: 0; } }
-
-/* the scenarios by pass rate, and where the time and tokens go */
-.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.25fr); }
-@media (max-width: 1100px) { .three { grid-template-columns: minmax(0, 1fr); } }
-.cols { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding-top: 18px; border-bottom: 1px solid var(--muted); }
-.col { flex: 1 1 0; max-width: 84px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; }
-.col .c { text-align: center; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.col .bar { border-radius: 4px 4px 0 0; min-height: 3px; }
-.col .bar.passing { background: var(--pass); } .col .bar.failing { background: var(--fail); } .col .bar.flaky { background: var(--flaky); } .col .bar.none { background: var(--none-bg); outline: 1px solid var(--none); outline-offset: -1px; }
-.colnames { display: flex; gap: 10px; margin-top: 4px; }
-.colnames span { flex: 1 1 0; max-width: 84px; text-align: center; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.chart .cat { display: grid; grid-template-columns: minmax(0, 22ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+/* the scenarios by pass rate on one line, and where the tokens and time go */
+.rates { margin-top: 14px; }
+.rates .meter { height: 26px; margin: 10px 0 6px; }
+.rates .meter > span { display: grid; place-items: center; color: var(--on-status); font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; overflow: hidden; }
+.rates .meter .flaky { background: var(--flaky); } .rates .meter .none { color: var(--ink); }
+.rates .meter .none { outline: 1px solid var(--none); outline-offset: -1px; }
+.rates .endlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12.5px; color: var(--muted); }
+.rates .endlist li { display: inline-flex; align-items: center; gap: 5px; }
+.rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none-bg); outline: 1px solid var(--none); outline-offset: -1px; }
+#charts { grid-template-columns: minmax(0, 1fr); }
+.chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .chart .cat:hover { background: var(--side); }
 .chart .cat.own { cursor: default; }
 .chart .cat .cname { display: flex; flex-direction: column; min-width: 0; }
@@ -80,7 +47,7 @@
 .chart .cat[aria-expanded] .who b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
 .chart .cat[aria-expanded="true"] .who b::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
-.chart.cats .scale { grid-template-columns: minmax(0, 22ch) minmax(0, 1fr) 7ch; }
+.chart.cats .scale { grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; }
 .places { list-style: none; margin: 2px 0 8px 12px; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
 .places li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
 .places .open { color: var(--focus); font-size: 12.5px; }
@@ -95,8 +62,8 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <section id="precision" class="panel precision" aria-label="Precision"></section>
-  <section id="charts" class="charts three" aria-label="Results, tokens and time"></section>
+  <section id="rates" class="panel rates chart" aria-label="Scenarios by pass rate"></section>
+  <section id="charts" class="charts" aria-label="Tokens and time by category"></section>
   <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
   <p class="hint" id="hint"></p>
@@ -105,16 +72,34 @@
 <script>
 /*include window.js*/
 
-// The run's page: its tiles, the precision of its time and token numbers, how its scenarios did
-// and where its time and tokens went, its scenarios, and the window of one scenario.
+// The run's page: its tiles, how its scenarios did and where its time and tokens went, its scenarios, and the window of one scenario.
 const DATA = __DATA__;
 const RUN = DATA.run, M = DATA.metrics, B = DATA.before;
 
-// Outliers: every answer, or those inside Tukey's fences. The address keeps trim=out.
-const TRIMS = {all: "Keep all", out: "Leave out"};
-let trim = readAddress().get("trim") === "out" ? "out" : "all";
-kept.trim = () => trim === "out" ? "out" : null;
+// The numbers are means of the answers kept: every answer, or those up to a percentile of their
+// time or tokens. The address keeps the cut as cut=p95; every answer is not written.
+const CUTS = {all: "None", p99: "Over P99", p95: "Over P95", p90: "Over P90"};
+const MEANS = {all: "Every answer counts.", p99: "The slowest and largest 1% of the answers are cut.", p95: "The slowest and largest 5% of the answers are cut.", p90: "The slowest and largest 10% of the answers are cut."};
+let trim = CUTS[readAddress().get("cut")] ? readAddress().get("cut") : "all";
+delete kept.stat;
+stat = "mean";
+kept.cut = () => trim === "all" ? null : trim;
 const view = () => DATA.views[trim];
+
+// The cut, in the page's header beside the theme.
+function cutSwitch() {
+  const buttons = Object.entries(CUTS).map(([key, word]) => {
+    const button = el("button", {type: "button", "aria-pressed": String(key === trim), title: MEANS[key]}, word);
+    button.addEventListener("click", () => {
+      trim = key;
+      buttons.forEach(other => other.setAttribute("aria-pressed", String(other === button)));
+      writeAddress(readAddress());
+      draw();
+    });
+    return button;
+  });
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Cut outliers"), el("div", {role: "group", "aria-label": "Cut outliers"}, buttons));
+}
 
 function header() {
   const status = STATUS[RUN.status];
@@ -125,13 +110,13 @@ function header() {
       el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, RUN.trust > 0 && `trust ${RUN.trust}`,
         RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
       B && B.differences.length > 0 && el("p", {className: "meta changed"}, `Changed since ${B.run.short}: ${B.differences.join(", ")}`)),
-    el("div", {className: "controls"}, themeButton()));
+    el("div", {className: "controls"}, cutSwitch(), themeButton()));
 }
 
 // A tile's change since the agent's run before; nothing on its first run.
-const since = (delta, unit) => B && delta && (delta.tone === "same" && !delta.value
-  ? el("span", {className: "since muted"}, `same as ${B.run.short}`)
-  : el("span", {className: "since"}, change(delta, unit), el("span", {className: "muted"}, ` vs ${B.run.short}`)));
+// Nothing when it did not change.
+const since = (delta, unit) => B && delta && delta.tone !== "none" && !(delta.tone === "same" && !delta.value)
+  && el("span", {className: "since"}, change(delta, unit), el("span", {className: "muted"}, ` vs ${B.run.short}`));
 
 // The tiles: the pass rate, the flaky scenarios, the errors, and the chosen statistic of the time
 // and tokens per answer.
@@ -141,8 +126,8 @@ function tiles() {
   const failed = M.judged - M.passed, open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
-  const left = m => m.out ? ` · ${m.out} left out` : "";
-  const measured = (label, m, unit, note, delta) => tile(label, [unit(chosen(m.spread)), el("span", {className: "k"}, STAT[stat])], since(delta, unit), el("span", {className: "s"}, note + left(m)));
+  const left = (m, unit) => m.out ? ` · ${m.out} cut over ${unit(m.over)}` : "";
+  const measured = (label, m, unit, note, delta) => tile(label, [unit(chosen(m.spread)), el("span", {className: "k"}, "mean")], since(delta, unit), el("span", {className: "s"}, note + left(m, unit)));
   return el("div", {className: "tiles five"},
     tile("Pass rate", pct(M.rate), since(B?.deltas.rate, points),
       bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
@@ -151,68 +136,22 @@ function tiles() {
       el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
         DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
       el("span", {className: "s"}, RUN.k > 1 ? "passed some attempts, failed others" : "one attempt each: none can be flaky")),
-    tile("Errors", String(M.errors), since(B?.deltas.errors, String), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
-    measured("Time per answer", V.seconds, secs, plural(answers, "answer"), V.since?.seconds[stat]),
-    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `${V.tokens.answers} of ${answers} answers report tokens`, V.since?.tokens[stat]));
+    el("div", {className: "tile", "data-tip": errors || null}, el("span", {className: "l"}, "Errors"), el("div", {className: "big"}, el("span", {className: "v"}, String(M.errors)), since(B?.deltas.errors, String))),
+    measured("Time per answer", V.seconds, secs, plural(answers, "answer"), V.since?.seconds.mean),
+    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `${V.tokens.answers} of ${answers} answers report tokens`, V.since?.tokens.mean));
 }
 
-// The precision: the statistic and the outliers every time and token number follows, and how the
-// answers spread with what is left out and where the statistic falls.
-function precision() {
-  const pick = el("div", {role: "group", "aria-label": "Outliers"}, Object.entries(TRIMS).map(([key, word]) => {
-    const button = el("button", {type: "button", "aria-pressed": String(key === trim)}, word);
-    button.addEventListener("click", () => { trim = key; writeAddress(readAddress()); draw(); });
-    return button;
-  }));
-  const V = view();
-  return [el("div", {},
-      el("h2", {}, "Precision"),
-      el("div", {className: "switch"}, el("span", {}, "Statistic"), chooser, el("p", {className: "means"}, MEANING[stat].replace("values", "answers"))),
-      el("div", {className: "switch"}, el("span", {}, "Outliers"), pick, el("p", {className: "means"},
-        trim === "out" ? "Left out: an answer more than 1.5 × IQR past the quartiles, Tukey's fences, of its time or its tokens." : "Every answer counts: one slow answer moves Max and Mean."))),
-    distribution("Time per answer", V.seconds, secs),
-    distribution("Tokens per answer", V.tokens, count)];
-}
-
-// How a number spreads over the answers: a bin per 1/24 of its range, the answers left out
-// hatched beyond the dashed fences, the chosen statistic a line.
-function distribution(title, m, unit) {
-  if (!m.answers) return el("div", {className: "dist"}, el("h3", {}, title), el("p", {className: "empty"}, "Not reported"));
-  const a = axis(m.width * m.bins.length), at = v => a.top ? Math.max(0, Math.min(100, v / a.top * 100)) : 0;
-  const most = Math.max(...m.bins.map(([k, o]) => k + o));
-  const bins = m.bins.map(([k, o], i) => {
-    if (!k && !o) return null;
-    const from = i * m.width, to = from + m.width;
-    return el("div", {className: "bin", style: `left: ${at(from)}%; width: ${at(to) - at(from)}%; height: ${(k + o) / most * 100}%`,
-      "data-tip": `${unit(from)} to ${unit(to)}: ${plural(k + o, "answer")}${o ? `, ${o} left out` : ""}`},
-      k > 0 && el("span", {className: "kept", style: `flex: ${k}`}), o > 0 && el("span", {className: "out", style: `flex: ${o}`}));
-  });
-  const v = chosen(m.spread), place = at(v);
-  const cuts = m.out ? [m.low > 0 && el("span", {className: "cut low", style: `left: 0; width: ${at(m.low)}%`, "data-tip": `Left out under ${unit(m.low)}`}),
-    m.high < a.top && el("span", {className: "cut high", style: `left: ${at(m.high)}%; right: 0`, "data-tip": `Left out over ${unit(m.high)}`})] : [];
-  const out = m.out && [m.low > 0 && `under ${unit(m.low)}`, `over ${unit(m.high)}`].filter(Boolean).join(" or ");
-  return el("div", {className: "dist"},
-    el("h3", {}, title, el("span", {}, el("b", {}, plural(m.answers - m.out, "answer")), m.out ? el("span", {className: "left"}, ` · ${m.out} left out, ${out}`) : "")),
-    el("div", {className: "hist", style: gridStyle(a), role: "img", "aria-label": `${title}: ${spreadWords(m.spread, unit)}${m.out ? `; ${m.out} left out, ${out}` : ""}`},
-      cuts, bins, v != null && el("span", {className: `stat${place > 85 ? " right" : place < 15 ? " left" : ""}`, style: `left: ${place}%`, "data-tip": spreadWords(m.spread, unit)}, el("span", {}, `${STAT[stat]} ${unit(v)}`))),
-    el("div", {className: "scale"}, el("span", {className: "ticks"}, a.ticks.map(t => el("span", {style: `left: ${at(t)}%`}, t ? unit(t) : "0")))),
-    el("div", {className: "legend"}, swatch("kept", "answers counted"), m.out > 0 && swatch("out", "left out")));
-}
-const spreadWords = (d, unit) => d ? `min ${unit(d.min)} · P10 ${unit(d.p10)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · mean ${unit(d.mean)} · n ${d.n}` : "none";
-
-// The scenarios by pass rate, from 0: a column per rate as high as how many scenarios have it.
-function results() {
-  const most = Math.max(1, ...DATA.results.map(r => r.scenarios.length));
+// The scenarios by pass rate on one line, from 0: a part per rate as long as how many scenarios
+// have it, those without a verdict last.
+function rates() {
+  const total = DATA.results.reduce((sum, r) => sum + r.scenarios.length, 0);
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
   const of = result => DATA.scenarios.filter(v => v.result === result).length;
   const told = [of("passing") && `${of("passing")} pass every attempt`, of("flaky") && `${of("flaky")} flaky`, of("failing") && `${of("failing")} fail every attempt`].filter(Boolean).join(" · ");
-  return lede(el("section", {className: "chart", "aria-label": "Scenarios by pass rate"}, el("h3", {}, "Scenarios by pass rate"),
-    el("div", {className: "cols", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${r.scenarios.length}`).join(", ")},
-      DATA.results.map(r => el("div", {className: "col", "data-tip": `${name(r)}: ${r.scenarios.join(", ")}`},
-        el("span", {className: "c"}, String(r.scenarios.length)),
-        el("span", {className: `bar ${r.result}`, style: `height: ${r.scenarios.length / most * 100}%`})))),
-    el("div", {className: "colnames", "aria-hidden": "true"}, DATA.results.map(r => el("span", {}, name(r)))),
-    el("p", {className: "caption"}, "Pass rate of a scenario's attempts; point at a column for its scenarios.")), told);
+  return [el("h3", {}, "Scenarios by pass rate"), told && el("p", {className: "lede"}, told),
+    el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
+      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.scenarios.length}`, "data-tip": `${name(r)} of the attempts passed: ${r.scenarios.join(", ")}`}, r.scenarios.length / total >= .04 ? String(r.scenarios.length) : ""))),
+    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
 }
 
 // Where the answers' tokens or time went, by category: the answer itself and each call name. A
@@ -220,7 +159,7 @@ function results() {
 // each a way to the answer that made it.
 const PLACES = 5;
 const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
-function categories(title, list, unit, own, empty) {
+function categories(title, list, unit, own, ownNote, empty) {
   if (!list.length || (list.length === 1 && list[0].name == null && !list[0].parts)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
   const a = axis(Math.max(0, ...list.map(c => c.spread[stat]))), at = v => a.top ? v / a.top * 100 : 0;
   const all = list.reduce((sum, c) => sum + c.total, 0);
@@ -228,7 +167,7 @@ function categories(title, list, unit, own, empty) {
     const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.spread[stat];
     const name = c.name ?? own;
     const row = el("div", {className: c.name == null ? "cat own" : "cat", role: c.name == null ? null : "button", tabIndex: c.name == null ? null : 0, "aria-expanded": c.name == null ? null : String(open),
-        "data-tip": `${name} · ${STAT[stat]} ${unit(v)} per answer · total ${unit(c.total)}, ${pct(all ? c.total / all : null)} · ${spreadWords(c.spread, unit)}`},
+        "data-tip": `${name} · ${unit(v)} per answer on average · total ${unit(c.total)}, ${pct(all ? c.total / all : null)} · ${spreadWords(c.spread, unit)}`},
       el("span", {className: "cname"}, el("b", {className: c.name == null ? null : "mono", title: name}, name),
         el("small", {}, [`in ${plural(c.answers, "answer")}`, c.calls && plural(c.calls, "call"), `${pct(all ? c.total / all : null)} of all`].filter(Boolean).join(" · "))),
       el("span", {className: "ptrack"}, c.parts ? partBar(c.parts, v, a.top, false, `${name} · `, "answer") : el("span", {className: "fill", style: `width: ${at(v)}%`})),
@@ -249,18 +188,20 @@ function categories(title, list, unit, own, empty) {
     }), more && el("li", {}, more))];
   });
   const lead = list[0];
-  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · ${STAT[stat]} per answer`),
+  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · mean per answer`),
     list.some(c => c.parts) && partLegend(list.filter(c => c.parts).map(c => c.parts)),
-    rows, scaleLine(a, unit)), `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
+    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
   return section;
 }
+
+const spreadWords = (d, unit) => `min ${unit(d.min)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · n ${d.n}`;
 
 function table() {
   const {mask, keep} = filtered();
   const V = view();
   const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s]) => keep(s.id)).map(([s, n]) => {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
-    const under = (d, unit) => d == null ? "" : stat === "max" ? `p50 ${unit(d.p50)}` : `max ${unit(d.max)}`;
+    const under = (d, unit) => d == null ? "" : `max ${unit(d.max)}`;
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, k => show(s.id, k))),
@@ -270,7 +211,7 @@ function table() {
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per answer · ${STAT[stat]}`))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, "Time per answer · mean"), el("th", {className: "n"}, "Tokens per answer · mean"))),
     el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
 }
 
@@ -307,14 +248,13 @@ function show(id, number) {
 function draw() {
   const V = view();
   document.getElementById("tiles").replaceChildren(tiles());
-  document.getElementById("precision").replaceChildren(...precision());
-  document.getElementById("charts").replaceChildren(results(),
-    categories("Tokens by category", V.spent, count, "The answer itself", "The answers report no tokens."),
-    categories("Time by category", V.time, secs, "Outside calls", "The answers report no calls: all their time is their own. Report the agent's steps to see where it goes."));
+  document.getElementById("rates").replaceChildren(...rates());
+  document.getElementById("charts").replaceChildren(
+    categories("Tokens by category", V.spent, count, "The answer itself", "the tokens the agent reported for the answer, split by part", "The answers report no tokens."),
+    categories("Time by category", V.time, secs, "No call running", "the answer's time while none of its calls ran, the agent's own model and code; calls that ran together count once here and each its own in their rows", "The answers report no calls: all their time is the agent's own work. Report the agent's steps to see where it goes."));
   document.getElementById("table").replaceChildren(table());
 }
 
-const chooser = statSwitch(draw, "").querySelector("[role=group]");
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("filter").addEventListener("input", draw);

@@ -1475,35 +1475,43 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
     )
 
 
-def test_the_time_outside_calls_is_the_answers_time_past_their_span(tmp_path):
-    steps = (call("search", 0, 1), call("gpt", 0.5, 1))  # together 1.5 s of a 4 s answer
+def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_path):
+    steps = (call("search", 0, 1), call("gpt", 0.5, 1), call("lookup", 2.5, 0.5))
     turn = Turn(Message("hi"), Answer("hello", Usage(10, 20), steps=steps), 4.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
     view = Report(only(tmp_path)).page().views.all
-    assert [(c.name, c.total) for c in view.time] == [(None, 2.5), ("gpt", 1), ("search", 1)]
+    # calls run 0 to 1.5 s and 2.5 to 3 s: 2 of the 4 s; the gap between them is the agent's own
+    assert [(c.name, c.total) for c in view.time] == [
+        (None, 2),
+        ("gpt", 1),
+        ("search", 1),
+        ("lookup", 0.5),
+    ]
     (own,) = view.spent
     assert (own.name, own.total, own.parts) == (None, 30, Parts(None, 10, 20, None))
 
 
-def test_leaving_outliers_out_drops_answers_past_tukeys_fences(tmp_path):
-    played = (answers("a", 1.0, 1.0, 1.0, 1.0, 9.0, tokens=10),)
-    journal(tmp_path, "bot", "1", 1, *played)
+def test_a_cut_drops_the_answers_over_its_percentile_from_time_and_tokens_apart(tmp_path):
+    played = (
+        answers("a", *(float(n) for n in range(1, 11)), tokens=10),
+        talk("b", *(Usage(n, 0) for n in range(1, 11))),
+    )
+    journal(tmp_path, "bot", "1", 2, *played)
     views = Report(only(tmp_path)).page().views
-    # quartiles 1 and 1: the fences are 1 and 1, so 9 s is out; tokens are all 20, none out
-    assert (views.all.seconds.out, views.all.seconds.low) == (0, None)
-    assert views.all.seconds.spread == Spread(5, 1, 1, 1, 5.8, 9, 2.6)
-    assert (views.out.seconds.out, views.out.seconds.low, views.out.seconds.high) == (1, 1, 1)
-    assert views.out.seconds.spread == Spread(4, 1, 1, 1, 1, 1, 1)
-    assert views.out.scenarios[0].seconds == Spread(4, 1, 1, 1, 1, 1, 1)
-    assert views.out.tokens.out == 0
-    # 24 bins of 9 / 24 s: the four 1 s answers in bin 2, the 9 s one, left out, in the last
-    assert views.out.seconds.bins[2] == (4, 0) and views.out.seconds.bins[-1] == (0, 1)
-    assert views.all.seconds.bins[-1] == (1, 0)
+    assert (views.all.seconds.out, views.all.seconds.over) == (0, None)
+    assert views.all.seconds.spread is not None and views.all.seconds.spread.max == 10
+    # a's answers take 1..10 s, b's 1 s each: p90 at 17.1, 0.1 of the way from 8 to 9, 8.1
+    assert (views.p90.seconds.out, views.p90.seconds.over) == (2, 8.1)
+    assert views.p90.seconds.spread is not None and views.p90.seconds.spread.max == 8
+    # a keeps 1..8 s: p10 at 0.7, 1.7; p50 at 3.5, 4.5; p90 at 6.3, 7.3
+    assert views.p90.scenarios[0].seconds == Spread(8, 1, 1.7, 4.5, 7.3, 8, 4.5)
+    # tokens: a's ten answers 20, b's 1..10; p90 at 17.1, 0.1 of the way from 20 to 20
+    assert (views.p90.tokens.out, views.p90.tokens.over) == (0, 20)
 
 
-def test_under_four_answers_nothing_is_an_outlier(tmp_path):
-    journal(tmp_path, "bot", "1", 1, answers("a", 1.0, 1.0, 50.0))
-    assert Report(only(tmp_path)).page().views.out.seconds.out == 0
+def test_one_answer_is_never_cut(tmp_path):
+    journal(tmp_path, "bot", "1", 1, answers("a", 50.0))
+    assert Report(only(tmp_path)).page().views.p90.seconds.out == 0
 
 
 def test_the_scenarios_are_grouped_by_pass_rate_without_a_verdict_last(tmp_path):
@@ -1565,8 +1573,8 @@ def test_the_views_and_parts_reach_the_pages(tmp_path):
     before, after = both(tmp_path)
     run, compared = data(Report(after, before).html()), data(Comparison(before, after).html())
     assert isinstance(run, dict) and isinstance(compared, dict)
-    assert set(run["views"]) == {"all", "out"}
-    assert set(run["views"]["out"]["since"]["seconds"]) == set(STATS)
+    assert set(run["views"]) == {"all", "p99", "p95", "p90"}
+    assert set(run["views"]["p95"]["since"]["seconds"]) == set(STATS)
     assert run["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"]}]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
     assert run["views"]["all"]["spent"][0]["parts"] == parts
