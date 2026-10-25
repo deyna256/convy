@@ -28,7 +28,6 @@ from convy.dialog import (
 from convy.report import (
     NO_CHANGE,
     STATS,
-    Before,
     CallPlace,
     CallView,
     Category,
@@ -39,7 +38,6 @@ from convy.report import (
     Parts,
     PerStat,
     Report,
-    Reports,
     Run,
     Runs,
     Share,
@@ -1513,6 +1511,18 @@ def test_a_cut_drops_the_answers_over_its_percentile_from_time_and_tokens_apart(
     assert (views.p90.tokens.out, views.p90.tokens.over) == (0, 20)
 
 
+def test_a_scenario_is_out_when_the_cut_takes_all_its_time_or_tokens(tmp_path):
+    played = (
+        answers("a", *[1.0] * 10),
+        answers("b", 100.0),  # its one answer is the slowest: cut over P90
+        talk("c", NoUsage()),  # no tokens to cut: kept by its time
+    )
+    journal(tmp_path, "bot", "1", 3, *played)
+    views = Report(only(tmp_path)).page().views
+    assert [n.out for n in views.all.scenarios] == [False, False, False]
+    assert [n.out for n in views.p90.scenarios] == [False, True, False]
+
+
 def test_one_answer_is_never_cut(tmp_path):
     journal(tmp_path, "bot", "1", 1, answers("a", 50.0))
     assert Report(only(tmp_path)).page().views.p90.seconds.out == 0
@@ -1575,10 +1585,9 @@ def test_the_views_and_parts_reach_the_pages(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
     before, after = both(tmp_path)
-    run, compared = data(Report(after, before).html()), data(Comparison(before, after).html())
+    run, compared = data(Report(after).html()), data(Comparison(before, after).html())
     assert isinstance(run, dict) and isinstance(compared, dict)
     assert set(run["views"]) == {"all", "p99", "p95", "p90"}
-    assert set(run["views"]["p95"]["since"]["seconds"]) == set(STATS)
     assert run["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"]}]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
     assert run["views"]["all"]["spent"][0]["parts"] == parts
@@ -1599,29 +1608,3 @@ def test_the_scripts_of_every_page_parse(tmp_path):
         file.write_text(body, encoding="utf-8")
         done = subprocess.run(["node", "--check", str(file)], check=False, capture_output=True)
         assert done.returncode == 0, done.stderr.decode()
-
-
-def test_each_run_is_paired_with_its_agents_run_just_before(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(7))
-    journal(tmp_path, "other", "1", 1, outcome("a", PASSED), started=at(6))
-    pairs = [
-        (
-            r.run.spec.version,
-            r.run.spec.agent,
-            None if r.previous is None else r.previous.spec.version,
-        )
-        for r in Reports(Runs(tmp_path))
-    ]
-    assert pairs == [("1", "bot", None), ("1", "other", None), ("2", "bot", "1")]
-
-
-def test_a_run_page_compares_its_tiles_with_the_agents_run_before(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "2", 1, outcome("a", FAILED), started=at(6))
-    first, second = both(tmp_path)
-    assert Report(first).page().before is None
-    before = Report(second, first).page().before
-    compared = Comparison(first, second).page()
-    assert before == Before(compared.before, compared.deltas, compared.differences)
-    assert before is not None and before.deltas.rate == Delta(-100, "noise")  # one attempt: noise

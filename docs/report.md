@@ -9,11 +9,9 @@ offline, with system, light and dark themes.
 The page reads from the top down: five tiles, where the tokens and the time go, then the
 **Scenarios**, the failing first.
 
-Each tile has its label, its number and, under the number, how it changed: from the agent's second
-run on, a tile that changed since the agent's run just before says how, such as `▼ 44 pts vs 5e85`,
-coloured and greyed under noise as on a [comparison](#compare-two-runs). When the models or convy
-changed since then, the header says so.
-The command at the foot of the page compares the two runs in full.
+Each tile has its label, its number and what the number counts. The run's page shows the run
+alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
+at the foot of the page.
 
 - **Pass rate**: the share of counted attempts that passed, with the count
   (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
@@ -23,7 +21,7 @@ The command at the foot of the page compares the two runs in full.
   `--trust`, the tile says how many were not trusted (`· 4 not trusted`). Under it, one line
   splits the scenarios by the share of their counted attempts that passed, from 0%, each part as
   long as how many scenarios have it, coloured by their status and with their count; those without
-  a verdict last. Point at a part for its scenarios.
+  a verdict last. Pointing at a part lights it up.
 - **Flaky scenarios**: those with passed and failed counted attempts, with a square per scenario,
   the flaky ones coloured.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models, with
@@ -46,6 +44,8 @@ page follows it: the tiles, the charts by category and the table.
 - Time and tokens are cut apart: an answer cut from the time still counts in the tokens, and back.
 - A cut always takes its share, outlier or not: with P90, the slowest tenth goes even when the
   answers are alike. One answer is never cut.
+- A scenario the cut takes every answer of, in time or in tokens, leaves the table, and the line
+  under it says how many left.
 
 convy cuts by percentile rather than by Tukey's fences or the median absolute deviation: those
 assume the values spread evenly around the middle, and an answer's time and tokens have a long

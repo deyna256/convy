@@ -499,13 +499,7 @@ class Measure(Struct, frozen=True):
 class ScenarioNumbers(Struct, frozen=True):
     seconds: Spread | None  # per answer kept
     tokens: Spread | None
-
-
-class Since(Struct, frozen=True):
-    """How a view's time and tokens per answer changed since the agent's run before."""
-
-    seconds: PerStat[Delta]
-    tokens: PerStat[Delta]
+    out: bool  # the cut took every answer it has a time or tokens for: the table leaves it out
 
 
 class View(Struct, frozen=True):
@@ -517,7 +511,6 @@ class View(Struct, frozen=True):
     scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
     time: tuple[Category, ...]  # the most in total first, then by name, the answer itself first
     spent: tuple[Category, ...]
-    since: Since | None = None  # None: the agent's first run
 
 
 class Views(Struct, frozen=True):
@@ -557,19 +550,10 @@ class RunHead(Struct, frozen=True):
 class Deltas(Struct, frozen=True):
     rate: Delta  # percentage points
     stable: Delta
-    flaky: Delta
     seconds: PerStat[Delta]  # each statistic's change in seconds; Max's is noise
     tokens: PerStat[Delta]  # and in tokens
     cached: Delta  # percentage points
     errors: Delta
-
-
-class Before(Struct, frozen=True):
-    """The agent's run just before a run: its head, its tiles' numbers and how the run differs."""
-
-    run: RunHead
-    deltas: Deltas
-    differences: tuple[str, ...]  # what of the setup changed, as the comparison names it
 
 
 class RunPage(Struct, frozen=True):
@@ -578,7 +562,6 @@ class RunPage(Struct, frozen=True):
     scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
     results: tuple[Share, ...]  # by pass rate from 0, no verdict last
     views: Views
-    before: Before | None  # None: the agent's first run
 
 
 class ClaimChange(Struct, frozen=True):
@@ -890,28 +873,25 @@ class Summary(Struct, frozen=True):
         ]
         timed, seconds = self.measure([a.turn.seconds for a in answers], trim)
         counted, tokens = self.measure([a.turn.tokens for a in answers], trim)
-        numbers = tuple(
-            ScenarioNumbers(
-                self.spread(
-                    a.turn.seconds
-                    for a, kept in zip(answers, timed, strict=True)
-                    if kept and a.scenario == view.id
-                ),
-                self.spread(
-                    a.turn.tokens
-                    for a, kept in zip(answers, counted, strict=True)
-                    if kept and a.scenario == view.id
-                ),
-            )
-            for view in scenarios
-        )
+        marked = list(zip(answers, timed, counted, strict=True))
         return View(
             seconds,
             tokens,
-            numbers,
+            tuple(
+                self.numbers([m for m in marked if m[0].scenario == view.id]) for view in scenarios
+            ),
             self.time([a for a, kept in zip(answers, timed, strict=True) if kept]),
             self.spent([a for a, kept in zip(answers, counted, strict=True) if kept]),
         )
+
+    def numbers(self, answers: list[tuple[Answered, bool, bool]]) -> ScenarioNumbers:
+        """A scenario's time and tokens over its answers the cut keeps, each answer with whether
+        its time and its tokens are kept; it is out when the cut took all of either."""
+        seconds = self.spread(a.turn.seconds for a, timed, _ in answers if timed)
+        tokens = self.spread(a.turn.tokens for a, _, counted in answers if counted)
+        reported = any(a.turn.tokens is not None for a, _, _ in answers)
+        out = bool(answers) and (seconds is None or (reported and tokens is None))
+        return ScenarioNumbers(seconds, tokens, out)
 
     def measure(self, values: list[float | None], trim: Trim) -> tuple[list[bool], Measure]:
         """Which answers a number keeps, and how the number spreads over them. `trim` cuts the
@@ -1205,63 +1185,21 @@ class Report(Struct, frozen=True):
     the page only draws."""
 
     run: Run
-    previous: Run | None = None  # the agent's run just before, which the tiles compare with
 
     def page(self) -> RunPage:
         summary = Summary(self.run)
         views = summary.scenarios().values()
         scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
-        numbers = summary.views(scenarios)
-        if self.previous is None:
-            return RunPage(
-                summary.head(),
-                summary.metrics(views),
-                tuple(scenarios),
-                summary.results(scenarios),
-                numbers,
-                None,
-            )
-        compared = Comparison(self.previous, self.run)
-        page = compared.page()
-        was = Summary(self.previous)
-        old = was.views(list(was.scenarios().values()))
-        since = Views(
-            *(
-                msgspec.structs.replace(
-                    now,
-                    since=Since(
-                        compared.units(then.seconds.spread, now.seconds.spread),
-                        compared.units(then.tokens.spread, now.tokens.spread),
-                    ),
-                )
-                for then, now in zip(
-                    msgspec.structs.astuple(old), msgspec.structs.astuple(numbers), strict=True
-                )
-            )
-        )
         return RunPage(
             summary.head(),
             summary.metrics(views),
             tuple(scenarios),
             summary.results(scenarios),
-            since,
-            Before(page.before, page.deltas, page.differences),
+            summary.views(scenarios),
         )
 
     def html(self) -> str:
         return Template("run.html").html(self.page())
-
-
-class Reports(Struct, frozen=True):
-    """Every run's page, oldest first, each compared with its agent's run started just before."""
-
-    runs: Iterable[Run]
-
-    def __iter__(self) -> Iterator[Report]:
-        last: dict[str, Run] = {}
-        for run in sorted(self.runs, key=lambda run: run.spec.started):  # instants
-            yield Report(run, last.get(run.spec.agent))
-            last[run.spec.agent] = run
 
 
 class Comparison(Struct, frozen=True):
@@ -1415,7 +1353,6 @@ class Comparison(Struct, frozen=True):
         return Deltas(
             rate=rate,
             stable=self.delta(was.stable, now.stable, more_is_better=True),
-            flaky=self.delta(was.flaky, now.flaky, more_is_better=False),
             seconds=self.units(was.seconds, now.seconds),
             tokens=self.units(was.tokens, now.tokens),
             cached=self.points(was.cached, now.cached),
