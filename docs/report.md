@@ -32,27 +32,26 @@ at the foot of the page.
 
 ## Cutting outliers
 
-One slow answer, a retry or a cold start, can move a mean a long way. **Cut outliers** in the
-page's header, beside the theme, cuts the long tail: **None**, the default, or every scenario with
-an answer over **P99**, **P95** or **P90** of the run's answers, by time or by tokens. Every time
-and token number on the page follows it: the tiles, the charts and the table, which
-leaves the cut scenarios out and names them under it. The pass rate does not change.
+One slow answer, a retry or a cold start, can move a mean a long way. **Outliers** in the page's
+header, beside the theme, is **Keep**, the default, or **Cut**: Cut leaves out every scenario with
+an answer far slower or far larger than the run's others. Every time and token number on the page
+follows it: the tiles, the charts and the table, which leaves the cut scenarios out and names them
+under it. The pass rate does not change.
 
 - The unit is the scenario, not the answer. A slow or large answer mostly comes from what the
   scenario asks: more calls, a longer dialogue, an agent going round in circles. Cutting only that
   answer would keep the scenario's other answers and still mix it into the numbers.
-- The cut is a percentile of the run's answers: P95 is the value 19 in 20 answers are at or
-  under, linear between the sorted values as numpy's default. It cuts the slow and the large,
-  never the fast or the small.
-- A cut takes more than its share: with P90 a tenth of the answers is over the line, and their
-  scenarios take all their other answers with them. In a small run P90 can leave few scenarios.
-  One answer is never cut.
+- "Far" is Tukey's far-out fence on a log scale: the upper quartile of the logs of the run's
+  answer times plus three interquartile ranges, and the same for tokens. If the middle half of
+  the answers take 2 to 4 s, the fence is at 4 s · 2³ = 32 s. Time and tokens have a long right
+  tail, which the log makes even, so ordinary slow answers stay in.
+- When nothing is far out, Cut leaves out nothing. It also cuts nothing with fewer than four
+  answers, when half the answers or more take the same time, or when it would leave no scenario.
 
-convy cuts by percentile rather than by Tukey's fences or the median absolute deviation: those
-assume the values spread evenly around the middle, and an answer's time and tokens have a long
-right tail, where they would cut many ordinary slow answers.
+convy does not cut by percentile: a percentile always takes its share, a tenth of the answers at
+P90, even when none of them is an outlier.
 
-The address keeps the cut (`#cut=p95`), so a link opens on it.
+The address keeps the cut (`#cut=on`), so a link opens on it.
 
 ## Charts
 
@@ -87,14 +86,14 @@ click one to open that answer with the call unfolded.
 
 ## Percentiles and the switch
 
-Every time and token number is a spread: how many values, the least, the 10th, 50th and 90th
+Every time and token number is a spread: how many values, the least, the 50th and 90th
 percentiles, the most and the mean. **P50**, the median, is the value half the values are at or
 under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** the sum over the
 count. Percentiles are linear between the sorted values, as numpy's default.
 
-The run's page shows means. The index and the comparison have a switch in their header, **Show
-P50 · P90 · Max · Mean**, P50 by default, that sets the one number per scenario, turn or run
-their charts and tables show; the address keeps it (`#stat=p90`).
+The run's page shows means. The comparison has a switch in its header, **Show P50 · P90 · Max ·
+Mean**, P50 by default, that sets the one number per scenario or turn its charts and tables show;
+the address keeps it (`#stat=p90`).
 
 ## Scenarios
 

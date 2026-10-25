@@ -8,33 +8,26 @@
 <style>
 /*include base.css*/
 /*include window.css*/
-.hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
 /* the pass rate, with its line of scenarios, as tall as the four other tiles two by two beside it */
 .tiles.five { grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); }
 .tiles.five > .rates { grid-row: span 2; }
 @media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tiles.five > .rates { grid-row: auto; grid-column: 1 / -1; } .controls { justify-content: flex-start; } }
-.tile .s.bad { color: var(--fail); }
 .tiles.five .tile .v { font-size: clamp(36px, 3.4vw, 48px); line-height: 1.05; margin: 2px 0 4px; }
 .tiles.five > .rates .v { font-size: clamp(48px, 5vw, 72px); }
 .tiles.five > .rates .foot { margin-top: auto; }
 .foot { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.tiles.five .tile .v small { font-size: 18px; }
 .tiles.five .tile .s { font-size: 13px; }
-.meter { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; }
+.meter { display: flex; gap: 2px; }
 .meter > span { min-width: 3px; border-radius: 2px; }
-.meter .passing { background: var(--pass); } .meter .failing { background: var(--fail); } .meter .none { background: var(--none-bg); }
 .tiles.five .tile .v .frac { font-size: .6em; font-weight: 650; color: var(--muted); margin-left: 14px; letter-spacing: -.01em; }
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
 .rates .meter { height: 24px; margin: 4px 0 6px; }
 .rates .cap { margin-top: 12px; }
 .rates .meter > span { display: grid; place-items: center; color: #fff; font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgb(0 0 0 / .45); overflow: hidden; }
-.rates .meter .flaky { background: var(--flaky); }
-.rates .meter .none { background: var(--none); }
 .rates .endlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12.5px; color: var(--muted); }
 .rates .endlist li { display: inline-flex; align-items: center; gap: 5px; }
 .rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
-.key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none); }
 #charts { grid-template-columns: minmax(0, 1fr); }
 .chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 10ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .chart .cat:hover { background: var(--side); }
@@ -60,6 +53,12 @@
 </style>
 <script>
 /*include base.js*/
+const claimMarks = (attempts, i) => attempts.map(a => {
+  const d = a.claims[i], shown = d.passed != null && d.trusted;
+  return {attempt: a.attempt, result: shown ? kind(d.passed) : "none",
+    word: d.passed == null ? "not decided" : !d.trusted ? "not trusted" : d.passed ? "held" : "failed"};
+});
+
 </script>
 </head>
 <body>
@@ -79,15 +78,13 @@
 const DATA = __DATA__;
 const RUN = DATA.run, M = DATA.metrics;
 
-// The numbers are means of the answers kept: every answer, or those of the scenarios none of whose
-// answers is over a percentile of time or tokens. The address keeps the cut as cut=p95; every
-// answer is not written.
-const CUTS = {all: "None", p99: "Over P99", p95: "Over P95", p90: "Over P90"};
-const MEANS = {all: "Every scenario counts.", p99: "A scenario with an answer in the slowest or largest 1% is cut.", p95: "A scenario with an answer in the slowest or largest 5% is cut.", p90: "A scenario with an answer in the slowest or largest 10% is cut."};
-let trim = CUTS[readAddress().get("cut")] ? readAddress().get("cut") : "all";
-delete kept.stat;
-stat = "mean";
-kept.cut = () => trim === "all" ? null : trim;
+// The numbers are means of the answers kept: every answer, or those of the scenarios with no answer
+// far out in time or tokens. The address keeps the cut as cut=on; keeping every answer is not
+// written.
+const CUTS = {all: "Keep", cut: "Cut"};
+const MEANS = {all: "Every scenario counts.", cut: "A scenario with an answer far slower or larger than the rest is left out."};
+let trim = readAddress().get("cut") ? "cut" : "all";
+kept.cut = () => trim === "cut" ? "on" : null;
 const view = () => DATA.views[trim];
 
 // The cut, in the page's header beside the theme.
@@ -102,7 +99,7 @@ function cutSwitch() {
     });
     return button;
   });
-  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Cut outliers"), el("div", {role: "group", "aria-label": "Cut outliers"}, buttons));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Outliers"), el("div", {role: "group", "aria-label": "Outliers"}, buttons));
 }
 
 function header() {
@@ -117,20 +114,19 @@ function header() {
     el("div", {className: "controls"}, cutSwitch(), themeButton()));
 }
 
-// The tiles: the pass rate, the flaky scenarios, the errors, and the chosen statistic of the time
-// and tokens per answer.
+// The tiles: the pass rate, the flaky scenarios, the errors, and the mean time and tokens per
+// answer.
 function tiles() {
   // Every tile alike: its label, its number, then what it counts; the numbers line up.
   const top = (label, value) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value)];
   const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), el("div", {className: "foot"}, rest));
-  const open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
   const cut = V.out.length ? ` · ${plural(V.out.length, "scenario")} cut` : "";
-  const measured = (label, m, unit, note) => tile(label, unit(chosen(m.spread)), el("span", {className: "s"}, `mean of ${note}${cut}`));
+  const measured = (label, m, unit, note) => tile(label, unit(m.spread?.mean), el("span", {className: "s"}, `mean of ${note}${cut}`));
   return el("div", {className: "tiles five"},
     el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
-      el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
+      el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${M.open ? ` · ${M.open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
     tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
@@ -142,10 +138,9 @@ function tiles() {
 // have it, those without a verdict last; under it, the rate of each part and its count. Pointing
 // at a part only lights it up.
 function rates() {
-  const total = DATA.results.reduce((sum, r) => sum + r.scenarios.length, 0);
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
   return [el("span", {className: "s cap"}, "Scenarios by pass rate"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
-      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.scenarios.length}`}, r.scenarios.length / total >= .04 ? String(r.scenarios.length) : ""))),
+      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.part}`}, r.part >= .04 ? String(r.scenarios.length) : ""))),
     el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
 }
 
@@ -155,7 +150,7 @@ function rates() {
 const PLACES = 5;
 const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
 function categories(title, list, unit, own, ownNote, empty) {
-  if (!list.length || (list.length === 1 && list[0].name == null)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
+  if (!list.length || (list.length === 1 && list[0].name == null)) return emptyPanel(title, empty);
   const a = axis(Math.max(0, ...list.map(c => c.share))), at = v => a.top ? v / a.top * 100 : 0;
   const rows = list.flatMap(c => {
     const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.average;
@@ -172,9 +167,8 @@ function categories(title, list, unit, own, ownNote, empty) {
     row.addEventListener("click", toggle);
     row.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
     if (!open) return [row];
-    const showAll = every.has(key), shown = c.places.slice(0, showAll ? c.places.length : PLACES);
-    const more = c.places.length > PLACES && el("button", {className: "more", type: "button"}, showAll ? "Show fewer" : `Show all ${c.places.length}`);
-    if (more) more.addEventListener("click", () => { showAll ? every.delete(key) : every.add(key); draw(); });
+    const shown = c.places.slice(0, every.has(key) ? c.places.length : PLACES);
+    const more = c.places.length > PLACES && moreButton(key, c.places.length, draw);
     return [row, el("ol", {className: "places"}, shown.map(p => {
       const go = el("button", {className: "open", type: "button"}, `${p.scenario} · attempt ${p.attempt} · turn ${p.turn + 1}`);
       go.addEventListener("click", () => { show(p.scenario, p.attempt); reveal(p.turn, p.step); });
@@ -192,7 +186,7 @@ function categories(title, list, unit, own, ownNote, empty) {
 // usage, the tokens it reported in all. A call's tokens are with its time, beside the calls.
 function byPart(parts, shares, mean) {
   const title = "Tokens per answer by part";
-  if (!parts) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, "The answers report no tokens."));
+  if (!parts) return emptyPanel(title, "The answers report no tokens.");
   const words = partWords(parts), shown = PARTS.filter(k => parts[k] != null);
   const a = axis(Math.max(0, ...shown.map(k => shares[k]))), at = v => a.top ? v / a.top * 100 : 0;
   return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · share of the tokens, and tokens per answer on average`),
@@ -215,8 +209,8 @@ function table() {
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, k => show(s.id, k))),
-      el("td", {className: "n metric"}, secs(chosen(n.seconds)), el("small", {}, under(n.seconds, secs))),
-      el("td", {className: "n metric"}, count(chosen(n.tokens)), el("small", {}, n.tokens == null ? "not reported" : under(n.tokens, count))));
+      el("td", {className: "n metric"}, secs(n.seconds?.mean), el("small", {}, under(n.seconds, secs))),
+      el("td", {className: "n metric"}, count(n.tokens?.mean), el("small", {}, n.tokens == null ? "not reported" : under(n.tokens, count))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
@@ -258,7 +252,7 @@ function show(id, number) {
 function draw() {
   const V = view(), out = V.out.length;
   // A scenario the cut takes leaves the table too; the line under it says which.
-  document.getElementById("hint").textContent = (out ? `Cut ${CUTS[trim].toLowerCase()}: ${V.out.join(", ")}. ` : "") + compare;
+  document.getElementById("hint").textContent = (out ? `Cut as outliers: ${V.out.join(", ")}. ` : "") + compare;
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
     byPart(V.parts, V.shares, V.tokens.spread?.mean),

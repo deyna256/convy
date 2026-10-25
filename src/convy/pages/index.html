@@ -7,7 +7,6 @@
 <link rel="icon" href="data:image/svg+xml,/*include icon.svg*/">
 <style>
 /*include base.css*/
-.hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
 .group { margin-top: 14px; overflow: hidden; }
 .ghead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
 .ghead > div:first-child { min-width: 0; }
@@ -17,9 +16,7 @@
 .strip { display: flex; align-items: flex-end; gap: 3px; height: 40px; max-width: 100%; overflow-x: auto; }
 .strip .bar { flex: none; width: 12px; height: 40px; display: flex; align-items: flex-end; border-radius: 2px; background: var(--side); }
 .strip .fill { width: 100%; border-radius: 2px; }
-.fill.passing { background: var(--pass); } .fill.flaky { background: var(--flaky); }
-.fill.failing { background: var(--fail); } .fill.none { background: var(--none); }
-.fill.unfinished { background: transparent; border: 1.5px solid var(--muted); min-height: 6px; }
+.strip .fill.unfinished { background: transparent; border: 1.5px solid var(--muted); min-height: 6px; }
 .strip .brk { flex: none; width: 2px; height: 40px; margin: 0 3px; border-radius: 1px; background: var(--muted); }
 .group th, .group td { padding: 9px 12px; white-space: nowrap; }
 .group th:first-child, .group td:first-child { padding-left: 16px; padding-right: 4px; }
@@ -69,22 +66,21 @@ const setup = run => [`user ${run.user}`, `judge ${run.judge}`, `${plural(run.sc
 function strip(group) {
   const rows = group.rows.slice(0, BARS);
   return el("div", {className: "strip", "aria-hidden": "true"}, rows.flatMap((row, i) => {
-    const m = row.metrics;
-    const bar = el("span", {className: "bar", title: `${row.run.short} · ${when(row.run.started)} · ${m.judged ? `${pct(m.rate)}, ${m.passed} of ${m.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
-      el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${m.rate == null ? 3 : Math.max(3, m.rate * 40)}px`}));
+    const bar = el("span", {className: "bar", title: `${row.run.short} · ${when(row.run.started)} · ${row.judged ? `${pct(row.rate)}, ${row.passed} of ${row.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
+      el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${row.rate == null ? 3 : Math.max(3, row.rate * 40)}px`}));
     return i && rows[i - 1].changes.length ? [el("span", {className: "brk"}), bar] : [bar];
   }));
 }
 
 // A run's line, and under it what of the setup changed since the agent's run before.
 function line(row) {
-  const run = row.run, m = row.metrics, state = STATUS[run.status];
+  const run = row.run, state = STATUS[run.status];
   const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`, "data-id": run.id});
   box.addEventListener("change", () => pick(row, box.checked, run.id));
   const tr = el("tr", {},
     el("td", {}, box),
     el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short))),
-    el("td", {className: "rate"}, el("strong", {}, pct(m.rate)), el("span", {className: "muted"}, `${m.passed} of ${m.judged}${notTrusted(m.cut)}`), m.errors > 0 && el("span", {className: "errors"}, ` · ${plural(m.errors, "error")}`)),
+    el("td", {className: "rate"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, `${row.passed} of ${row.judged}${notTrusted(row.cut)}`), row.errors > 0 && el("span", {className: "errors"}, ` · ${plural(row.errors, "error")}`)),
     el("td", {className: "mono"}, run.version || "—"),
     el("td", {className: "muted"}, when(run.started), state && ` · ${state}`),
     el("td", {className: "rest"}));

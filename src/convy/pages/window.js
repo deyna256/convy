@@ -114,9 +114,9 @@ function answerHead(t, toggle = null) {
     el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
       : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
 }
-// An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, the steps
-// are one node, and open so. The button that unfolds or folds them stays at the end of the answer's
-// head and hands its focus to the one that replaces it; the folded node unfolds them too.
+// An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, all the
+// steps show as one node, and clicking it unfolds them. The button that unfolds or folds them stays
+// at the end of the answer's head and hands its focus to the one that replaces it.
 function timeline(t) {
   const box = el("div", {className: "bubble flow"});
   let calls = [];  // which calls were open, by place, so folding and unfolding keeps them

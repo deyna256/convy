@@ -33,6 +33,122 @@
 </style>
 <script>
 /*include base.js*/
+
+// What only the comparison draws: the statistic switch, changes, spread tiles, tokens by turn and
+// by part.
+const atTrust = trust => trust > 0 ? ` · trust ${trust}` : "";
+// The statistic of each time and token spread that the charts and tables after the switch show,
+// P50 by default. The address keeps it as stat=, beside the open scenario's id and
+// attempt; P50 is not written.
+const STATS = ["p50", "p90", "max", "mean"];
+const STAT = {p50: "P50", p90: "P90", max: "Max", mean: "Mean"};
+const MEANING = {p50: "P50: half the values are at or under it", p90: "P90: 9 in 10 values are at or under it",
+  max: "Max: the largest value", mean: "Mean: the sum of the values over their count"};
+kept.stat = () => stat === "p50" ? null : stat;
+const fromHash = readAddress().get("stat");
+let stat = STATS.includes(fromHash) ? fromHash : "p50";
+const chosen = spread => spread == null ? null : spread[stat];
+function statSwitch(redraw, label = "Show") {
+  const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
+  buttons.forEach((button, i) => button.addEventListener("click", () => {
+    stat = STATS[i];
+    buttons.forEach((other, j) => other.setAttribute("aria-pressed", String(i === j)));
+    writeAddress(readAddress());
+    redraw();
+  }));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, label), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
+}
+
+
+const points = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} pts`;  // percentage points
+
+
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
+function change(delta, unit) {
+  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
+  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
+  const arrow = delta.value > 0 ? "▲" : "▼";
+  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
+  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+}
+
+
+// A panel of the spread or change block: its title, its rows, its scale, and "Show all" past ten.
+const ROWS = 10;
+function chart(title, rows, scale, redraw) {
+  if (!rows.length) return emptyPanel(title, "No scenario to show");
+  const key = title.split(" · ")[0];
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every.has(key) ? rows.length : ROWS), scale,
+    rows.length > ROWS && moreButton(key, rows.length, redraw));
+}
+
+
+const swatch = (part, word) => el("span", {}, el("i", {className: `key ${part}`}), word);
+
+
+// A tile of a spread: its four statistics at the same size, each with what goes under it,
+// then its lines.
+function spreadTile(label, spread, unit, lines, under = () => null) {
+  return el("div", {className: "tile"}, el("span", {className: "l"}, label),
+    el("div", {className: "stats"}, STATS.map(k => el("div", {}, el("span", {className: "k"}, STAT[k]), el("span", {className: "v"}, spread ? unit(spread[k]) : "—"), under(k)))),
+    lines.map(line => typeof line === "string" ? el("span", {className: "s"}, line) : line));
+}
+
+// Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
+// what was read from the cache and the new input when every answer reports its cache reads, and a
+// bar of their output; the share of their input read from the cache above, how many answers
+// under. `top` is the shared scale's top.
+function turnChart(title, turns, most) {
+  const a = axis(most), top = a.top;
+  const h = v => `${top ? v / top * 100 : 0}%`;
+  const drawn = turns.filter(t => t.input);  // a turn a run did not reach with tokens is an empty column
+  const split = drawn.some(t => t.cached), whole = drawn.some(t => !t.cached);
+  const cols = turns.map(t => {
+    if (!t.input) return el("div", {className: "turn few"}, el("span", {className: "share"}), el("div", {className: "bars", "aria-hidden": "true"}),
+      el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub"}, "no tokens"));
+    const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
+    const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
+    const at = `Turn ${t.turn} · ${STAT[stat]} · `;
+    const parts = cached == null ? [el("span", {className: "seg input", "data-tip": `${at}input: ${count(input)}`})]
+      : [el("span", {className: "seg input", style: `flex-grow: ${input - cached}`, "data-tip": `${at}new input: ${count(input - cached)}`}),
+        el("span", {className: "seg cache", style: `flex-grow: ${cached}`, "data-tip": `${at}from the cache: ${count(cached)}`})];
+    return el("div", {className: t.answers < 3 ? "turn few" : "turn", "data-tip": `${said} · ${plural(t.answers, "answer")} of ${plural(t.scenarios, "scenario")}`},
+      el("span", {className: "share"}, t.share == null ? "" : pct(t.share)),
+      el("div", {className: "bars", role: "img", "aria-label": said},
+        el("span", {className: "bar", style: `height: ${h(input)}`}, parts),
+        el("span", {className: "bar", style: `height: ${h(output)}`}, el("span", {className: "seg output", "data-tip": `${at}output: ${count(output)}`}))),
+      el("span", {className: "tn"}, `Turn ${t.turn}`),
+      el("span", {className: "sub"}, plural(t.answers, "answer")));
+  });
+  const shares = drawn.filter(t => t.share != null).map(t => [t.turn, pct(t.share)]);
+  const told = shares.length > 1 && `From the cache: ${shares[0][1]} on turn ${shares[0][0]}, ${shares.at(-1)[1]} on turn ${shares.at(-1)[0]}`;
+  return lede(el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
+    el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
+      swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
+    el("div", {className: "scroll"}, el("div", {className: "turns", style: gridStyle(a)},
+      el("div", {className: "yaxis", "aria-hidden": "true"}, el("span", {className: "share"}), el("div", {}, a.ticks.map(v => el("span", {style: `bottom: ${h(v)}`}, count(v))))), cols)),
+    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache.")), told);
+}
+const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
+
+
+// Tokens by part: a bar as long as the chosen statistic of a scenario's tokens per attempt, split
+// into the parts the agent reports by their shares, which come from the data; a part's own number
+// is a mean, so its tooltip gives the mean and the share.
+const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} ${partWords(p)[k]}`).join(" · ");
+function partBar(p, shares, total, top, thin = false, what = "", per = "attempt") {
+  const words = partWords(p);
+  return el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
+    PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`,
+      "data-tip": `${what}${words[k]}: ${count(p[k])} per ${per} on average · ${pct(shares[k])}`})));
+}
+function partLegend(parts) {
+  const has = k => parts.filter(p => p[k] != null);
+  const split = has("input").filter(p => p.cached != null).length;
+  const input = !split ? "input" : split === has("input").length ? "new input" : "new input; all of it where the cache is not reported";
+  return el("div", {className: "legend"}, PARTS.filter(k => has(k).length).map(k => swatch(SEG[k], k === "cached" ? "from the cache" : k === "input" ? input : k)));
+}
+
 </script>
 </head>
 <body>
@@ -110,23 +226,23 @@ function changes(title, order, field, value, unit) {
   const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
     el("p", {className: "caption"}, `The change of each scenario's ${STAT[stat]}, the bar cut at ±100%; grey under 5%.`));
   const lead = order.filter(keep).map(id => byId.get(id))[0], d = lead && lead[field][stat];
-  return lede(chart(title, rows, scale, draw), d && d.value > 0 && d.tone !== "same" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
+  return lede(chart(title, rows, scale, draw), d && d.tone === "bad" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
 }
 
 // Tokens by part before and after: two thin bars per compared scenario on one scale, the mean
 // tokens per attempt and the share of the input read from the cache as text.
 const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
-const share = p => p.cached == null ? "not reported" : !(p.cached + p.input) ? "—" : `${pct(p.cached / (p.cached + p.input))} cached`;
+const share = v => v.parts.cached == null ? "not reported" : v.shares.read == null ? "—" : `${pct(v.shares.read)} cached`;
 function partPairs() {
   const {keep} = filtered();
-  const rows = DATA.by_parts.filter(keep).map(id => byId.get(id));
+  const rows = DATA.by_parts[stat].filter(keep).map(id => byId.get(id));
   const a = axis(Math.max(0, ...rows.flatMap(r => [chosen(r.before.tokens), chosen(r.after.tokens)])));
   const section = chart(`Tokens per attempt by part · ${STAT[stat]} · before and after`, rows.map(r => el("div", {className: "rrow"},
       el("span", {className: "rid mono", title: r.id}, r.id),
       el("span", {className: "ptrack", role: "img", "aria-label": `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
-        partBar(r.before.parts, chosen(r.before.tokens), a.top, true, `${r.id} · before · `), partBar(r.after.parts, chosen(r.after.tokens), a.top, true, `${r.id} · after · `)),
+        partBar(r.before.parts, r.before.shares, chosen(r.before.tokens), a.top, true, `${r.id} · before · `), partBar(r.after.parts, r.after.shares, chosen(r.after.tokens), a.top, true, `${r.id} · after · `)),
       el("span", {className: "n"}, `${thousands(chosen(r.before.tokens))} → ${thousands(chosen(r.after.tokens))}`,
-        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before.parts)} → ${share(r.after.parts)}`)))),
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before)} → ${share(r.after)}`)))),
     [scaleLine(a, count), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after; a bar's parts keep their shares of the mean.")], draw);
   section.classList.add("grid");
   section.setAttribute("style", gridStyle(a));
@@ -214,7 +330,7 @@ function draw() {
   document.getElementById("tokens").replaceChildren(...[
     turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · before ${BEFORE.short}`, DATA.turns.map(p => p.before ?? {turn: p.turn}), top),
     turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · after ${AFTER.short}`, DATA.turns.map(p => p.after ?? {turn: p.turn}), top),
-    DATA.by_parts.length > 0 && partPairs()].filter(Boolean));
+    DATA.by_parts[stat].length > 0 && partPairs()].filter(Boolean));
   document.getElementById("table").replaceChildren(table());
 }
 
