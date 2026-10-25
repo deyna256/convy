@@ -57,7 +57,6 @@ td.changed { color: var(--focus); } td.changed::before { content: "● "; font-s
 <body>
 <div class="page">
   <header id="head"></header>
-  <div id="switch"></div>
   <div id="groups"></div>
   <div class="cmp" id="compare" aria-live="polite"></div>
   <p class="hint" id="hint"></p>
@@ -75,7 +74,7 @@ function header() {
   return el("div", {className: "top"},
     el("div", {}, el("div", {className: "eyebrow"}, "CONVY"), el("h1", {}, "Runs"),
       el("p", {className: "meta"}, total ? `${plural(total, "run")} · ${plural(DATA.agents.length, "agent")}` : "No runs yet. Run convy run <agent> and they appear here.")),
-    themeButton());
+    el("div", {className: "controls"}, statSwitch(draw), themeButton()));
 }
 
 // The agent's runs, newest left: a bar per run as high as its pass rate, coloured by its result,
@@ -179,7 +178,6 @@ function draw(find) {
 }
 
 document.getElementById("head").replaceChildren(header());
-document.getElementById("switch").replaceChildren(statSwitch(draw));
 document.getElementById("hint").textContent = "Tick two runs to compare them, or run: convy compare <before> <after>";
 draw();
 </script>
