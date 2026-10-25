@@ -6,8 +6,8 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-The page reads from the top down: five tiles, the scenarios by pass rate, where the tokens and the
-time go, then the **Scenarios**, the failing first.
+The page reads from the top down: five tiles, where the tokens and the time go, then the
+**Scenarios**, the failing first.
 
 From the agent's second run on, a tile that changed since the agent's run just before says how,
 such as `▼ 44 pts vs 5e85`, coloured and greyed under noise as on a
@@ -19,8 +19,10 @@ The command at the foot of the page compares the two runs in full.
   the judge's verdict is decided at the run's trust: every decision is trusted, or a trusted
   decision failed. A decision without a confidence is trusted. Attempts with no verdict — convy's
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
-  `--trust`, the tile says how many were not trusted (`· 4 not trusted`). A bar splits the
-  attempts into passed, failed and without a verdict.
+  `--trust`, the tile says how many were not trusted (`· 4 not trusted`). Under it, one line
+  splits the scenarios by the share of their counted attempts that passed, from 0%, each part as
+  long as how many scenarios have it, coloured by their status and with their count; those without
+  a verdict last. Point at a part for its scenarios.
 - **Flaky scenarios**: those with passed and failed counted attempts, with a square per scenario,
   the flaky ones coloured.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models; point
@@ -52,10 +54,6 @@ The address keeps the cut (`#cut=p95`), so a link opens on it.
 
 ## Charts
 
-**Scenarios by pass rate** is one line split by the pass rate of a scenario's counted attempts,
-from 0%, each part as long as how many scenarios have it and coloured by their status; those
-without a verdict last. Point at a part for its scenarios.
-
 **Tokens by category** and **Time by category** show where the answers' tokens and time went, a
 bar per category as long as its mean per answer it has a number in, the most in total first. Under
 each name: in how many answers, how many calls, and its share of the whole.
@@ -65,8 +63,10 @@ each name: in how many answers, how many calls, and its share of the whole.
   by their shares of the mean. Each call name that reports tokens is its own category. convy does
   not know whether an answer's usage holds its calls' tokens, so the shares may count them twice.
 - For time, each call name is a category; calls that ran together each count their own seconds.
-  **No call running** is the answer's time while none of its calls ran: the agent's own model and
-  code, all of it when the answer gives no [steps](agents.md#steps).
+  **Untracked time** is the part of an answer's time that no reported call covers: the agent's own
+  code, waits, and any model work it does not report as a call. Calls that ran together cover
+  their time once. Without [steps](agents.md#steps), all of an answer's time is untracked; report
+  the model's calls as steps to see them apart.
 
 Open a call to see its largest calls, five at first, each with its scenario, attempt and turn;
 click one to open that answer with the call unfolded.

@@ -9,9 +9,9 @@
 /*include base.css*/
 /*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
-.tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 1100px) { .tiles.five { grid-template-columns: repeat(6, minmax(0, 1fr)); } .tiles.five > * { grid-column: span 2; } .tiles.five > :nth-child(n+4) { grid-column: span 3; } }
-@media (max-width: 640px) { .tiles.five { grid-template-columns: minmax(0, 1fr); } .tiles.five > *, .tiles.five > :nth-child(n+4) { grid-column: auto; } }
+.tiles.five { grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .tiles.five { grid-template-columns: repeat(4, minmax(0, 1fr)); } .tiles.five > :first-child { grid-column: 1 / -1; } }
+@media (max-width: 640px) { .tiles.five { grid-template-columns: minmax(0, 1fr); } }
 .tile .s.bad { color: var(--fail); }
 .big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
 .big .k { font-size: 12px; font-weight: 650; color: var(--muted); margin-left: 5px; letter-spacing: 0; }
@@ -25,15 +25,15 @@
 .pips .flaky { background: var(--flaky); }
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
-.rates { margin-top: 14px; }
-.rates .meter { height: 26px; margin: 10px 0 6px; }
-.rates .meter > span { display: grid; place-items: center; color: var(--on-status); font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; overflow: hidden; }
-.rates .meter .flaky { background: var(--flaky); } .rates .meter .none { color: var(--ink); }
-.rates .meter .none { outline: 1px solid var(--none); outline-offset: -1px; }
+.rates .meter { height: 24px; margin: 10px 0 6px; }
+.rates .meter > span { display: grid; place-items: center; color: #fff; font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgb(0 0 0 / .45); overflow: hidden; }
+.rates .meter .flaky { background: var(--flaky); }
+.rates .meter .none { background: var(--none); }
 .rates .endlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12.5px; color: var(--muted); }
 .rates .endlist li { display: inline-flex; align-items: center; gap: 5px; }
 .rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
-.key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none-bg); outline: 1px solid var(--none); outline-offset: -1px; }
+.key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none); }
+.lrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; }
 #charts { grid-template-columns: minmax(0, 1fr); }
 .chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .chart .cat:hover { background: var(--side); }
@@ -62,7 +62,6 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <section id="rates" class="panel rates chart" aria-label="Scenarios by pass rate"></section>
   <section id="charts" class="charts" aria-label="Tokens and time by category"></section>
   <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
@@ -122,16 +121,14 @@ const since = (delta, unit) => B && delta && delta.tone !== "none" && !(delta.to
 // and tokens per answer.
 function tiles() {
   const tile = (label, value, delta, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("div", {className: "big"}, el("span", {className: "v"}, value), delta), rest);
-  const bar = parts => el("div", {className: "meter", "aria-hidden": "true"}, parts.filter(([, n]) => n > 0).map(([cls, n, tip]) => el("span", {className: cls, style: `flex: ${n}`, "data-tip": tip})));
-  const failed = M.judged - M.passed, open = M.attempts - M.judged;
+  const open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
   const left = (m, unit) => m.out ? ` · ${m.out} cut over ${unit(m.over)}` : "";
   const measured = (label, m, unit, note, delta) => tile(label, [unit(chosen(m.spread)), el("span", {className: "k"}, "mean")], since(delta, unit), el("span", {className: "s"}, note + left(m, unit)));
   return el("div", {className: "tiles five"},
-    tile("Pass rate", pct(M.rate), since(B?.deltas.rate, points),
-      bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
-      el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`)),
+    el("div", {className: "tile rates"}, el("div", {className: "lrow"}, el("span", {className: "l"}, "Pass rate"), el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")} passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`)),
+      el("div", {className: "big"}, el("span", {className: "v"}, pct(M.rate)), since(B?.deltas.rate, points)), rates()),
     tile("Flaky scenarios", [String(M.flaky), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.flaky, String),
       el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
         DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
@@ -142,16 +139,13 @@ function tiles() {
 }
 
 // The scenarios by pass rate on one line, from 0: a part per rate as long as how many scenarios
-// have it, those without a verdict last.
+// have it, those without a verdict last; under it, the rate of each part and its count.
 function rates() {
   const total = DATA.results.reduce((sum, r) => sum + r.scenarios.length, 0);
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
-  const of = result => DATA.scenarios.filter(v => v.result === result).length;
-  const told = [of("passing") && `${of("passing")} pass every attempt`, of("flaky") && `${of("flaky")} flaky`, of("failing") && `${of("failing")} fail every attempt`].filter(Boolean).join(" · ");
-  return [el("h3", {}, "Scenarios by pass rate"), told && el("p", {className: "lede"}, told),
-    el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
+  return [el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
       DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.scenarios.length}`, "data-tip": `${name(r)} of the attempts passed: ${r.scenarios.join(", ")}`}, r.scenarios.length / total >= .04 ? String(r.scenarios.length) : ""))),
-    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
+    el("ul", {className: "endlist"}, el("li", {}, "Scenarios by the share of attempts passed:"), DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), name(r), el("b", {}, String(r.scenarios.length)))))];
 }
 
 // Where the answers' tokens or time went, by category: the answer itself and each call name. A
@@ -248,10 +242,9 @@ function show(id, number) {
 function draw() {
   const V = view();
   document.getElementById("tiles").replaceChildren(tiles());
-  document.getElementById("rates").replaceChildren(...rates());
   document.getElementById("charts").replaceChildren(
     categories("Tokens by category", V.spent, count, "The answer itself", "the tokens the agent reported for the answer, split by part", "The answers report no tokens."),
-    categories("Time by category", V.time, secs, "No call running", "the answer's time while none of its calls ran, the agent's own model and code; calls that ran together count once here and each its own in their rows", "The answers report no calls: all their time is the agent's own work. Report the agent's steps to see where it goes."));
+    categories("Time by category", V.time, secs, "Untracked time", "the part of an answer's time that no reported call covers: the agent's own code, waits, and any model work it does not report as a call", "The answers report no calls, so none of their time is tracked. Report the agent's steps to see where it goes."));
   document.getElementById("table").replaceChildren(table());
 }
 
