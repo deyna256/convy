@@ -97,16 +97,16 @@ function readAddress() {
   const hash = location.hash.slice(1), first = hash.split("&")[0];
   return new URLSearchParams(first && !first.includes("=") ? `id=${hash}` : hash);  // part 1's #<id>&attempt=<n>
 }
+const kept = {stat: () => stat === "p50" ? null : stat};  // the settings the address keeps, unwritten at their default
 function writeAddress(params) {
-  params.delete("stat");
-  if (stat !== "p50") params.set("stat", stat);
+  for (const [key, value] of Object.entries(kept)) { params.delete(key); if (value()) params.set(key, value()); }
   const hash = params.toString();
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
 }
 const fromHash = readAddress().get("stat");
 let stat = STATS.includes(fromHash) ? fromHash : "p50";
 const chosen = spread => spread == null ? null : spread[stat];
-function statSwitch(redraw) {
+function statSwitch(redraw, label = "Show") {
   const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
   buttons.forEach((button, i) => button.addEventListener("click", () => {
     stat = STATS[i];
@@ -114,7 +114,7 @@ function statSwitch(redraw) {
     writeAddress(readAddress());
     redraw();
   }));
-  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Show"), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, label), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
 }
 
 const points = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} pts`;  // percentage points
@@ -201,11 +201,11 @@ const PARTS = ["cached", "input", "output", "thinking"];
 const SEG = {cached: "cache", input: "input", output: "output", thinking: "thinking"};
 const partWords = p => ({cached: "from the cache", input: p.cached == null ? "input" : "new input", output: "output", thinking: "thinking"});
 const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} ${partWords(p)[k]}`).join(" · ");
-function partBar(p, total, top, thin = false, what = "") {
+function partBar(p, total, top, thin = false, what = "", per = "attempt") {
   const sum = PARTS.reduce((all, k) => all + (p[k] ?? 0), 0), words = partWords(p);
   return el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
     PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`,
-      "data-tip": `${what}${words[k]}: ${count(p[k])} per attempt on average · ${pct(p[k] / sum)}`})));
+      "data-tip": `${what}${words[k]}: ${count(p[k])} per ${per} on average · ${pct(p[k] / sum)}`})));
 }
 function partLegend(parts) {
   const has = k => parts.filter(p => p[k] != null);

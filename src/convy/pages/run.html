@@ -9,62 +9,83 @@
 /*include base.css*/
 /*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
-#calls table { min-width: 620px; }
-#calls .cname { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
-#calls .chev { flex: none; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
-#calls [aria-expanded="true"] .chev { transform: rotate(45deg); }
-@media (prefers-reduced-motion: reduce) { #calls .chev { transition: none; } }
-#calls .places td { background: var(--side); padding: 6px 12px 12px 36px; cursor: default; }
-#calls .places ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-#calls .places li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; }
-#calls .places .open { color: var(--focus); font-size: 13px; padding: 3px 0; }
-#calls .places .open:hover { text-decoration: underline; }
-.tot { display: flex; align-items: center; gap: 8px; min-width: 180px; }
-.tot .track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--side); }
-.tot .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--muted); }
-.crow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; align-items: center; padding: 6px 0; border-top: 1px solid var(--rule); font-size: 13px; }
-.crow:first-of-type { border-top: 0; padding-top: 0; }
-.crow .from { grid-column: 1; font-size: 12px; color: var(--muted); }
-.crow .tally { grid-row: 1 / 3; grid-column: 2; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-.tiles.five { grid-template-columns: repeat(3, minmax(0, 1fr)) repeat(2, minmax(0, 1.5fr)); }
-@media (max-width: 1280px) { .tiles.five { grid-template-columns: repeat(6, minmax(0, 1fr)); } .tiles.five > * { grid-column: span 2; } .tiles.five > .range { grid-column: span 3; } }
-@media (max-width: 760px) { .tiles.five { grid-template-columns: minmax(0, 1fr); } .tiles.five > *, .tiles.five > .range { grid-column: auto; } }
-.tile.wide { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
-.tile.wide .l { flex: none; }
-.tile.wide .meter { flex: 1 1 320px; height: 20px; margin: 0; }
-.tile.wide .meter > span { display: grid; place-items: center; color: var(--on-status); font: 700 11.5px/1 var(--sans); font-variant-numeric: tabular-nums; overflow: hidden; }
-.tile.wide .endlist { margin: 0; }
-.scale.bare { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+.tiles.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .tiles.five { grid-template-columns: repeat(6, minmax(0, 1fr)); } .tiles.five > * { grid-column: span 2; } .tiles.five > :nth-child(n+4) { grid-column: span 3; } }
+@media (max-width: 640px) { .tiles.five { grid-template-columns: minmax(0, 1fr); } .tiles.five > *, .tiles.five > :nth-child(n+4) { grid-column: auto; } }
 .tile .s.bad { color: var(--fail); }
+.big { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.big .k { font-size: 12px; font-weight: 650; color: var(--muted); margin-left: 5px; letter-spacing: 0; }
+.since { font-size: 12.5px; margin-left: auto; } .since .delta { font-size: 12.5px; }
+.meta.changed { color: var(--flaky); margin-top: 4px; }
 .meter { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; }
 .meter > span { min-width: 3px; border-radius: 2px; }
 .meter .passing { background: var(--pass); } .meter .failing { background: var(--fail); } .meter .none { background: var(--none-bg); }
 .pips { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 4px; }
-.pips span { width: 12px; height: 12px; border-radius: 3px; }
-.pips .passing { background: var(--pass); } .pips .failing { background: var(--fail); } .pips .flaky { background: var(--flaky); } .pips .none { background: var(--none-bg); }
-.endlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: var(--muted); }
-.endlist li { display: inline-flex; align-items: center; gap: 5px; }
-.endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
-.endlist .key { margin: 0; }
-.boxkey { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
-.boxkey .chart { padding: 0; background: none; width: 56px; }
-.boxkey .track { display: block; }
-.tile.range { gap: 6px; }
-.since { font-size: 12.5px; } .since .delta { font-size: 12.5px; }
-.big .since { margin-left: auto; }
-.meta.changed { color: var(--flaky); margin-top: 4px; }
-.lrow { display: flex; justify-content: space-between; gap: 12px; }
-.big { display: flex; align-items: baseline; gap: 8px; }
-.big .k { font-size: 12px; font-weight: 650; color: var(--muted); }
-.tile.range .chart { padding: 0; background: none; }
-.tile.range .track { display: block; }
-.trio { display: flex; gap: 20px; margin: 0; font-size: 13px; }
-.trio div { display: flex; gap: 6px; }
-.trio dt { color: var(--muted); } .trio dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
-.comp { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--rule); }
-.comp .meter { height: 12px; margin-top: 0; }
-.end.user_stop { background: var(--pass); } .end.max_turns { background: var(--flaky); } .end.agent_failure { background: var(--fail); }
-.end.agent_busy { background: var(--none); } .end.model_failure { background: transparent; border: 1.5px solid var(--none); }
+.pips span { width: 12px; height: 12px; border-radius: 3px; background: var(--none-bg); }
+.pips .flaky { background: var(--flaky); }
+
+/* the precision: what every time and token number is, and what it leaves out */
+.precision { margin-top: 14px; display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 1.5fr) minmax(0, 1.5fr); }
+.precision > * { padding: 14px 16px; min-width: 0; }
+.precision > * + * { border-left: 1px solid var(--rule); }
+.precision h2 { font-size: 13px; font-weight: 650; margin: 0 0 10px; }
+.precision .switch { margin: 0; display: grid; gap: 6px; }
+.precision .switch > span { font-size: 12px; font-weight: 600; }
+.precision .switch + .switch { margin-top: 14px; }
+.precision .means { font-size: 12px; color: var(--muted); margin: 0; }
+.dist h3 { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+.dist h3 b { color: var(--ink); font-weight: 650; }
+.dist .left { color: var(--ink); font-weight: 500; }
+.hist { position: relative; height: 84px; margin-top: 30px; border-bottom: 1px solid var(--muted); background-image: linear-gradient(to right, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: var(--grid, 100%) 100%; }
+.hist .bin { position: absolute; bottom: 0; display: flex; flex-direction: column-reverse; gap: 1px; padding: 0 1px; }
+.hist .bin > span { border-radius: 2px 2px 0 0; min-height: 2px; }
+.hist .kept { background: color-mix(in srgb, var(--focus) 60%, transparent); }
+.hist .out { background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 5px); outline: 1px solid var(--muted); outline-offset: -1px; }
+.hist .bin:hover > span { filter: brightness(1.15); }
+.hist .cut { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--muted) 10%, transparent); border: 0 dashed var(--muted); }
+.hist .cut.low { border-right-width: 1.5px; } .hist .cut.high { border-left-width: 1.5px; }
+.hist .stat { position: absolute; top: -16px; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); }
+.hist .stat span { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 650; white-space: nowrap; }
+.hist .stat.right span { left: auto; right: 0; transform: none; }
+.hist .stat.left span { left: 0; transform: none; }
+.dist .scale { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.dist .scale .ticks { display: block; position: relative; height: 1.3em; }
+.dist .scale .ticks > span { position: absolute; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dist .scale .ticks > span:first-child { transform: none; } .dist .scale .ticks > span:last-child:not(:first-child) { transform: translateX(-100%); }
+.dist .legend { margin-top: 6px; }
+.key.kept { background: color-mix(in srgb, var(--focus) 60%, transparent); }
+.key.out { background: repeating-linear-gradient(135deg, var(--muted) 0 2px, transparent 2px 4px); outline: 1px solid var(--muted); outline-offset: -1px; }
+@media (max-width: 1100px) { .precision { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .precision > :first-child { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px 32px; } .precision > :first-child h2 { flex-basis: 100%; margin: 0; } .precision .switch + .switch { margin: 0; } .precision > :nth-child(2) { border-left: 0; } .precision > :nth-child(n+2) { border-top: 1px solid var(--rule); } }
+@media (max-width: 640px) { .precision { grid-template-columns: minmax(0, 1fr); } .precision > :nth-child(3) { border-left: 0; } }
+
+/* the scenarios by pass rate, and where the time and tokens go */
+.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1.25fr); }
+@media (max-width: 1100px) { .three { grid-template-columns: minmax(0, 1fr); } }
+.cols { display: flex; align-items: flex-end; gap: 10px; height: 150px; padding-top: 18px; border-bottom: 1px solid var(--muted); }
+.col { flex: 1 1 0; max-width: 84px; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; }
+.col .c { text-align: center; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.col .bar { border-radius: 4px 4px 0 0; min-height: 3px; }
+.col .bar.passing { background: var(--pass); } .col .bar.failing { background: var(--fail); } .col .bar.flaky { background: var(--flaky); } .col .bar.none { background: var(--none-bg); outline: 1px solid var(--none); outline-offset: -1px; }
+.colnames { display: flex; gap: 10px; margin-top: 4px; }
+.colnames span { flex: 1 1 0; max-width: 84px; text-align: center; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chart .cat { display: grid; grid-template-columns: minmax(0, 22ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.chart .cat:hover { background: var(--side); }
+.chart .cat.own { cursor: default; }
+.chart .cat .cname { display: flex; flex-direction: column; min-width: 0; }
+.chart .cat .cname b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart .cat .cname small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart .cat .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
+.chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: var(--muted); }
+.chart .cat[aria-expanded] .who b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+.chart .cat[aria-expanded="true"] .who b::before { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
+.chart.cats .scale { grid-template-columns: minmax(0, 22ch) minmax(0, 1fr) 7ch; }
+.places { list-style: none; margin: 2px 0 8px 12px; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
+.places li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.places .open { color: var(--focus); font-size: 12.5px; }
+.places .open:hover { text-decoration: underline; }
+@media (max-width: 760px) { .chart .cat, .chart.cats .scale { grid-template-columns: minmax(0, 1fr) 7ch; } .chart .cat .cname { grid-column: 1 / -1; } .chart.cats .scale > span:first-child { display: none; } .places { margin-left: 0; } }
 </style>
 <script>
 /*include base.js*/
@@ -74,25 +95,26 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <div class="block"><div class="tools"><h2>Claims</h2></div>
-    <section id="outcomes" class="charts" aria-label="Claims that failed"></section></div>
+  <section id="precision" class="panel precision" aria-label="Precision"></section>
+  <section id="charts" class="charts three" aria-label="Results, tokens and time"></section>
   <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
-  <div class="block"><div class="tools"><h2>Time and tokens by scenario</h2>
-    <span class="boxkey" aria-hidden="true"><span>min</span><span class="chart"><span class="track"><span class="whisker" style="left:0;width:100%"></span><span class="box" style="left:22%;width:50%"></span><span class="median" style="left:44%"></span></span></span><span>max</span><span class="muted">· box P10 to P90 · line: the statistic shown</span></span></div>
-    <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section></div>
-  <div class="block"><div class="tools"><h2>Tokens</h2></div>
-    <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section></div>
-  <section id="calls" aria-label="The agent's calls"></section>
   <p class="hint" id="hint"></p>
 </div>
 <dialog class="window" id="window" aria-labelledby="window-title"></dialog>
 <script>
 /*include window.js*/
 
-// The run's page: its tiles, its charts, its scenarios, and the window of one scenario.
+// The run's page: its tiles, the precision of its time and token numbers, how its scenarios did
+// and where its time and tokens went, its scenarios, and the window of one scenario.
 const DATA = __DATA__;
-const RUN = DATA.run, M = DATA.metrics;
+const RUN = DATA.run, M = DATA.metrics, B = DATA.before;
+
+// Outliers: every answer, or those inside Tukey's fences. The address keeps trim=out.
+const TRIMS = {all: "Keep all", out: "Leave out"};
+let trim = readAddress().get("trim") === "out" ? "out" : "all";
+kept.trim = () => trim === "out" ? "out" : null;
+const view = () => DATA.views[trim];
 
 function header() {
   const status = STATUS[RUN.status];
@@ -103,93 +125,152 @@ function header() {
       el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, RUN.trust > 0 && `trust ${RUN.trust}`,
         RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
       B && B.differences.length > 0 && el("p", {className: "meta changed"}, `Changed since ${B.run.short}: ${B.differences.join(", ")}`)),
-    el("div", {className: "controls"}, chooser, themeButton()));
+    el("div", {className: "controls"}, themeButton()));
 }
 
 // A tile's change since the agent's run before; nothing on its first run.
-const B = DATA.before;
-const since = (delta, unit) => B && (delta.tone === "same" && !delta.value
+const since = (delta, unit) => B && delta && (delta.tone === "same" && !delta.value
   ? el("span", {className: "since muted"}, `same as ${B.run.short}`)
   : el("span", {className: "since"}, change(delta, unit), el("span", {className: "muted"}, ` vs ${B.run.short}`)));
 
-// The tiles: each a number and a small picture of what it is made of, words only where a picture
-// cannot say it.
+// The tiles: the pass rate, the flaky scenarios, the errors, and the chosen statistic of the time
+// and tokens per answer.
 function tiles() {
   const tile = (label, value, delta, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("div", {className: "big"}, el("span", {className: "v"}, value), delta), rest);
-  const bar = parts => el("div", {className: "meter", "aria-hidden": "true"}, parts.filter(([, n]) => n > 0).map(([cls, n, title]) => el("span", {className: cls, style: `flex: ${n}`, title})));
+  const bar = parts => el("div", {className: "meter", "aria-hidden": "true"}, parts.filter(([, n]) => n > 0).map(([cls, n, tip]) => el("span", {className: cls, style: `flex: ${n}`, "data-tip": tip})));
   const failed = M.judged - M.passed, open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
-  const total = DATA.ends.reduce((sum, [, n]) => sum + n, 0);
-  return [
-    el("div", {className: "tiles five"},
-      tile("Pass rate", pct(M.rate), since(B?.deltas.rate, points),
-        bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
-        el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`)),
-      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.stable, String),
-        el("div", {className: "pips", role: "img", "aria-label": DATA.scenarios.map(v => `${v.id}: ${SCENARIO[v.result]}`).join(", ")},
-          DATA.scenarios.map(v => el("span", {className: v.result, title: `${v.id}: ${SCENARIO[v.result]}`}))),
-        el("span", {className: "s"}, RUN.k > 1 ? "passed every attempt" : "one attempt each")),
-      tile("Errors", String(M.errors), since(B?.deltas.errors, String), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
-      rangeTile("Time per answer", M.seconds, secs, M.seconds ? plural(M.seconds.n, "answer") : "no answers", since(B?.deltas.seconds[stat], secs)),
-      rangeTile("Tokens per attempt", M.tokens, count, M.tokens == null ? "not reported" : M.reported === M.attempts ? plural(M.attempts, "attempt") : `${M.reported} of ${M.attempts} report tokens`,
-        since(B?.deltas.tokens[stat], count), M.parts && composition(M.parts))),
-    total > 0 && el("div", {className: "tiles"}, el("div", {className: "tile wide"},
-      el("span", {className: "l"}, `How the ${plural(total, "dialogue")} ended`),
-      el("div", {className: "meter ends", role: "img", "aria-label": DATA.ends.map(([end, n]) => `${STOPS[end]}: ${n}`).join(", ")},
-        DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, "data-tip": `${STOPS[end]}: ${n} of ${total} · ${pct(n / total)}`}, n / total >= .04 ? String(n) : ""))),
-      el("ul", {className: "endlist"}, DATA.ends.map(([end, n]) => el("li", {}, el("i", {className: `key end ${end}`}), STOPS[end], el("b", {}, String(n))))))),
-  ].filter(Boolean);
+  const V = view(), answers = V.seconds.answers;
+  const left = m => m.out ? ` · ${m.out} left out` : "";
+  const measured = (label, m, unit, note, delta) => tile(label, [unit(chosen(m.spread)), el("span", {className: "k"}, STAT[stat])], since(delta, unit), el("span", {className: "s"}, note + left(m)));
+  return el("div", {className: "tiles five"},
+    tile("Pass rate", pct(M.rate), since(B?.deltas.rate, points),
+      bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
+      el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`)),
+    tile("Flaky scenarios", [String(M.flaky), el("small", {}, `of ${RUN.scenarios}`)], since(B?.deltas.flaky, String),
+      el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
+        DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
+      el("span", {className: "s"}, RUN.k > 1 ? "passed some attempts, failed others" : "one attempt each: none can be flaky")),
+    tile("Errors", String(M.errors), since(B?.deltas.errors, String), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
+    measured("Time per answer", V.seconds, secs, plural(answers, "answer"), V.since?.seconds[stat]),
+    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `${V.tokens.answers} of ${answers} answers report tokens`, V.since?.tokens[stat]));
 }
 
-// A spread as a tile: the chosen statistic large, the spread drawn as the box plots draw it with
-// the chosen statistic marked, and the other statistics small.
-function rangeTile(label, d, unit, note, delta, extra = null) {
-  if (!d) return el("div", {className: "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, "—"), el("span", {className: "s"}, note));
-  const a = axis(d.max), at = v => a.top ? v / a.top * 100 : 0;
-  return el("div", {className: "tile range"},
-    el("div", {className: "lrow"}, el("span", {className: "l"}, label), el("span", {className: "s"}, note)),
-    el("div", {className: "big"}, el("span", {className: "v"}, unit(chosen(d))), el("span", {className: "k"}, STAT[stat]), delta),
-    el("div", {className: "chart grid", style: gridStyle(a)},
-      el("span", {className: "track", role: "img", "aria-label": spreadWords(d, unit), "data-tip": spreadWords(d, unit)}, boxMarks(d, at)),
-      el("div", {className: "scale bare"}, el("span", {className: "ticks"}, a.ticks.map(v => el("span", {style: `left: ${at(v)}%`}, v ? unit(v) : "0"))))),
-    el("dl", {className: "trio"}, STATS.filter(k => k !== stat).map(k => el("div", {}, el("dt", {}, STAT[k]), el("dd", {}, unit(d[k]))))),
-    extra);
+// The precision: the statistic and the outliers every time and token number follows, and how the
+// answers spread with what is left out and where the statistic falls.
+function precision() {
+  const pick = el("div", {role: "group", "aria-label": "Outliers"}, Object.entries(TRIMS).map(([key, word]) => {
+    const button = el("button", {type: "button", "aria-pressed": String(key === trim)}, word);
+    button.addEventListener("click", () => { trim = key; writeAddress(readAddress()); draw(); });
+    return button;
+  }));
+  const V = view();
+  return [el("div", {},
+      el("h2", {}, "Precision"),
+      el("div", {className: "switch"}, el("span", {}, "Statistic"), chooser, el("p", {className: "means"}, MEANING[stat].replace("values", "answers"))),
+      el("div", {className: "switch"}, el("span", {}, "Outliers"), pick, el("p", {className: "means"},
+        trim === "out" ? "Left out: an answer more than 1.5 × IQR past the quartiles, Tukey's fences, of its time or its tokens." : "Every answer counts: one slow answer moves Max and Mean."))),
+    distribution("Time per answer", V.seconds, secs),
+    distribution("Tokens per answer", V.tokens, count)];
 }
 
-// A spread's marks on a track: whiskers from the least to the largest, a box from P10 to P90 and a
-// line at the chosen statistic; one value is a single tick. Its words say every number.
-function boxMarks(d, at) {
-  if (d.n === 1) return el("span", {className: "tick", style: `left: ${at(d.p50)}%`});
-  return [el("span", {className: "whisker", style: `left: ${at(d.min)}%; width: ${at(d.max) - at(d.min)}%`}),
-    el("span", {className: "box", style: `left: min(${at(d.p10)}%, 100% - 4px); width: max(4px, ${at(d.p90) - at(d.p10)}%)`}),
-    el("span", {className: "median", style: `left: ${at(chosen(d))}%`})];
+// How a number spreads over the answers: a bin per 1/24 of its range, the answers left out
+// hatched beyond the dashed fences, the chosen statistic a line.
+function distribution(title, m, unit) {
+  if (!m.answers) return el("div", {className: "dist"}, el("h3", {}, title), el("p", {className: "empty"}, "Not reported"));
+  const a = axis(m.width * m.bins.length), at = v => a.top ? Math.max(0, Math.min(100, v / a.top * 100)) : 0;
+  const most = Math.max(...m.bins.map(([k, o]) => k + o));
+  const bins = m.bins.map(([k, o], i) => {
+    if (!k && !o) return null;
+    const from = i * m.width, to = from + m.width;
+    return el("div", {className: "bin", style: `left: ${at(from)}%; width: ${at(to) - at(from)}%; height: ${(k + o) / most * 100}%`,
+      "data-tip": `${unit(from)} to ${unit(to)}: ${plural(k + o, "answer")}${o ? `, ${o} left out` : ""}`},
+      k > 0 && el("span", {className: "kept", style: `flex: ${k}`}), o > 0 && el("span", {className: "out", style: `flex: ${o}`}));
+  });
+  const v = chosen(m.spread), place = at(v);
+  const cuts = m.out ? [m.low > 0 && el("span", {className: "cut low", style: `left: 0; width: ${at(m.low)}%`, "data-tip": `Left out under ${unit(m.low)}`}),
+    m.high < a.top && el("span", {className: "cut high", style: `left: ${at(m.high)}%; right: 0`, "data-tip": `Left out over ${unit(m.high)}`})] : [];
+  const out = m.out && [m.low > 0 && `under ${unit(m.low)}`, `over ${unit(m.high)}`].filter(Boolean).join(" or ");
+  return el("div", {className: "dist"},
+    el("h3", {}, title, el("span", {}, el("b", {}, plural(m.answers - m.out, "answer")), m.out ? el("span", {className: "left"}, ` · ${m.out} left out, ${out}`) : "")),
+    el("div", {className: "hist", style: gridStyle(a), role: "img", "aria-label": `${title}: ${spreadWords(m.spread, unit)}${m.out ? `; ${m.out} left out, ${out}` : ""}`},
+      cuts, bins, v != null && el("span", {className: `stat${place > 85 ? " right" : place < 15 ? " left" : ""}`, style: `left: ${place}%`, "data-tip": spreadWords(m.spread, unit)}, el("span", {}, `${STAT[stat]} ${unit(v)}`))),
+    el("div", {className: "scale"}, el("span", {className: "ticks"}, a.ticks.map(t => el("span", {style: `left: ${at(t)}%`}, t ? unit(t) : "0")))),
+    el("div", {className: "legend"}, swatch("kept", "answers counted"), m.out > 0 && swatch("out", "left out")));
 }
-const spreadWords = (d, unit) => `min ${unit(d.min)} · P10 ${unit(d.p10)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · mean ${unit(d.mean)} · n ${d.n}`;
+const spreadWords = (d, unit) => d ? `min ${unit(d.min)} · P10 ${unit(d.p10)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · mean ${unit(d.mean)} · n ${d.n}` : "none";
 
-// The mean tokens per attempt as one bar of its parts, each part's number in the legend.
-function composition(p) {
-  const words = partWords(p);
-  const shown = PARTS.filter(k => p[k]);
-  return el("div", {className: "comp"},
-    el("div", {className: "meter", "aria-hidden": "true"}, shown.map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex: ${p[k]}`, "data-tip": `${words[k]}: ${count(p[k])} per attempt on average · ${pct(p[k] / shown.reduce((all, j) => all + p[j], 0))}`}))),
-    el("ul", {className: "endlist"}, shown.map(k => el("li", {}, el("i", {className: `key ${SEG[k]}`}), words[k], el("b", {}, count(p[k])))),
-      M.cached != null && el("li", {className: "muted"}, `${pct(M.cached)} of the input cached`, B && B.was.cached != null && ` · was ${pct(B.was.cached)}`)));
+// The scenarios by pass rate, from 0: a column per rate as high as how many scenarios have it.
+function results() {
+  const most = Math.max(1, ...DATA.results.map(r => r.scenarios.length));
+  const name = r => r.rate == null ? "no verdict" : pct(r.rate);
+  const of = result => DATA.scenarios.filter(v => v.result === result).length;
+  const told = [of("passing") && `${of("passing")} pass every attempt`, of("flaky") && `${of("flaky")} flaky`, of("failing") && `${of("failing")} fail every attempt`].filter(Boolean).join(" · ");
+  return lede(el("section", {className: "chart", "aria-label": "Scenarios by pass rate"}, el("h3", {}, "Scenarios by pass rate"),
+    el("div", {className: "cols", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${r.scenarios.length}`).join(", ")},
+      DATA.results.map(r => el("div", {className: "col", "data-tip": `${name(r)}: ${r.scenarios.join(", ")}`},
+        el("span", {className: "c"}, String(r.scenarios.length)),
+        el("span", {className: `bar ${r.result}`, style: `height: ${r.scenarios.length / most * 100}%`})))),
+    el("div", {className: "colnames", "aria-hidden": "true"}, DATA.results.map(r => el("span", {}, name(r)))),
+    el("p", {className: "caption"}, "Pass rate of a scenario's attempts; point at a column for its scenarios.")), told);
+}
+
+// Where the answers' tokens or time went, by category: the answer itself and each call name. A
+// bar is the chosen statistic per answer it has a number in; a call opens to its largest calls,
+// each a way to the answer that made it.
+const PLACES = 5;
+const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
+function categories(title, list, unit, own, empty) {
+  if (!list.length || (list.length === 1 && list[0].name == null && !list[0].parts)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
+  const a = axis(Math.max(0, ...list.map(c => c.spread[stat]))), at = v => a.top ? v / a.top * 100 : 0;
+  const all = list.reduce((sum, c) => sum + c.total, 0);
+  const rows = list.flatMap(c => {
+    const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.spread[stat];
+    const name = c.name ?? own;
+    const row = el("div", {className: c.name == null ? "cat own" : "cat", role: c.name == null ? null : "button", tabIndex: c.name == null ? null : 0, "aria-expanded": c.name == null ? null : String(open),
+        "data-tip": `${name} · ${STAT[stat]} ${unit(v)} per answer · total ${unit(c.total)}, ${pct(all ? c.total / all : null)} · ${spreadWords(c.spread, unit)}`},
+      el("span", {className: "cname"}, el("b", {className: c.name == null ? null : "mono", title: name}, name),
+        el("small", {}, [`in ${plural(c.answers, "answer")}`, c.calls && plural(c.calls, "call"), `${pct(all ? c.total / all : null)} of all`].filter(Boolean).join(" · "))),
+      el("span", {className: "ptrack"}, c.parts ? partBar(c.parts, v, a.top, false, `${name} · `, "answer") : el("span", {className: "fill", style: `width: ${at(v)}%`})),
+      el("span", {className: "n"}, unit(v)));
+    if (c.name == null) return [row];
+    const toggle = () => { open ? unfolded.delete(key) : unfolded.add(key); draw(); document.querySelector(`.cat[data-key="${CSS.escape(key)}"]`)?.focus(); };
+    row.dataset.key = key;
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
+    if (!open) return [row];
+    const showAll = every.has(key), shown = c.places.slice(0, showAll ? c.places.length : PLACES);
+    const more = c.places.length > PLACES && el("button", {className: "more", type: "button"}, showAll ? "Show fewer" : `Show all ${c.places.length}`);
+    if (more) more.addEventListener("click", () => { showAll ? every.delete(key) : every.add(key); draw(); });
+    return [row, el("ol", {className: "places"}, shown.map(p => {
+      const go = el("button", {className: "open", type: "button"}, `${p.scenario} · attempt ${p.attempt} · turn ${p.turn + 1}`);
+      go.addEventListener("click", () => { show(p.scenario, p.attempt); reveal(p.turn, p.step); });
+      return el("li", {}, go, el("span", {className: "muted"}, `${secs(p.seconds)}${p.tokens == null ? "" : ` · ${count(p.tokens)} tokens`}`));
+    }), more && el("li", {}, more))];
+  });
+  const lead = list[0];
+  const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · ${STAT[stat]} per answer`),
+    list.some(c => c.parts) && partLegend(list.filter(c => c.parts).map(c => c.parts)),
+    rows, scaleLine(a, unit)), `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
+  return section;
 }
 
 function table() {
   const {mask, keep} = filtered();
-  const rows = DATA.scenarios.filter(s => keep(s.id)).map(s => {
+  const V = view();
+  const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s]) => keep(s.id)).map(([s, n]) => {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
+    const under = (d, unit) => d == null ? "" : stat === "max" ? `p50 ${unit(d.p50)}` : `max ${unit(d.max)}`;
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
-      el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, n => show(s.id, n))),
-      el("td", {className: "n metric"}, secs(chosen(s.seconds)), el("small", {}, s.seconds == null ? "" : stat === "max" ? `p50 ${secs(s.seconds.p50)}` : `max ${secs(s.seconds.max)}`)),
-      el("td", {className: "n metric", title: s.tokens == null ? null : tokenParts(s)}, count(chosen(s.tokens)), el("small", {}, s.tokens == null ? "not reported" : stat === "max" ? `p50 ${count(s.tokens.p50)}` : `max ${count(s.tokens.max)}`)));
+      el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, k => show(s.id, k))),
+      el("td", {className: "n metric"}, secs(chosen(n.seconds)), el("small", {}, under(n.seconds, secs))),
+      el("td", {className: "n metric"}, count(chosen(n.tokens)), el("small", {}, n.tokens == null ? "not reported" : under(n.tokens, count))));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per attempt · ${STAT[stat]}`))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per answer · ${STAT[stat]}`))),
     el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
 }
 
@@ -223,123 +304,17 @@ function show(id, number) {
   if (!dialog.open) dialog.showModal();
 }
 
-// The claims that failed in some trusted decision, the least held first: each with its scenario and
-// its decisions per attempt; the rest as a count. None at all with a verdict: no panel.
-function failedClaims() {
-  const {failed, held, undecided} = DATA.claims;
-  if (!failed.length && !held) return null;
-  const total = failed.length + held + undecided;
-  const rest = [held && `${plural(held, "claim")} held in every attempt`, undecided && `${undecided} not decided`].filter(Boolean).join(" · ");
-  if (!failed.length) return el("section", {className: "chart", "aria-label": "Claims"}, el("h3", {}, "Claims"), el("p", {className: "caption"}, rest));
-  const rows = failed.map(f => {
-    const s = DATA.scenarios.find(item => item.id === f.scenario);
-    const open = el("button", {className: "open mono", type: "button", "aria-label": `Open ${s.id}`}, s.id);
-    open.addEventListener("click", () => show(s.id, 1));
-    return el("div", {className: "crow"}, el("span", {}, s.claims[f.claim].text),
-      el("span", {className: "from"}, open),
-      el("span", {className: "tally"}, squares(claimMarks(s.attempts, f.claim), "Decisions", null, n => show(s.id, n)), `${f.held} of ${f.judged}`));
-  });
-  return chart(`Failed · ${failed.length} of ${total}`, rows, rest && el("p", {className: "caption"}, rest), draw);
-}
-
-// The box plot: per scenario whiskers from its least to its largest value, a box from P10 to P90
-// and a line at the chosen statistic, which is written at the end and orders the rows; one value is
-// a single tick. Every number comes from the data.
-function boxes(title, order, field, unit, what, missing) {
-  const {keep} = filtered();
-  const views = order[stat].filter(keep).map(id => DATA.scenarios.find(s => s.id === id));
-  const a = axis(Math.max(0, ...views.map(s => s[field] ? s[field].max : 0))), at = v => a.top ? v / a.top * 100 : 0;
-  const rows = views.map(s => {
-    const name = el("span", {className: "rid mono", title: s.id}, s.id), d = s[field];
-    if (d == null) return el("div", {className: "rrow"}, name, el("span", {className: "muted"}, missing(s)), el("span"));
-    return el("div", {className: "rrow", "data-tip": `${s.id} · ${spreadWords(d, unit)} · ${plural(d.n, what)}`}, name,
-      el("span", {className: "track", "aria-hidden": "true"}, boxMarks(d, at)),
-      el("span", {className: "n"}, unit(chosen(d))));
-  });
-  const lead = views.find(s => s[field]);
-  const section = chart(`${title} · ${STAT[stat]}`, rows, scaleLine(a, unit), draw);
-  section.classList.add("grid");
-  section.setAttribute("style", gridStyle(a));
-  return lede(section, lead && `${field === "seconds" ? "Slowest" : "Most"}: ${lead.id}, ${unit(chosen(lead[field]))} at ${STAT[stat]}`);
-}
-
-// Tokens by part, per scenario, the most first: each bar the chosen statistic of its tokens per
-// attempt, split by the shares of its parts.
-function parts() {
-  const {keep} = filtered();
-  const ids = new Set(DATA.by_parts);
-  const views = DATA.by_tokens[stat].filter(id => ids.has(id) && keep(id)).map(id => DATA.scenarios.find(s => s.id === id));
-  const a = axis(Math.max(0, ...views.map(s => chosen(s.tokens))));
-  const rows = views.map(s => el("div", {className: "rrow"},
-    el("span", {className: "rid mono", title: s.id}, s.id),
-    el("span", {className: "ptrack", role: "img", "aria-label": `${s.id}: ${count(chosen(s.tokens))} per attempt at ${STAT[stat]} · on average ${partText(s.parts)}`}, partBar(s.parts, chosen(s.tokens), a.top, false, `${s.id} · `)),
-    el("span", {className: "n"}, count(chosen(s.tokens)))));
-  const section = lede(chart(`Tokens per attempt by part · ${STAT[stat]}`, rows, [scaleLine(a, count), el("p", {className: "caption"}, "A bar's parts keep their shares of the scenario's mean.")], draw),
-    views.length > 0 && `Most per attempt: ${views[0].id}, ${count(chosen(views[0].tokens))} at ${STAT[stat]}`);
-  section.classList.add("grid");
-  section.setAttribute("style", gridStyle(a));
-  (section.querySelector(".lede") ?? section.querySelector("h3")).after(partLegend(views.map(s => s.parts)));  // the key above the bars, in their order
-  return section;
-}
-
-// The agent's calls by name: how many, their total time as a bar on a scale from 0 to the largest
-// total, and the chosen statistic of the seconds and tokens per call. A name opens to its slowest
-// calls, each a way to the answer that made it.
-const PLACES = 5;
-const unfolded = new Set();  // the names opened; `every` keeps those showing all their calls
-function calls() {
-  if (!DATA.calls.length) return [];
-  const top = Math.max(...DATA.calls.map(c => c.total));
-  const rows = DATA.calls.flatMap(c => {
-    const open = unfolded.has(c.name);
-    const name = el("button", {className: "open cname", type: "button", "aria-expanded": String(open), title: c.name}, el("span", {className: "chev", "aria-hidden": "true"}), c.name);
-    const row = el("tr", {className: "row"},
-      el("td", {}, name),
-      el("td", {className: "n"}, String(c.calls)),
-      el("td", {}, el("span", {className: "tot"}, el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "fill", style: `width: max(3px, ${top ? c.total / top * 100 : 0}%)`})), el("span", {className: "n"}, secs(c.total)))),
-      el("td", {className: "n"}, secs(chosen(c.seconds))),
-      el("td", {className: "n"}, count(chosen(c.tokens))));
-    row.addEventListener("click", () => {
-      open ? unfolded.delete(c.name) : unfolded.add(c.name);
-      draw();
-      document.querySelector(`#calls .cname[title="${CSS.escape(c.name)}"]`).focus();  // the redrawn button keeps the focus
-    });
-    if (!open) return [row];
-    const key = `call ${c.name}`, all = every.has(key), shown = c.places.slice(0, all ? c.places.length : PLACES);
-    const more = c.places.length > PLACES && el("button", {className: "more", type: "button"}, all ? "Show fewer" : `Show all ${c.places.length}`);
-    if (more) more.addEventListener("click", () => { all ? every.delete(key) : every.add(key); draw(); });
-    return [row, el("tr", {className: "places"}, el("td", {colSpan: 5},
-      el("ol", {}, shown.map(p => {
-        const go = el("button", {className: "open", type: "button"}, `${p.scenario} · attempt ${p.attempt} · turn ${p.turn + 1}`);
-        go.addEventListener("click", () => { show(p.scenario, p.attempt); reveal(p.turn, p.step); });
-        return el("li", {}, go, el("span", {className: "muted"}, `${secs(p.seconds)}${p.tokens == null ? "" : ` · ${count(p.tokens)} tokens`}`));
-      })), more))];
-  });
-  const lead = DATA.calls[0];
-  return [el("div", {className: "tools"}, el("h2", {}, "The agent's calls")),
-    el("p", {className: "lede"}, `Most time: ${lead.name}, ${secs(lead.total)} over ${plural(lead.calls, "call")}`),
-    el("div", {className: "panel scroll"}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Call"), el("th", {className: "n"}, "Calls"), el("th", {}, "Total time"),
-        el("th", {className: "n"}, `Seconds per call · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per call · ${STAT[stat]}`))),
-      el("tbody", {}, rows))),
-    el("p", {className: "hint"}, "Open a call to see its slowest runs and go to the answer that made each one.")];
-}
-
 function draw() {
-  document.getElementById("tiles").replaceChildren(...tiles());
-  document.getElementById("outcomes").replaceChildren(...[failedClaims()].filter(Boolean));
-  document.getElementById("spread").replaceChildren(
-    boxes("Time per answer by scenario", DATA.by_seconds, "seconds", secs, "answer", s => s.attempts.length ? "no answers" : "not played"),
-    boxes("Tokens per attempt by scenario", DATA.by_tokens, "tokens", count, "attempt", s => s.attempts.length ? "not reported" : "not played"));
-  const byTurn = DATA.turns.length > 1;
-  document.getElementById("tokens").replaceChildren(...[
-    byTurn && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
-    DATA.by_parts.length > 0 && parts()].filter(Boolean));
-  document.getElementById("calls").replaceChildren(...calls());
+  const V = view();
+  document.getElementById("tiles").replaceChildren(tiles());
+  document.getElementById("precision").replaceChildren(...precision());
+  document.getElementById("charts").replaceChildren(results(),
+    categories("Tokens by category", V.spent, count, "The answer itself", "The answers report no tokens."),
+    categories("Time by category", V.time, secs, "Outside calls", "The answers report no calls: all their time is their own. Report the agent's steps to see where it goes."));
   document.getElementById("table").replaceChildren(table());
 }
 
-const chooser = statSwitch(draw);
+const chooser = statSwitch(draw, "").querySelector("[role=group]");
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("filter").addEventListener("input", draw);

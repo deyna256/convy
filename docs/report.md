@@ -6,14 +6,14 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-The page reads from the top down: the tiles first, then what failed (**Claims**, then
-**Scenarios**, the failing first), then where the time and tokens go, then the agent's calls.
+The page reads from the top down: five tiles, the **Precision** panel, three charts, then the
+**Scenarios**, the failing first.
 
-Five tiles sum up the run in a row, and a sixth, how the dialogues ended, takes the row under them; each a number and a small picture of it. From the agent's
-second run on, each tile also says how it changed since the agent's run just before, such as
-`▼ 44 pts vs 5e85`, coloured and greyed under noise as on a [comparison](#compare-two-runs);
-`same as 5e85` when nothing changed. When the models or convy changed since then, the header says
-so. The command at the foot of the page compares the two runs in full.
+From the agent's second run on, each tile also says how it changed since the agent's run just
+before, such as `▼ 44 pts vs 5e85`, coloured and greyed under noise as on a
+[comparison](#compare-two-runs); `same as 5e85` when nothing changed. When the models or convy
+changed since then, the header says so. The command at the foot of the page compares the two runs
+in full.
 
 - **Pass rate**: the share of counted attempts that passed, with the count
   (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
@@ -22,75 +22,60 @@ so. The command at the foot of the page compares the two runs in full.
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
   `--trust`, the tile says how many were not trusted (`· 4 not trusted`). A bar splits the
   attempts into passed, failed and without a verdict.
-- **Stable scenarios**: those whose `k` attempts were all played, counted and passed, with a
-  square per scenario coloured by its status.
+- **Flaky scenarios**: those with passed and failed counted attempts, with a square per scenario,
+  the flaky ones coloured.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models; only
   the kinds that happened are named.
-- **How the N dialogues ended**: a bar split by why each attempt stopped: the user finished, the
-  turns ran out, the agent failed, the agent's service stayed busy, or convy's model failed, each
-  with its count.
-- **Time per answer**: the statistic the switch shows of the answers' seconds, the spread drawn as a box plot draws it,
-  then P90, Max and Mean, and how many answers. Only the agent's own time counts, not the
-  simulated user's or the judge's.
-- **Tokens per attempt**: the same for in and out together, over the attempts that report them
-  (`12 of 18 report tokens`), then a bar of the mean tokens per attempt by part: read from the
-  cache, the new input (cache writes included), the output and the thinking, each with its number.
-  A part the agent does not report is not split out. Under it, the share of input read from the
-  cache: the sum of `cache_read` over the sum of input, both over the answers that report
-  `cache_read`.
+- **Time per answer**: the statistic the precision panel sets, over the answers it keeps. Only
+  the agent's own time counts, not the simulated user's or the judge's.
+- **Tokens per answer**: the same for an answer's input and output together, over the answers
+  that report them (`40 of 44 answers report tokens`).
 
-Under the tiles, **Claims** lists each claim that failed in some trusted decision, the
-least held first: its text, its scenario (a click opens it), a square per attempt and how often it
-held (`1 of 3`). The first ten show, **Show all N** shows the rest; a line under them counts the
-claims that held in every attempt and those not decided: no trusted verdict yet, or not played.
-
-## Percentiles and the switch
+## Precision
 
 Every time and token number is a spread: how many values, the least, the 10th, 50th and 90th
 percentiles, the most and the mean. **P50**, the median, is the value half the values are at or
 under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** the sum over the
-count. Percentiles are linear between the sorted values, as numpy's default. Nothing is left out
-as an outlier: a long whisker or a high Max shows it.
+count. Percentiles are linear between the sorted values, as numpy's default.
 
-Each page has one switch in its header, **Show P50 · P90 · Max · Mean**, P50 by default. It sets the
-one number per scenario, turn, call or run that the charts and tables show, and their titles say
-which (`Time per answer · P90`). On the run's page it also sets the large number of the time and
-token tiles and their change since the run before, the line in each box and the order of the box
-plots, and the length of the **Tokens by part** bars; a bar's parts keep their shares of the mean,
-since the parts of a P90 do not add up to it. The cache share is a share and does not change. The
-address keeps the switch (`#stat=p90`), so a link opens on it.
+The **Precision** panel sets two things that every time and token number on the page follows: the
+tiles, the charts by category and the table.
 
-Each chart has a line under its title that says what to see first, such as `Slowest: topic-change,
-4.3 s at P90`; its key, when it has one, sits above the bars in their order. Scales end on a round
-value, with a faint line at each tick. Pointing at a part of a bar fades the others and shows its
-number; pointing at a box shows its every number.
+- **Statistic**: **P50 · P90 · Max · Mean**, P50 by default: the one number per answer, scenario
+  or category shown.
+- **Outliers**: **Keep all**, the default, or **Leave out**: an answer whose time is more than 1.5
+  times the interquartile range past the quartiles, Tukey's fences, is left out of every time
+  number; one whose tokens are, of every token number. An answer left out of the time still
+  counts in the tokens, and back. With fewer than four answers nothing is left out.
 
-Under **Time and tokens by scenario**, a box plot per scenario shows how it spreads: **Time per answer** over its
-answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
-value, the box from P10 to P90, and a line marks the statistic the switch shows, which is written
-at the end; the tooltip gives every number and `n`, how many values. With few values the box reaches the whiskers; one value is a single tick.
-The largest comes first, the first ten (**Show all N** shows the rest). Each panel's scale
-runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
-other boxes; the numbers stay in the text and in each row's tooltip.
+Beside them, a chart per number shows how the answers spread: a column per 1/24 of the range from
+0 to the largest value, as high as how many answers fall in it. Answers left out are hatched, past
+a dashed fence; a line marks where the chosen statistic falls. Point at a column for its range and
+count.
 
-**Tokens by turn** has a column per turn of the dialogues, from 1: a bar of input, split into what
-was read from the cache and the new input, and a bar of output, each the chosen statistic of that
-turn's answers. The input is split only when every answer of the turn that reports tokens reports
-its cache reads; otherwise it is whole. Above it, the share read from the cache (`74%`); under it,
-how many answers it holds, faded under three answers. The scale is written at the left; the
-tooltip gives each part's number and the turn's scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
-have tokens.
+The address keeps both (`#stat=p90&trim=out`), so a link opens on them. Other pages have the
+statistic switch alone, in their header.
 
-**Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
-from the cache, the new input (cache writes included), the output and the thinking. A part the
-agent does not report is not split out. It shows the mean whatever the switch says: the parts of a
-P90 do not add up to the P90.
+## Charts
 
-**The agent's calls**, when the answers give their [steps](agents.md#steps): per call name, how
-many calls, their total time, and the chosen statistic of the seconds and the tokens per call
-(`—` when not reported). The longest in total comes first. Open a name to see its slowest calls,
-five at first, each with its scenario, attempt and turn; click one to open that answer with the
-call unfolded.
+**Scenarios by pass rate** has a column per pass rate of a scenario's counted attempts, from 0%,
+as high as how many scenarios have it, coloured by their status; those without a verdict last.
+Point at a column for its scenarios.
+
+**Tokens by category** and **Time by category** show where the answers' tokens and time went, a
+bar per category as long as the chosen statistic per answer it has a number in, the most in total
+first. Under each name: in how many answers, how many calls, and its share of the whole.
+
+- For tokens, **The answer itself** is the answer's own usage, split into what was read from the
+  cache, the new input (cache writes included), the output and the thinking by their shares of the
+  mean. Each call name that reports tokens is its own category. convy does not know whether an
+  answer's usage holds its calls' tokens, so the shares may count them twice.
+- For time, each call name is a category; calls that ran together each count their own seconds.
+  **Outside calls** is the rest of the answer: its time past the span from its first call's start
+  to its last call's end, or all of it when it gives no [steps](agents.md#steps).
+
+Open a call to see its largest calls, five at first, each with its scenario, attempt and turn;
+click one to open that answer with the call unfolded.
 
 ## Scenarios
 
@@ -102,8 +87,8 @@ Each scenario gets a row and a status:
 - **No verdict**: no attempt was counted: none was played yet, or each had no verdict or a verdict
   not decided at the run's trust.
 
-The row also shows the chosen statistic of the time per answer, with its Max under it (its P50 when Max is chosen),
-and of the tokens per attempt, with in and out under it.
+The row also shows the chosen statistic of its time and of its tokens per answer, over the answers
+the precision panel keeps, each with its Max under it (its P50 when Max is chosen).
 **Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict or not trusted. Click one
 to open that attempt. A filter such as `refund-*` narrows the list.
 
