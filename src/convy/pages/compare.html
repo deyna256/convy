@@ -120,13 +120,16 @@ const share = p => p.cached == null ? "not reported" : !(p.cached + p.input) ? "
 function partPairs() {
   const {keep} = filtered();
   const rows = DATA.by_parts.filter(keep).map(id => byId.get(id));
-  const top = Math.max(0, ...rows.flatMap(r => [r.before.tokens.mean, r.after.tokens.mean]));
-  const section = chart("Tokens per attempt by part · mean · before and after", rows.map(r => el("div", {className: "rrow", title: `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+  const a = axis(Math.max(0, ...rows.flatMap(r => [chosen(r.before.tokens), chosen(r.after.tokens)])));
+  const section = chart(`Tokens per attempt by part · ${STAT[stat]} · before and after`, rows.map(r => el("div", {className: "rrow"},
       el("span", {className: "rid mono", title: r.id}, r.id),
-      el("span", {className: "ptrack", "aria-hidden": "true"}, partBar(r.before.parts, r.before.tokens.mean, top, true), partBar(r.after.parts, r.after.tokens.mean, top, true)),
-      el("span", {className: "n"}, `${thousands(r.before.tokens.mean)} → ${thousands(r.after.tokens.mean)}`,
+      el("span", {className: "ptrack", role: "img", "aria-label": `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+        partBar(r.before.parts, chosen(r.before.tokens), a.top, true, `${r.id} · before · `), partBar(r.after.parts, chosen(r.after.tokens), a.top, true, `${r.id} · after · `)),
+      el("span", {className: "n"}, `${thousands(chosen(r.before.tokens))} → ${thousands(chosen(r.after.tokens))}`,
         (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before.parts)} → ${share(r.after.parts)}`)))),
-    [scaleLine(count(top)), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after.")], draw);
+    [scaleLine(a, count), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after; a bar's parts keep their shares of the mean.")], draw);
+  section.classList.add("grid");
+  section.setAttribute("style", gridStyle(a));
   section.querySelector("h3").after(partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])));  // the key above the bars
   return section;
 }

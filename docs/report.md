@@ -9,7 +9,7 @@ offline, with system, light and dark themes.
 The page reads from the top down: the tiles first, then what failed (**Claims**, then
 **Scenarios**, the failing first), then where the time and tokens go, then the agent's calls.
 
-Six tiles sum up the run, in two rows, each a number and a small picture of it. From the agent's
+Five tiles sum up the run in a row, and a sixth, how the dialogues ended, takes the row under them; each a number and a small picture of it. From the agent's
 second run on, each tile also says how it changed since the agent's run just before, such as
 `▼ 44 pts vs 5e85`, coloured and greyed under noise as on a [comparison](#compare-two-runs);
 `same as 5e85` when nothing changed. When the models or convy changed since then, the header says
@@ -29,7 +29,7 @@ so. The command at the foot of the page compares the two runs in full.
 - **How the N dialogues ended**: a bar split by why each attempt stopped: the user finished, the
   turns ran out, the agent failed, the agent's service stayed busy, or convy's model failed, each
   with its count.
-- **Time per answer**: the P50 of the answers' seconds, the spread drawn as a box plot draws it,
+- **Time per answer**: the statistic the switch shows of the answers' seconds, the spread drawn as a box plot draws it,
   then P90, Max and Mean, and how many answers. Only the agent's own time counts, not the
   simulated user's or the judge's.
 - **Tokens per attempt**: the same for in and out together, over the attempts that report them
@@ -54,18 +54,22 @@ as an outlier: a long whisker or a high Max shows it.
 
 Each page has one switch in its header, **Show P50 · P90 · Max · Mean**, P50 by default. It sets the
 one number per scenario, turn, call or run that the charts and tables show, and their titles say
-which (`Time per answer · P90`). The tiles and the box plot show the whole spread;
-**Tokens by part** the mean; the cache share is a share. The address keeps the switch
-(`#stat=p90`), so a link opens on it.
+which (`Time per answer · P90`). On the run's page it also sets the large number of the time and
+token tiles and their change since the run before, the line in each box and the order of the box
+plots, and the length of the **Tokens by part** bars; a bar's parts keep their shares of the mean,
+since the parts of a P90 do not add up to it. The cache share is a share and does not change. The
+address keeps the switch (`#stat=p90`), so a link opens on it.
 
 Each chart has a line under its title that says what to see first, such as `Slowest: topic-change,
-3.5 s at the median`; its key, when it has one, sits above the bars in their order.
+4.3 s at P90`; its key, when it has one, sits above the bars in their order. Scales end on a round
+value, with a faint line at each tick. Pointing at a part of a bar fades the others and shows its
+number; pointing at a box shows its every number.
 
 Under **Time and tokens by scenario**, a box plot per scenario shows how it spreads: **Time per answer** over its
 answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
-value, the box from P10 to P90, and a line marks the median; the median is written at the end,
-and the tooltip gives every number and `n`, how many values. With few values the box reaches the whiskers; one value is a single tick.
-The largest median comes first, the first ten (**Show all N** shows the rest). Each panel's scale
+value, the box from P10 to P90, and a line marks the statistic the switch shows, which is written
+at the end; the tooltip gives every number and `n`, how many values. With few values the box reaches the whiskers; one value is a single tick.
+The largest comes first, the first ten (**Show all N** shows the rest). Each panel's scale
 runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
 other boxes; the numbers stay in the text and in each row's tooltip.
 
@@ -73,8 +77,8 @@ other boxes; the numbers stay in the text and in each row's tooltip.
 was read from the cache and the new input, and a bar of output, each the chosen statistic of that
 turn's answers. The input is split only when every answer of the turn that reports tokens reports
 its cache reads; otherwise it is whole. Above it, the share read from the cache (`74%`); under it,
-how many answers it holds, faded under three answers. The dashed line marks the top of the scale,
-written by the title; the tooltip gives each turn's numbers and scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
+how many answers it holds, faded under three answers. The scale is written at the left; the
+tooltip gives each part's number and the turn's scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
 have tokens.
 
 **Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
