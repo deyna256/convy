@@ -2,7 +2,7 @@
 
 import math
 import re
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from importlib.resources import files
 from math import comb
 from pathlib import Path
@@ -474,17 +474,17 @@ class Answered(Struct, frozen=True):
 
 
 class Category(Struct, frozen=True):
-    """Where the answers' time or tokens went: the calls of one name, or the answer outside its
-    calls (time) and its own usage (tokens). Its numbers are per answer it has a number in."""
+    """Where the answers' time went: the calls of one name, or the answer's time no call covers.
+    Its seconds are per answer it has a number in."""
 
-    name: str | None  # None: the answer itself
+    name: str | None  # None: the time no call covers
     answers: int  # the answers kept that it has a number in
-    calls: int  # 0 for the answer itself
-    total: float  # its numbers together
+    calls: int  # 0 for the time no call covers
+    total: float  # its seconds together
     spread: Spread  # per answer it has a number in
-    parts: Parts | None  # the answer's own tokens by part, a mean per answer; None otherwise
-    places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest or largest first
+    places: tuple[CallPlace, ...]  # its calls in the answers kept, the slowest first
     average: float = 0.0  # its total over every answer kept: what it adds to an answer on average
+    tokens: float | None = None  # its calls' tokens over every answer kept; None: none reported
 
 
 class Measure(Struct, frozen=True):
@@ -507,8 +507,8 @@ class View(Struct, frozen=True):
     seconds: Measure
     tokens: Measure
     scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
-    time: tuple[Category, ...]  # the most in total first, then by name, the answer itself first
-    spent: tuple[Category, ...]
+    time: tuple[Category, ...]  # the most in total first, then by name, uncovered time first
+    parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
@@ -891,7 +891,7 @@ class Summary(Struct, frozen=True):
                 for view in scenarios
             ),
             self.time(kept),
-            self.spent(kept),
+            self.parts([a.turn for a in kept]),
             tuple(view.id for view in scenarios if view.id in out),
         )
 
@@ -912,13 +912,27 @@ class Summary(Struct, frozen=True):
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' time went: each call name's seconds per answer it ran in, calls that
-        ran together each with their own; and the answer's time while no call ran, all of it
-        without calls."""
+        ran together each with their own, and the tokens its calls report; and the answer's time
+        while no call ran, all of it without calls. The calls' tokens are apart from the answer's
+        own: convy does not know whether the answer's usage holds them."""
         own = [max(0.0, a.turn.seconds - self.busy(a.turn)) for a in answers]
-        categories = self.called(answers, lambda call: call.seconds, lambda p: -p.seconds)
+        categories = self.called(answers)
         if own:
             categories.append(self.category(None, own, []))
-        return self.ordered(categories, len(answers))
+        reported: dict[str, float] = {}
+        for a in answers:
+            for step in a.turn.steps:
+                match step:
+                    case CallView(name=name, tokens=int(tokens)):
+                        reported[name] = reported.get(name, 0.0) + tokens
+                    case _:
+                        pass
+        return tuple(
+            msgspec.structs.replace(c, tokens=reported[c.name] / len(answers))
+            if c.name in reported
+            else c
+            for c in self.ordered(categories, len(answers))
+        )
 
     def busy(self, turn: TurnView) -> float:
         """How long some call of an answer ran: its calls' times laid together, overlaps once."""
@@ -935,31 +949,15 @@ class Summary(Struct, frozen=True):
             end = max(end, stop)
         return total
 
-    def spent(self, answers: list[Answered]) -> tuple[Category, ...]:
-        """Where the answers' tokens went: their own usage, by part, and each call name's tokens
-        per answer whose calls of it report them. convy does not know whether an answer's usage
-        holds its calls' tokens."""
-        categories = self.called(answers, lambda call: call.tokens, lambda p: -(p.tokens or 0))
-        turns = [a.turn for a in answers if a.turn.tokens is not None]
-        if turns:
-            own = self.category(None, [turn.tokens or 0 for turn in turns], [])
-            categories.append(msgspec.structs.replace(own, parts=self.parts(turns)))
-        return self.ordered(categories, len(answers))
-
-    def called(
-        self,
-        answers: list[Answered],
-        number: Callable[[CallView], float | None],
-        order: Callable[[CallPlace], float],
-    ) -> list[Category]:
-        """A category per call name: its calls with the number, summed per answer."""
+    def called(self, answers: list[Answered]) -> list[Category]:
+        """A category per call name: its calls' seconds, summed per answer."""
         places: dict[str, list[CallPlace]] = {}
         per: dict[str, list[float]] = {}
         for a in answers:
             here: dict[str, float] = {}
             for step, made in enumerate(a.turn.steps):
                 match made:
-                    case CallView() if (value := number(made)) is not None:
+                    case CallView(seconds=value):
                         place = CallPlace(
                             a.scenario, a.attempt, a.number, step, made.seconds, made.tokens
                         )
@@ -970,16 +968,17 @@ class Summary(Struct, frozen=True):
             for name, value in here.items():
                 per.setdefault(name, []).append(value)
         return [
-            self.category(name, per[name], sorted(made, key=order)) for name, made in places.items()
+            self.category(name, per[name], sorted(made, key=lambda p: -p.seconds))
+            for name, made in places.items()
         ]
 
     def category(self, name: str | None, amounts: list[float], places: list[CallPlace]) -> Category:
         spread = self.spread(amounts)
         assert spread is not None  # a category has an answer
-        return Category(name, len(amounts), len(places), sum(amounts), spread, None, tuple(places))
+        return Category(name, len(amounts), len(places), sum(amounts), spread, tuple(places))
 
     def ordered(self, categories: list[Category], answers: int) -> tuple[Category, ...]:
-        """The most in total first, then by name, the answer itself before calls; each with its
+        """The most in total first, then by name, uncovered time before calls; each with its
         total over the `answers` kept."""
         return tuple(
             msgspec.structs.replace(c, average=c.total / answers)

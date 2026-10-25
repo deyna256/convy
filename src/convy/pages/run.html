@@ -9,18 +9,14 @@
 /*include base.css*/
 /*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
-.tiles.five { grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)); }
-@media (max-width: 1100px) { .tiles.five { grid-template-columns: repeat(4, minmax(0, 1fr)); } .tiles.five > :first-child { grid-column: 1 / -1; } }
-@media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .controls { justify-content: flex-start; } }
+/* the pass rate, with its line of scenarios, as tall as the four other tiles two by two beside it */
+.tiles.five { grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); }
+.tiles.five > .rates { grid-row: span 2; }
+@media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tiles.five > .rates { grid-row: auto; grid-column: 1 / -1; } .controls { justify-content: flex-start; } }
 .tile .s.bad { color: var(--fail); }
-.tiles.five .tile .v { font-size: clamp(44px, 4vw, 60px); line-height: 1.05; margin: 2px 0 4px; }
-/* every tile is a label, a number and a foot on rows the tiles share: the numbers line up, the feet
-   start together, and a short foot sits at the bottom beside the pass rate's line; on one row */
-@media (min-width: 1101px) {
-  .tiles.five { grid-auto-rows: auto auto 1fr; }
-  .tiles.five .tile { display: grid; grid-row: span 3; grid-template-rows: subgrid; gap: 3px; }
-  .tiles.five .tile:not(.rates) .foot { align-self: end; }
-}
+.tiles.five .tile .v { font-size: clamp(36px, 3.4vw, 48px); line-height: 1.05; margin: 2px 0 4px; }
+.tiles.five > .rates .v { font-size: clamp(48px, 5vw, 72px); }
+.tiles.five > .rates .foot { margin-top: auto; }
 .foot { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tiles.five .tile .v small { font-size: 18px; }
 .tiles.five .tile .s { font-size: 13px; }
@@ -40,24 +36,27 @@
 .rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
 .key.passing { background: var(--pass); } .key.failing { background: var(--fail); } .key.flaky { background: var(--flaky); } .key.none { background: var(--none); }
 #charts { grid-template-columns: minmax(0, 1fr); }
-.chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 10ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
 .chart .cat:hover { background: var(--side); }
 .chart .cat.own { cursor: default; }
 .chart .cat .cname { display: flex; flex-direction: column; min-width: 0; }
 .chart .cat .cname b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart .cat .cname small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chart .cat .n { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; }
+.chart .cat .n small { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); }
 .chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
 .chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: color-mix(in srgb, var(--muted) 75%, var(--surface)); }
+.chart .cat .fill.seg { flex: none; } .chart .cat .fill.cache { background: var(--cache); } .chart .cat .fill.input { background: var(--input); }
+.chart .cat .fill.output { background: var(--output); } .chart .cat .fill.thinking { background: var(--thinking); }
 .chart .cat[aria-expanded] .cname b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
 .chart .cat[aria-expanded="true"] .cname b::before { transform: rotate(45deg); }
 @media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
-.chart.cats .scale { grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 7ch; }
+.chart.cats .scale { grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 10ch; }
 .places { list-style: none; margin: 2px 0 8px 12px; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
 .places li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
 .places .open { color: var(--focus); font-size: 12.5px; }
 .places .open:hover { text-decoration: underline; }
-@media (max-width: 760px) { .chart .cat, .chart.cats .scale { grid-template-columns: minmax(0, 1fr) 7ch; } .chart .cat .cname { grid-column: 1 / -1; } .chart.cats .scale > span:first-child { display: none; } .places { margin-left: 0; } }
+@media (max-width: 760px) { .chart .cat, .chart.cats .scale { grid-template-columns: minmax(0, 1fr) 10ch; } .chart .cat .cname { grid-column: 1 / -1; } .chart.cats .scale > span:first-child { display: none; } .places { margin-left: 0; } }
 </style>
 <script>
 /*include base.js*/
@@ -131,7 +130,7 @@ function tiles() {
   const measured = (label, m, unit, note) => tile(label, unit(chosen(m.spread)), el("span", {className: "s"}, `mean of ${note}${cut}`));
   return el("div", {className: "tiles five"},
     el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
-      el("div", {className: "foot"}, el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), rates())),
+      el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
     tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
@@ -150,24 +149,24 @@ function rates() {
     el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
 }
 
-// Where the answers' tokens or time went, by category: the answer itself and each call name. A
+// Where the answers' time went, by category: the time no call covers and each call name. A
 // bar is what it adds to an answer on average, its total over every answer kept, so the bars rank
 // as their totals; a call opens to its largest calls, each a way to the answer that made it.
 const PLACES = 5;
 const unfolded = new Set();  // the categories opened, by "<title>:<name>"; `every` keeps those showing all
 function categories(title, list, unit, own, ownNote, empty) {
-  if (!list.length || (list.length === 1 && list[0].name == null && !list[0].parts)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
+  if (!list.length || (list.length === 1 && list[0].name == null)) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, empty));
   const a = axis(Math.max(0, ...list.map(c => c.average))), at = v => a.top ? v / a.top * 100 : 0;
   const all = list.reduce((sum, c) => sum + c.total, 0);
   const rows = list.flatMap(c => {
     const key = `${title}:${c.name}`, open = unfolded.has(key), v = c.average;
     const name = c.name ?? own;
     const row = el("div", {className: c.name == null ? "cat own" : "cat", role: c.name == null ? null : "button", tabIndex: c.name == null ? null : 0, "aria-expanded": c.name == null ? null : String(open),
-        "data-tip": `${name} · ${unit(v)} per answer on average, ${unit(c.total)} in all · in the ${plural(c.answers, "answer")} it is in: ${spreadWords(c.spread, unit)}`},
+        "data-tip": `${name} · ${unit(v)} per answer on average, ${unit(c.total)} in all${c.tokens != null ? ` · its calls report ${count(c.tokens)} tokens per answer on average` : ""} · in the ${plural(c.answers, "answer")} it is in: ${spreadWords(c.spread, unit)}`},
       el("span", {className: "cname"}, el("b", {className: c.name == null ? null : "mono", title: name}, name),
         el("small", {}, [`${pct(all ? c.total / all : null)} of all`, c.calls && plural(c.calls, "call"), `in ${plural(c.answers, "answer")}`].filter(Boolean).join(" · "))),
-      el("span", {className: "ptrack"}, c.parts ? partBar(c.parts, v, a.top, false, `${name} · `, "answer") : el("span", {className: "fill", style: `width: ${at(v)}%`})),
-      el("span", {className: "n"}, unit(v)));
+      el("span", {className: "ptrack"}, el("span", {className: "fill", style: `width: ${at(v)}%`})),
+      el("span", {className: "n"}, unit(v), c.tokens != null && el("small", {}, `${count(c.tokens)} tokens`)));
     if (c.name == null) return [row];
     const toggle = () => { open ? unfolded.delete(key) : unfolded.add(key); draw(); document.querySelector(`.cat[data-key="${CSS.escape(key)}"]`)?.focus(); };
     row.dataset.key = key;
@@ -185,9 +184,26 @@ function categories(title, list, unit, own, ownNote, empty) {
   });
   const lead = list[0];
   const section = lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · per answer on average`),
-    list.some(c => c.parts) && partLegend(list.filter(c => c.parts).map(c => c.parts)),
-    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), list.length > 1 && `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the ${title.startsWith("Time") ? "time" : "tokens"}`);
+    rows, scaleLine(a, unit), el("p", {className: "caption"}, `${own}: ${ownNote}.`)), list.length > 1 && `Most: ${lead.name ?? own}, ${pct(all ? lead.total / all : null)} of the time`);
   return section;
+}
+
+// The tokens per answer by part: a bar per part, from the cache, new input, output and thinking,
+// as long as its mean over the answers that report tokens; the parts add up to the answer's own
+// usage, the tokens it reported in all. A call's tokens are with its time, beside the calls.
+function byPart(parts) {
+  const title = "Tokens per answer by part";
+  if (!parts) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, "The answers report no tokens."));
+  const words = partWords(parts), shown = PARTS.filter(k => parts[k] != null);
+  const whole = shown.reduce((sum, k) => sum + parts[k], 0);
+  const a = axis(Math.max(0, ...shown.map(k => parts[k]))), at = v => a.top ? v / a.top * 100 : 0;
+  return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · on average`),
+    shown.map(k => el("div", {className: "cat own"},
+      el("span", {className: "cname"}, el("b", {}, words[k][0].toUpperCase() + words[k].slice(1)), el("small", {}, `${pct(whole ? parts[k] / whole : null)} of the answer's tokens`)),
+      el("span", {className: "ptrack"}, el("span", {className: `fill seg ${SEG[k]}`, style: `width: ${at(parts[k])}%`})),
+      el("span", {className: "n"}, count(parts[k])))),
+    scaleLine(a, count), el("p", {className: "caption"}, "The tokens the agent reported for an answer, split by part. The tokens of its calls are under Time by category, as convy does not know whether the answer's tokens hold them.")),
+    `${count(whole)} tokens per answer`);
 }
 
 const spreadWords = (d, unit) => `min ${unit(d.min)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · n ${d.n}`;
@@ -247,7 +263,7 @@ function draw() {
   document.getElementById("hint").textContent = (out ? `Cut ${CUTS[trim].toLowerCase()}: ${V.out.join(", ")}. ` : "") + compare;
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
-    categories("Tokens by category", V.spent, count, "The answer itself", "the tokens the agent reported for the answer, split by part", "The answers report no tokens."),
+    byPart(V.parts),
     categories("Time by category", V.time, secs, "Untracked time", "the part of an answer's time that no reported call covers: the agent's own code, waits, and any model work it does not report as a call", "The answers report no calls, so none of their time is tracked. Report the agent's steps to see where it goes."));
   document.getElementById("table").replaceChildren(table());
 }

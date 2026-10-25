@@ -1462,19 +1462,19 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
     assert [c.average for c in view.time] == [5 / 3, 4 / 3, 4 / 3, 0]
     gpt = view.time[1]
     assert gpt.places == (CallPlace("a", 1, 0, 2, 2, None), CallPlace("b", 1, 0, 0, 2, None))
-    # only search reports tokens: 7 and 11 per answer, the larger first; no answer reports its own
-    assert view.spent == (
-        Category(
-            "search",
-            2,
-            2,
-            18,
-            Spread(2, 7, 7.4, 9, 10.6, 11, 9),
-            None,
-            (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
-            18 / 3,
-        ),
+    # only search reports tokens, 7 and 11: 18 over three answers; no answer reports its own
+    assert [c.tokens for c in view.time] == [None, None, 6, None]
+    assert view.time[2] == Category(
+        "search",
+        2,
+        2,
+        4,
+        Spread(2, 1, 1.2, 2, 2.8, 3, 2),
+        (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
+        4 / 3,
+        6,
     )
+    assert view.parts is None
 
 
 def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_path):
@@ -1490,8 +1490,7 @@ def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_pa
         ("lookup", 0.5),
     ]
     assert [c.average for c in view.time] == [2, 1, 1, 0.5]  # one answer: its totals
-    (own,) = view.spent
-    assert (own.name, own.total, own.parts) == (None, 30, Parts(None, 10, 20, None))
+    assert view.parts == Parts(None, 10, 20, None)
 
 
 def test_a_cut_takes_out_every_scenario_with_an_answer_over_its_percentile(tmp_path):
@@ -1593,7 +1592,7 @@ def test_the_views_and_parts_reach_the_pages(tmp_path):
     assert set(run["views"]) == {"all", "p99", "p95", "p90"}
     assert run["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"]}]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
-    assert run["views"]["all"]["spent"][0]["parts"] == parts
+    assert run["views"]["all"]["parts"] == parts
     assert [turn["turn"] for turn in compared["turns"]] == [1]
     assert compared["by_parts"] == ["a"]
 

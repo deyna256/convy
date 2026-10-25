@@ -6,8 +6,8 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-The page reads from the top down: five tiles, where the tokens and the time go, then the
-**Scenarios**, the failing first.
+The page reads from the top down: five tiles, the pass rate beside the other four, the tokens by
+part and where the time goes, then the **Scenarios**, the failing first.
 
 Each tile has its label, its number and what the number counts. The run's page shows the run
 alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
@@ -35,7 +35,7 @@ at the foot of the page.
 One slow answer, a retry or a cold start, can move a mean a long way. **Cut outliers** in the
 page's header, beside the theme, cuts the long tail: **None**, the default, or every scenario with
 an answer over **P99**, **P95** or **P90** of the run's answers, by time or by tokens. Every time
-and token number on the page follows it: the tiles, the charts by category and the table, which
+and token number on the page follows it: the tiles, the charts and the table, which
 leaves the cut scenarios out and names them under it. The pass rate does not change.
 
 - The unit is the scenario, not the answer. A slow or large answer mostly comes from what the
@@ -56,17 +56,22 @@ The address keeps the cut (`#cut=p95`), so a link opens on it.
 
 ## Charts
 
-**Tokens by category** and **Time by category** show where the answers' tokens and time went, a
-bar per category as long as what it adds to an answer on average: its total over every answer
-kept, so the bars rank as their totals. Under each name: its share of the whole, how many calls,
-and in how many answers; point at a row for its spread over the answers it is in.
+**Tokens per answer by part** splits the tokens the agent reported for an answer: what was read
+from the cache, the new input (cache writes included), the output and the thinking, a bar each, as
+long as its mean over the answers kept that report tokens. The parts add up to the answer's tokens;
+a part the agent does not report stays in the whole: without cache reads, the new input is all the
+input.
 
-- For tokens, **The answer itself** is the tokens the agent reported for the answer, split into
-  what was read from the cache, the new input (cache writes included), the output and the thinking
-  by their shares of the mean. Each call name that reports tokens is its own category. convy does
-  not know whether an answer's usage holds its calls' tokens, so the shares may count them twice.
-- For time, each call name is a category; calls that ran together each count their own seconds.
-  **Untracked time** is the part of an answer's time that no reported call covers: the agent's own
+**Time by category** shows where the answers' time went, a bar per category as long as what it
+adds to an answer on average: its total over every answer kept, so the bars rank as their totals.
+Under each name: its share of the whole, how many calls, and in how many answers; point at a row
+for its spread over the answers it is in.
+
+- Each call name is a category; calls that ran together each count their own seconds. A call name
+  whose calls report tokens shows them under its time, per answer on average. They are apart from
+  the answer's tokens: convy does not know whether the answer's usage holds its calls' tokens, so
+  it never adds the two.
+- **Untracked time** is the part of an answer's time that no reported call covers: the agent's own
   code, waits, and any model work it does not report as a call. Calls that ran together cover
   their time once. Without [steps](agents.md#steps), all of an answer's time is untracked; report
   the model's calls as steps to see them apart.
