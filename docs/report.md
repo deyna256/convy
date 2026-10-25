@@ -13,8 +13,8 @@ Each tile has its label, its number and what the number counts. The run's page s
 alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
 at the foot of the page.
 
-- **Pass rate**: the share of counted attempts that passed, with the count
-  (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
+- **Pass rate**: the share of counted attempts that passed, and beside it how many of how many
+  (`67% 8 / 12`). An attempt counts when the agent failed (it did not pass), or when
   the judge's verdict is decided at the run's trust: every decision is trusted, or a trusted
   decision failed. A decision without a confidence is trusted. Attempts with no verdict — convy's
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
@@ -22,30 +22,31 @@ at the foot of the page.
   splits the scenarios by the share of their counted attempts that passed, from 0%, each part as
   long as how many scenarios have it, coloured by their status and with their count; those without
   a verdict last. Pointing at a part lights it up.
-- **Flaky scenarios**: those with passed and failed counted attempts, with a square per scenario,
-  the flaky ones coloured.
+- **Flaky scenarios**: how many have passed and failed counted attempts.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models, with
   their kinds (`1 agent failure · 2 model failures`), or `none failed`.
-- **Time per answer**: the mean over the answers kept, how many, and how many were cut. Only the
-  agent's own time counts, not the simulated user's or the judge's.
+- **Time per answer**: the mean over the answers kept, how many, and how many scenarios were cut.
+  Only the agent's own time counts, not the simulated user's or the judge's.
 - **Tokens per answer**: the same for an answer's input and output together, over the answers
   that report them (`mean of the 40 of 44 answers that report tokens`).
 
 ## Cutting outliers
 
 One slow answer, a retry or a cold start, can move a mean a long way. **Cut outliers** in the
-page's header, beside the theme, cuts the long tail: **None**, the default, or the answers over
-**P99**, **P95** or **P90** of their time, or of their tokens. Every time and token number on the
-page follows it: the tiles, the charts by category and the table.
+page's header, beside the theme, cuts the long tail: **None**, the default, or every scenario with
+an answer over **P99**, **P95** or **P90** of the run's answers, by time or by tokens. Every time
+and token number on the page follows it: the tiles, the charts by category and the table, which
+leaves the cut scenarios out and names them under it. The pass rate does not change.
 
+- The unit is the scenario, not the answer. A slow or large answer mostly comes from what the
+  scenario asks: more calls, a longer dialogue, an agent going round in circles. Cutting only that
+  answer would keep the scenario's other answers and still mix it into the numbers.
 - The cut is a percentile of the run's answers: P95 is the value 19 in 20 answers are at or
   under, linear between the sorted values as numpy's default. It cuts the slow and the large,
   never the fast or the small.
-- Time and tokens are cut apart: an answer cut from the time still counts in the tokens, and back.
-- A cut always takes its share, outlier or not: with P90, the slowest tenth goes even when the
-  answers are alike. One answer is never cut.
-- A scenario the cut takes every answer of, in time or in tokens, leaves the table, and the line
-  under it says how many left.
+- A cut takes more than its share: with P90 a tenth of the answers is over the line, and their
+  scenarios take all their other answers with them. In a small run P90 can leave few scenarios.
+  One answer is never cut.
 
 convy cuts by percentile rather than by Tukey's fences or the median absolute deviation: those
 assume the values spread evenly around the middle, and an answer's time and tokens have a long

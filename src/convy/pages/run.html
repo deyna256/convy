@@ -14,16 +14,20 @@
 @media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .controls { justify-content: flex-start; } }
 .tile .s.bad { color: var(--fail); }
 .tiles.five .tile .v { font-size: clamp(44px, 4vw, 60px); line-height: 1.05; margin: 2px 0 4px; }
-/* a short tile's number takes the room the pass rate's line leaves: label on top, note at the foot */
-.tiles.five .tile:not(.rates) .v { margin: auto 0; }
+/* every tile is a label, a number and a foot on rows the tiles share: the numbers line up, the feet
+   start together, and a short foot sits at the bottom beside the pass rate's line; on one row */
+@media (min-width: 1101px) {
+  .tiles.five { grid-auto-rows: auto auto 1fr; }
+  .tiles.five .tile { display: grid; grid-row: span 3; grid-template-rows: subgrid; gap: 3px; }
+  .tiles.five .tile:not(.rates) .foot { align-self: end; }
+}
+.foot { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .tiles.five .tile .v small { font-size: 18px; }
 .tiles.five .tile .s { font-size: 13px; }
 .meter { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; }
 .meter > span { min-width: 3px; border-radius: 2px; }
 .meter .passing { background: var(--pass); } .meter .failing { background: var(--fail); } .meter .none { background: var(--none-bg); }
-.pips { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 4px; }
-.pips span { width: 16px; height: 16px; border-radius: 4px; background: var(--none-bg); }
-.pips .flaky { background: var(--flaky); }
+.tiles.five .tile .v .frac { font-size: .6em; font-weight: 650; color: var(--muted); margin-left: 14px; letter-spacing: -.01em; }
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
 .rates .meter { height: 24px; margin: 4px 0 6px; }
@@ -76,10 +80,11 @@
 const DATA = __DATA__;
 const RUN = DATA.run, M = DATA.metrics;
 
-// The numbers are means of the answers kept: every answer, or those up to a percentile of their
-// time or tokens. The address keeps the cut as cut=p95; every answer is not written.
+// The numbers are means of the answers kept: every answer, or those of the scenarios none of whose
+// answers is over a percentile of time or tokens. The address keeps the cut as cut=p95; every
+// answer is not written.
 const CUTS = {all: "None", p99: "Over P99", p95: "Over P95", p90: "Over P90"};
-const MEANS = {all: "Every answer counts.", p99: "The slowest and largest 1% of the answers are cut.", p95: "The slowest and largest 5% of the answers are cut.", p90: "The slowest and largest 10% of the answers are cut."};
+const MEANS = {all: "Every scenario counts.", p99: "A scenario with an answer in the slowest or largest 1% is cut.", p95: "A scenario with an answer in the slowest or largest 5% is cut.", p90: "A scenario with an answer in the slowest or largest 10% is cut."};
 let trim = CUTS[readAddress().get("cut")] ? readAddress().get("cut") : "all";
 delete kept.stat;
 stat = "mean";
@@ -118,18 +123,16 @@ function header() {
 function tiles() {
   // Every tile alike: its label, its number, then what it counts; the numbers line up.
   const top = (label, value) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value)];
-  const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), rest);
+  const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), el("div", {className: "foot"}, rest));
   const open = M.attempts - M.judged;
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
-  const left = (m, unit) => m.out ? ` · ${m.out} cut over ${unit(m.over)}` : "";
-  const measured = (label, m, unit, note) => tile(label, unit(chosen(m.spread)), el("span", {className: "s"}, `mean of ${note}${left(m, unit)}`));
+  const cut = V.out.length ? ` · ${plural(V.out.length, "scenario")} cut` : "";
+  const measured = (label, m, unit, note) => tile(label, unit(chosen(m.spread)), el("span", {className: "s"}, `mean of ${note}${cut}`));
   return el("div", {className: "tiles five"},
-    el("div", {className: "tile rates"}, top("Pass rate", pct(M.rate)),
-      el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")} passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), rates()),
-    tile("Flaky scenarios", [String(M.flaky), el("small", {}, `of ${RUN.scenarios}`)],
-      el("div", {className: "pips", role: "img", "aria-label": `Flaky: ${DATA.scenarios.filter(v => v.result === "flaky").map(v => v.id).join(", ") || "none"}`},
-        DATA.scenarios.map(v => el("span", {className: v.result === "flaky" ? "flaky" : "", "data-tip": `${v.id}: ${SCENARIO[v.result]}`}))),
+    el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
+      el("div", {className: "foot"}, el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${open ? ` · ${open} without a verdict` : ""}`), rates())),
+    tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
     measured("Time per answer", V.seconds, secs, plural(answers, "answer")),
@@ -192,7 +195,7 @@ const spreadWords = (d, unit) => `min ${unit(d.min)} · P50 ${unit(d.p50)} · P9
 function table() {
   const {mask, keep} = filtered();
   const V = view();
-  const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s, n]) => keep(s.id) && !n.out).map(([s, n]) => {
+  const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s]) => keep(s.id) && !V.out.includes(s.id)).map(([s, n]) => {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
     const under = (d, unit) => d == null ? "" : `max ${unit(d.max)}`;
     const row = el("tr", {className: "row"},
@@ -239,9 +242,9 @@ function show(id, number) {
 }
 
 function draw() {
-  const V = view(), out = V.scenarios.filter(n => n.out).length;
-  // A scenario whose answers the cut took leaves the table; the line under it says how many.
-  document.getElementById("hint").textContent = (out ? `${plural(out, "scenario")} left out: the cut took every answer. ` : "") + compare;
+  const V = view(), out = V.out.length;
+  // A scenario the cut takes leaves the table too; the line under it says which.
+  document.getElementById("hint").textContent = (out ? `Cut ${CUTS[trim].toLowerCase()}: ${V.out.join(", ")}. ` : "") + compare;
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
     categories("Tokens by category", V.spent, count, "The answer itself", "the tokens the agent reported for the answer, split by part", "The answers report no tokens."),

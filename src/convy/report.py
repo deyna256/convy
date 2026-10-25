@@ -491,15 +491,13 @@ class Measure(Struct, frozen=True):
     """One number per answer over the run, its time or its tokens, with or without outliers."""
 
     spread: Spread | None  # over the answers kept
-    answers: int  # the answers with the number
-    out: int  # of them cut as outliers
-    over: float | None  # the percentile an answer is cut over; None: keep all
+    answers: int  # the answers kept with the number
+    over: float | None  # the percentile a scenario's answer is cut over; None: keep all
 
 
 class ScenarioNumbers(Struct, frozen=True):
     seconds: Spread | None  # per answer kept
     tokens: Spread | None
-    out: bool  # the cut took every answer it has a time or tokens for: the table leaves it out
 
 
 class View(Struct, frozen=True):
@@ -511,6 +509,7 @@ class View(Struct, frozen=True):
     scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
     time: tuple[Category, ...]  # the most in total first, then by name, the answer itself first
     spent: tuple[Category, ...]
+    out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
 class Views(Struct, frozen=True):
@@ -863,52 +862,53 @@ class Summary(Struct, frozen=True):
         return Views(*(self.view(scenarios, trim) for trim in TRIMS))
 
     def view(self, scenarios: Sequence[ScenarioView], trim: Trim) -> View:
-        """The time and tokens of the answers of `scenarios`, the outliers of each left out when
-        `trim` says so: an answer left out of the time still counts in the tokens, and back."""
+        """The time and tokens of the answers of `scenarios`, the outliers left out when `trim`
+        says so. The unit is the scenario: one answer over the cut of its time or of its tokens
+        takes all of its scenario's answers out of every number, as an outlier is mostly a
+        scenario where the agent works longer, not a stray answer."""
         answers = [
             Answered(view.id, attempt.attempt, number, turn)
             for view in scenarios
             for attempt in view.attempts
             for number, turn in enumerate(attempt.turns)
         ]
-        timed, seconds = self.measure([a.turn.seconds for a in answers], trim)
-        counted, tokens = self.measure([a.turn.tokens for a in answers], trim)
-        marked = list(zip(answers, timed, counted, strict=True))
+        late = self.over([a.turn.seconds for a in answers], trim)
+        large = self.over([a.turn.tokens for a in answers], trim)
+        out = {
+            a.scenario
+            for a in answers
+            if self.beyond(a.turn.seconds, late) or self.beyond(a.turn.tokens, large)
+        }
+        kept = [a for a in answers if a.scenario not in out]
         return View(
-            seconds,
-            tokens,
+            self.measure([a.turn.seconds for a in kept], late),
+            self.measure([a.turn.tokens for a in kept], large),
             tuple(
-                self.numbers([m for m in marked if m[0].scenario == view.id]) for view in scenarios
+                ScenarioNumbers(
+                    self.spread(a.turn.seconds for a in kept if a.scenario == view.id),
+                    self.spread(a.turn.tokens for a in kept if a.scenario == view.id),
+                )
+                for view in scenarios
             ),
-            self.time([a for a, kept in zip(answers, timed, strict=True) if kept]),
-            self.spent([a for a, kept in zip(answers, counted, strict=True) if kept]),
+            self.time(kept),
+            self.spent(kept),
+            tuple(view.id for view in scenarios if view.id in out),
         )
 
-    def numbers(self, answers: list[tuple[Answered, bool, bool]]) -> ScenarioNumbers:
-        """A scenario's time and tokens over its answers the cut keeps, each answer with whether
-        its time and its tokens are kept; it is out when the cut took all of either."""
-        seconds = self.spread(a.turn.seconds for a, timed, _ in answers if timed)
-        tokens = self.spread(a.turn.tokens for a, _, counted in answers if counted)
-        reported = any(a.turn.tokens is not None for a, _, _ in answers)
-        out = bool(answers) and (seconds is None or (reported and tokens is None))
-        return ScenarioNumbers(seconds, tokens, out)
-
-    def measure(self, values: list[float | None], trim: Trim) -> tuple[list[bool], Measure]:
-        """Which answers a number keeps, and how the number spreads over them. `trim` cuts the
-        answers over that percentile of the number, linear as in `spread()`, the long tail of
-        time or tokens; under two answers nothing is cut. An answer without the number is kept:
-        nothing of it counts."""
+    def over(self, values: list[float | None], trim: Trim) -> float | None:
+        """The percentile of the values `trim` cuts over, linear as in `spread()`, the long tail of
+        time or tokens; None for every answer, and under two values, where nothing is cut."""
         known = [value for value in values if value is not None]
-        over = None
-        if trim != "all" and len(known) > 1:
-            over = quantiles(known, n=100, method="inclusive")[int(trim[1:]) - 1]
-        kept = [value is None or over is None or value <= over for value in values]
-        return kept, Measure(
-            spread=self.spread(v for v, keep in zip(values, kept, strict=True) if keep),
-            answers=len(known),
-            out=len(values) - sum(kept),
-            over=over,
-        )
+        if trim == "all" or len(known) < 2:
+            return None
+        return quantiles(known, n=100, method="inclusive")[int(trim[1:]) - 1]
+
+    def beyond(self, value: float | None, over: float | None) -> bool:
+        return value is not None and over is not None and value > over
+
+    def measure(self, values: list[float | None], over: float | None) -> Measure:
+        known = [value for value in values if value is not None]
+        return Measure(self.spread(known), len(known), over)
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' time went: each call name's seconds per answer it ran in, calls that

@@ -40,6 +40,7 @@ from convy.report import (
     Report,
     Run,
     Runs,
+    ScenarioNumbers,
     Share,
     Spread,
     Stat,
@@ -1493,39 +1494,41 @@ def test_no_call_running_is_the_answers_time_past_its_calls_laid_together(tmp_pa
     assert (own.name, own.total, own.parts) == (None, 30, Parts(None, 10, 20, None))
 
 
-def test_a_cut_drops_the_answers_over_its_percentile_from_time_and_tokens_apart(tmp_path):
+def test_a_cut_takes_out_every_scenario_with_an_answer_over_its_percentile(tmp_path):
     played = (
         answers("a", *(float(n) for n in range(1, 11)), tokens=10),
         talk("b", *(Usage(n, 0) for n in range(1, 11))),
-    )
-    journal(tmp_path, "bot", "1", 2, *played)
-    views = Report(only(tmp_path)).page().views
-    assert (views.all.seconds.out, views.all.seconds.over) == (0, None)
-    assert views.all.seconds.spread is not None and views.all.seconds.spread.max == 10
-    # a's answers take 1..10 s, b's 1 s each: p90 at 17.1, 0.1 of the way from 8 to 9, 8.1
-    assert (views.p90.seconds.out, views.p90.seconds.over) == (2, 8.1)
-    assert views.p90.seconds.spread is not None and views.p90.seconds.spread.max == 8
-    # a keeps 1..8 s: p10 at 0.7, 1.7; p50 at 3.5, 4.5; p90 at 6.3, 7.3
-    assert views.p90.scenarios[0].seconds == Spread(8, 1, 1.7, 4.5, 7.3, 8, 4.5)
-    # tokens: a's ten answers 20, b's 1..10; p90 at 17.1, 0.1 of the way from 20 to 20
-    assert (views.p90.tokens.out, views.p90.tokens.over) == (0, 20)
-
-
-def test_a_scenario_is_out_when_the_cut_takes_all_its_time_or_tokens(tmp_path):
-    played = (
-        answers("a", *[1.0] * 10),
-        answers("b", 100.0),  # its one answer is the slowest: cut over P90
-        talk("c", NoUsage()),  # no tokens to cut: kept by its time
+        answers("c", 1.0, tokens=10),
     )
     journal(tmp_path, "bot", "1", 3, *played)
     views = Report(only(tmp_path)).page().views
-    assert [n.out for n in views.all.scenarios] == [False, False, False]
-    assert [n.out for n in views.p90.scenarios] == [False, True, False]
+    assert (views.all.out, views.all.seconds.over, views.all.seconds.answers) == ((), None, 21)
+    # time: a's 1..10 s, b's and c's 1 s; p90 at 18.0 of 0..20: 8.0, so a's 9 and 10 s are over
+    # tokens: a's 20 each, b's 1..10, c's 20; p90 at 20, which nothing is over
+    assert (views.p90.seconds.over, views.p90.tokens.over) == (8.0, 20)
+    assert views.p90.out == ("a",)
+    # a leaves every number, its fast answers too
+    assert views.p90.seconds.answers == 11
+    assert views.p90.seconds.spread is not None and views.p90.seconds.spread.max == 1
+    assert views.p90.scenarios[0] == ScenarioNumbers(None, None)
+
+
+def test_a_scenario_is_cut_by_its_tokens_out_of_its_time_too(tmp_path):
+    played = (
+        answers("a", *[1.0] * 10),
+        answers("b", 1.0, tokens=1000),  # the largest answer, not a slow one
+        talk("c", NoUsage()),  # no tokens to cut
+    )
+    journal(tmp_path, "bot", "1", 3, *played)
+    views = Report(only(tmp_path)).page().views
+    assert views.p90.out == ("b",)
+    assert views.p90.seconds.answers == 11
+    assert all(category.answers == 11 for category in views.p90.time)
 
 
 def test_one_answer_is_never_cut(tmp_path):
     journal(tmp_path, "bot", "1", 1, answers("a", 50.0))
-    assert Report(only(tmp_path)).page().views.p90.seconds.out == 0
+    assert Report(only(tmp_path)).page().views.p90.out == ()
 
 
 def test_the_scenarios_are_grouped_by_pass_rate_without_a_verdict_last(tmp_path):
