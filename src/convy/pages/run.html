@@ -9,7 +9,6 @@
 /*include base.css*/
 /*include window.css*/
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
-#spread { --tail: 13ch; }
 #calls table { min-width: 620px; }
 #calls .cname { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
 #calls .chev { flex: none; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
@@ -27,8 +26,32 @@
 .crow:first-of-type { border-top: 0; padding-top: 0; }
 .crow .from { grid-column: 1; font-size: 12px; color: var(--muted); }
 .crow .tally { grid-row: 1 / 3; grid-column: 2; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-.ends { display: flex; gap: 2px; height: 22px; margin: 4px 0 8px; }
-.ends span { min-width: 4px; border-radius: 4px; display: grid; place-items: center; overflow: hidden; color: var(--on-status); font: 700 11.5px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.tiles.four { grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.tile .s.bad { color: var(--fail); }
+.meter { display: flex; gap: 2px; height: 8px; margin: 8px 0 4px; }
+.meter > span { min-width: 3px; border-radius: 2px; }
+.meter .passing { background: var(--pass); } .meter .failing { background: var(--fail); } .meter .none { background: var(--none-bg); }
+.pips { display: flex; flex-wrap: wrap; gap: 3px; margin: 8px 0 4px; }
+.pips span { width: 12px; height: 12px; border-radius: 3px; }
+.pips .passing { background: var(--pass); } .pips .failing { background: var(--fail); } .pips .flaky { background: var(--flaky); } .pips .none { background: var(--none-bg); }
+.endlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: var(--muted); }
+.endlist li { display: inline-flex; align-items: center; gap: 5px; }
+.endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.endlist .key { margin: 0; }
+.boxkey { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.boxkey .chart { padding: 0; background: none; width: 56px; }
+.boxkey .track { display: block; }
+.tile.range { gap: 6px; }
+.lrow { display: flex; justify-content: space-between; gap: 12px; }
+.big { display: flex; align-items: baseline; gap: 8px; }
+.big .k { font-size: 12px; font-weight: 650; color: var(--muted); }
+.tile.range .chart { padding: 0; background: none; }
+.tile.range .track { display: block; }
+.trio { display: flex; gap: 20px; margin: 0; font-size: 13px; }
+.trio div { display: flex; gap: 6px; }
+.trio dt { color: var(--muted); } .trio dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
+.comp { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.comp .meter { height: 12px; margin-top: 0; }
 .end.user_stop { background: var(--pass); } .end.max_turns { background: var(--flaky); } .end.agent_failure { background: var(--fail); }
 .end.agent_busy { background: var(--none); } .end.model_failure { background: transparent; border: 1.5px solid var(--none); }
 </style>
@@ -40,9 +63,10 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <div class="block"><div class="tools"><h2>Outcomes</h2></div>
-    <section id="outcomes" class="charts" aria-label="Claims that failed and how the dialogues ended"></section></div>
-  <div class="block"><div class="tools"><h2>Spread by scenario</h2></div>
+  <div class="block"><div class="tools"><h2>Claims</h2></div>
+    <section id="outcomes" class="charts" aria-label="Claims that failed"></section></div>
+  <div class="block"><div class="tools"><h2>Spread by scenario</h2>
+    <span class="boxkey" aria-hidden="true"><span class="chart"><span class="track"><span class="whisker" style="left:0;width:100%"></span><span class="box" style="left:25%;width:45%"></span><span class="median" style="left:45%"></span></span></span>min to max · p10 to p90 · median</span></div>
     <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section></div>
   <div class="block"><div class="tools" id="tokens-head"><h2>Tokens</h2></div>
     <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section></div>
@@ -70,21 +94,59 @@ function header() {
     themeButton());
 }
 
+// The tiles: each a number and a small picture of what it is made of, words only where a picture
+// cannot say it.
+const SHORT = {user_stop: "user finished", max_turns: "out of turns", agent_failure: "agent failed", agent_busy: "agent busy", model_failure: "convy's model failed"};
 function tiles() {
-  const tile = (label, value, detail, hero = false) => el("div", {className: hero ? "tile hero" : "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, detail));
-  const attempts = M.attempts;
-  const tokens = M.tokens == null ? ["not reported"] : [
-    M.reported === attempts ? plural(attempts, "attempt") : `${M.reported} of ${plural(attempts, "attempt")} report tokens`,
-    tokenParts(M), M.cached != null && `${pct(M.cached)} of the input from the cache`];
+  const tile = (label, value, ...rest) => el("div", {className: "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, value), rest);
+  const bar = parts => el("div", {className: "meter", "aria-hidden": "true"}, parts.filter(([, n]) => n > 0).map(([cls, n, title]) => el("span", {className: cls, style: `flex: ${n}`, title})));
+  const failed = M.judged - M.passed, open = M.attempts - M.judged;
+  const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
+  const total = DATA.ends.reduce((sum, [, n]) => sum + n, 0);
   return [
-    el("div", {className: "tiles"},
-      tile("Pass rate", pct(M.rate), `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`, true),
-      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)], RUN.k > 1 ? "passed every attempt" : "one attempt each"),
-      tile("Errors", String(M.errors), `agent ${M.agent_errors} · busy ${M.busy} · models ${M.model_errors}`)),
+    el("div", {className: "tiles four"},
+      tile("Pass rate", pct(M.rate),
+        bar([["passing", M.passed, `${M.passed} passed`], ["failing", failed, `${failed} failed`], ["none", open, `${open} without a verdict`]]),
+        el("span", {className: "s"}, `${M.passed} of ${plural(M.judged, "attempt")}${notTrusted(M.cut)}`)),
+      tile("Stable scenarios", [String(M.stable), el("small", {}, `of ${RUN.scenarios}`)],
+        el("div", {className: "pips", role: "img", "aria-label": DATA.scenarios.map(v => `${v.id}: ${SCENARIO[v.result]}`).join(", ")},
+          DATA.scenarios.map(v => el("span", {className: v.result, title: `${v.id}: ${SCENARIO[v.result]}`}))),
+        el("span", {className: "s"}, RUN.k > 1 ? "passed every attempt" : "one attempt each")),
+      tile("Errors", String(M.errors), el("span", {className: M.errors ? "s bad" : "s"}, errors || "none")),
+      total > 0 && el("div", {className: "tile"}, el("span", {className: "l"}, `How the ${plural(total, "dialogue")} ended`),
+        el("div", {className: "meter ends", "aria-hidden": "true"}, DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, title: `${STOPS[end]}: ${n}`}))),
+        el("ul", {className: "endlist"}, DATA.ends.map(([end, n]) => el("li", {}, el("i", {className: `key end ${end}`}), SHORT[end], el("b", {}, String(n))))))),
     el("div", {className: "tiles two"},
-      spreadTile("Time per answer", M.seconds, secs, [M.seconds ? plural(M.seconds.n, "answer") : "no answers"]),
-      spreadTile("Tokens per attempt", M.tokens, count, tokens)),
+      rangeTile("Time per answer", M.seconds, secs, M.seconds ? plural(M.seconds.n, "answer") : "no answers"),
+      rangeTile("Tokens per attempt", M.tokens, count, M.tokens == null ? "not reported" : M.reported === M.attempts ? plural(M.attempts, "attempt") : `${M.reported} of ${M.attempts} report tokens`,
+        M.parts && composition(M.parts))),
   ];
+}
+
+// A spread as a tile: its P50 large, its range drawn as the box plots below draw it, and the other
+// statistics small.
+function rangeTile(label, d, unit, note, extra = null) {
+  if (!d) return el("div", {className: "tile"}, el("span", {className: "l"}, label), el("span", {className: "v"}, "—"), el("span", {className: "s"}, note));
+  const at = v => d.max ? v / d.max * 100 : 0;
+  return el("div", {className: "tile range"},
+    el("div", {className: "lrow"}, el("span", {className: "l"}, label), el("span", {className: "s"}, note)),
+    el("div", {className: "big"}, el("span", {className: "v"}, unit(d.p50)), el("span", {className: "k"}, "P50")),
+    el("div", {className: "chart"}, el("span", {className: "track", "aria-hidden": "true", title: `min ${unit(d.min)} · p10 ${unit(d.p10)} · median ${unit(d.p50)} · p90 ${unit(d.p90)} · max ${unit(d.max)}`},
+      el("span", {className: "whisker", style: `left: ${at(d.min)}%; width: ${at(d.max) - at(d.min)}%`}),
+      el("span", {className: "box", style: `left: ${at(d.p10)}%; width: max(4px, ${at(d.p90) - at(d.p10)}%)`}),
+      el("span", {className: "median", style: `left: ${at(d.p50)}%`}))),
+    el("dl", {className: "trio"}, [["P90", d.p90], ["Max", d.max], ["Mean", d.mean]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, unit(v))))),
+    extra);
+}
+
+// The mean tokens per attempt as one bar of its parts, each part's number in the legend.
+function composition(p) {
+  const words = partWords(p);
+  const shown = PARTS.filter(k => p[k]);
+  return el("div", {className: "comp"},
+    el("div", {className: "meter", "aria-hidden": "true"}, shown.map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex: ${p[k]}`, title: `${count(p[k])} ${words[k]}`}))),
+    el("ul", {className: "endlist"}, shown.map(k => el("li", {}, el("i", {className: `key ${SEG[k]}`}), words[k], el("b", {}, count(p[k])))),
+      M.cached != null && el("li", {className: "muted"}, `${pct(M.cached)} of the input cached`)));
 }
 
 function table() {
@@ -150,19 +212,7 @@ function failedClaims() {
       el("span", {className: "from"}, open),
       el("span", {className: "tally"}, squares(claimMarks(s.attempts, f.claim), "Decisions", null, n => show(s.id, n)), `${f.held} of ${f.judged}`));
   });
-  return chart(`Claims that failed · ${failed.length} of ${total}`, rows, rest && el("p", {className: "caption"}, rest), draw);
-}
-
-// How the dialogues ended: a bar of each way, as long as how many ended so, and its words and count
-// under it; when all ended one way, only the words.
-function ends() {
-  const total = DATA.ends.reduce((sum, [, n]) => sum + n, 0);
-  if (!total) return null;
-  const title = `How the ${plural(total, "dialogue")} ended`;
-  if (DATA.ends.length === 1) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "caption"}, `Every one: ${STOPS[DATA.ends[0][0]]}`));
-  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
-    el("div", {className: "ends", "aria-hidden": "true"}, DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, title: `${STOPS[end]}: ${n}`}, n / total >= .08 ? String(n) : ""))),
-    el("div", {className: "legend"}, DATA.ends.map(([end, n]) => el("span", {}, el("i", {className: `key end ${end}`}), `${STOPS[end]} · ${n}`))));
+  return chart(`Failed · ${failed.length} of ${total}`, rows, rest && el("p", {className: "caption"}, rest), draw);
 }
 
 // The box plot: per scenario whiskers from its least to its largest value, a box from p10 to p90,
@@ -182,10 +232,9 @@ function boxes(title, order, field, unit, what, missing) {
       el("span", {className: "median", style: `left: ${at(d.p50)}%`})];
     return el("div", {className: "rrow", title: `${s.id}: min ${unit(d.min)} · p10 ${unit(d.p10)} · median ${unit(d.p50)} · p90 ${unit(d.p90)} · max ${unit(d.max)} · ${plural(d.n, what)}`}, name,
       el("span", {className: "track", "aria-hidden": "true"}, marks),
-      el("span", {className: "n"}, unit(d.p50), el("small", {className: "muted"}, ` · n ${d.n}`)));
+      el("span", {className: "n"}, unit(d.p50)));
   });
-  const scale = [scaleLine(unit(top)), el("p", {className: "caption"}, "whiskers: min to max · box: p10 to p90 · line: the median · n: values; with few values the box reaches the whiskers")];
-  return chart(title, rows, scale, draw);
+  return chart(title, rows, scaleLine(unit(top)), draw);
 }
 
 // Tokens by part, per scenario, the most first.
@@ -242,7 +291,7 @@ function calls() {
 }
 
 function draw() {
-  document.getElementById("outcomes").replaceChildren(...[failedClaims(), ends()].filter(Boolean));
+  document.getElementById("outcomes").replaceChildren(...[failedClaims()].filter(Boolean));
   document.getElementById("spread").replaceChildren(
     boxes("Time per answer by scenario", DATA.by_seconds.p50, "seconds", secs, "answer", s => s.attempts.length ? "no answers" : "not played"),
     boxes("Tokens per attempt by scenario", DATA.by_tokens.p50, "tokens", count, "attempt", s => s.attempts.length ? "not reported" : "not played"));

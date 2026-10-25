@@ -4,6 +4,7 @@
   --cache: #5d85ce; --input: #3a4aa7; --output: #bc7c40; --thinking: #8d58b7;
   --pass: #1a6b43; --pass-bg: #e3f2ea; --fail: #b3261e; --fail-bg: #f8e3e1;
   --flaky: #8a5100; --flaky-bg: #f6ecd9; --none: #4a5464; --none-bg: #e2e7ee; --on-status: #ffffff;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Noto Sans", "Adwaita Sans", Cantarell, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
@@ -26,7 +27,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var(--sans); }
 .page { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
 .mono { font-family: var(--mono); }
 .muted { color: var(--muted); }
@@ -42,7 +43,7 @@ button { font: inherit; color: inherit; }
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
 
 /* status icon, badge */
-.si { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--on-status); font: 800 11px/1 system-ui, sans-serif; flex: none; }
+.si { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--on-status); font: 800 11px/1 var(--sans); flex: none; }
 .si.passing { background: var(--pass); } .si.failing { background: var(--fail); } .si.flaky { background: var(--flaky); } .si.none { background: var(--none); }
 .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; }
 .badge.passing { background: var(--pass-bg); color: var(--pass); } .badge.failing { background: var(--fail-bg); color: var(--fail); }
@@ -79,7 +80,7 @@ tbody tr.row:hover td { background: var(--side); }
 
 /* attempt squares */
 .squares { display: inline-flex; flex-wrap: wrap; gap: 3px; max-width: 207px; vertical-align: middle; }
-.sq { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font: 800 10px/1 system-ui, sans-serif; color: var(--on-status); }
+.sq { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font: 800 10px/1 var(--sans); color: var(--on-status); }
 .sq.passing { background: var(--pass); } .sq.failing { background: var(--fail); } .sq.none { background: var(--none); }
 .sq.go { cursor: pointer; } .sq.at { outline: 2px solid var(--ink); outline-offset: 1px; }
 
@@ -88,6 +89,7 @@ tbody tr.row:hover td { background: var(--side); }
 .chart { background: var(--surface); padding: 14px 16px; min-width: 0; }
 .chart .empty { padding: 12px 0; }
 .chart h3 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
+.chart h3 .top { float: right; font-weight: 400; font-size: 11.5px; }
 .chart .rrow, .chart .scale { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
 .chart .rrow { font-size: 13px; min-height: 26px; border-radius: 6px; }
 .chart .rrow[title]:hover { background: var(--side); }

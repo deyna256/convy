@@ -109,32 +109,33 @@ function dialogue(attempt) {
   ]);
 }
 function answerHead(t, toggle = null) {
-  return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"), toggle,
+  return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
     el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
     el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
-      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]));
+      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
 }
 // An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, the steps
-// are one node; they open unfolded. The button that unfolds or folds them hands its focus to the
-// one that replaces it.
+// are one node, and open so. The button that unfolds or folds them stays at the end of the answer's
+// head and hands its focus to the one that replaces it; the folded node unfolds them too.
 function timeline(t) {
   const box = el("div", {className: "bubble flow"});
   let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
   const draw = (open, focus) => {
-    const toggle = el("button", {className: "link", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
-    toggle.addEventListener("click", () => {
+    const flip = () => {
       if (open) calls = [...box.querySelectorAll("details")].map(d => d.open);
       draw(!open, true);
-    });
+    };
+    const toggle = el("button", {className: "link steps", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
+    toggle.addEventListener("click", flip);
     const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
     const steps = open ? t.steps.map((s, i) => s.type === "thought" ? thoughtNode(s) : callNode(s, i))
-      : [node("steps", el("div", {className: "card fold"}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary), toggle))];
-    box.replaceChildren(answerHead(t, open ? toggle : null),
+      : [node("steps", el("div", {className: "card fold", onclick: flip}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary)))];
+    box.replaceChildren(answerHead(t, toggle),
       el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
     box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
     if (focus) toggle.focus();
   };
-  draw(true, false);
+  draw(false, false);
   return box;
 }
 const node = (type, card, step = null) => el("li", {className: `node ${type}`, "data-step": step}, el("span", {className: "dot"}, glyph(type)), card);
@@ -152,6 +153,8 @@ function callNode(c, step) {
 }
 // Opens one call of the window's dialogue, brings it into view and marks it for a moment.
 function reveal(turn, step) {
+  const folded = document.querySelector(`dialog [data-turn="${turn}"] .steps[aria-expanded="false"]`);
+  if (folded) folded.click();
   const call = document.querySelector(`dialog [data-turn="${turn}"] [data-step="${step}"]`);
   if (!call) return;
   call.querySelector("details").open = true;

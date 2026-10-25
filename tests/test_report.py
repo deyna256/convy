@@ -1444,7 +1444,8 @@ def test_a_scenario_splits_its_mean_tokens_per_attempt_into_the_parts_reported(
 ):
     played = (talk("a", *usages, attempt=n) for n, usages in enumerate(attempts, 1))
     journal(tmp_path, "bot", "1", 1, *played, k=len(attempts))
-    assert Report(only(tmp_path)).page().scenarios[0].parts == parts
+    page = Report(only(tmp_path)).page()
+    assert page.scenarios[0].parts == page.metrics.parts == parts  # one scenario: the run's own
 
 
 def test_the_parts_put_the_most_tokens_first_ties_by_id_and_leave_out_the_unreported(tmp_path):

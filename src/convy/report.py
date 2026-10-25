@@ -414,6 +414,7 @@ class Metrics(Struct, frozen=True):
     cache_read: float | None  # mean per attempt
     cache_write: float | None
     cached: float | None  # share of input read from the cache, over the turns that report it
+    parts: Parts | None  # mean tokens per attempt by part; None: no attempt reports tokens
     agent_errors: int
     busy: int  # attempts whose agent's service stayed busy
     model_errors: int
@@ -731,6 +732,7 @@ class Summary(Struct, frozen=True):
             cache_read=self.average(a.cache_read for a in attempts),
             cache_write=self.average(a.cache_write for a in attempts),
             cached=self.share(turn for attempt in attempts for turn in attempt.turns),
+            parts=self.parts(tuple(attempts)),
             agent_errors=agent_errors,
             busy=busy,
             model_errors=model_errors,

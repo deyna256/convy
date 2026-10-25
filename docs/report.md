@@ -6,33 +6,36 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-Five tiles sum up the run, in two rows:
+Six tiles sum up the run, in two rows, each a number and a small picture of it:
 
 - **Pass rate**: the share of counted attempts that passed, with the count
   (`67% · 8 of 12 attempts`). An attempt counts when the agent failed (it did not pass), or when
   the judge's verdict is decided at the run's trust: every decision is trusted, or a trusted
   decision failed. A decision without a confidence is trusted. Attempts with no verdict — convy's
   models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
-  `--trust`, the tile says how many were not trusted (`· 4 not trusted`).
-- **Stable scenarios**: those whose `k` attempts were all played, counted and passed.
-- **Time per answer**: P50, P90, Max and Mean of the answers' seconds, and how many answers. Only
-  the agent's own time counts, not the simulated user's or the judge's.
-- **Tokens per attempt**: P50, P90, Max and Mean of in and out together, over the attempts that
-  report them (`12 of 18 attempts report tokens`), then in and out with the parts it reports: how
-  many of the input it read from or wrote to the model's cache, and how many of the output went to
-  thinking. A part the agent does not report is left out; a 0 it reports is shown. Each part is the
-  mean, over the attempts that report it, of the sum of their answers'. The share of input read
-  from the cache is the sum of `cache_read` over the sum of input, both over the answers that
-  report `cache_read`.
-- **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models.
+  `--trust`, the tile says how many were not trusted (`· 4 not trusted`). A bar splits the
+  attempts into passed, failed and without a verdict.
+- **Stable scenarios**: those whose `k` attempts were all played, counted and passed, with a
+  square per scenario coloured by its status.
+- **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models; only
+  the kinds that happened are named.
+- **How the N dialogues ended**: a bar split by why each attempt stopped: the user finished, the
+  turns ran out, the agent failed, the agent's service stayed busy, or convy's model failed, each
+  with its count.
+- **Time per answer**: the P50 of the answers' seconds, the spread drawn as a box plot draws it,
+  then P90, Max and Mean, and how many answers. Only the agent's own time counts, not the
+  simulated user's or the judge's.
+- **Tokens per attempt**: the same for in and out together, over the attempts that report them
+  (`12 of 18 report tokens`), then a bar of the mean tokens per attempt by part: read from the
+  cache, the new input (cache writes included), the output and the thinking, each with its number.
+  A part the agent does not report is not split out. Under it, the share of input read from the
+  cache: the sum of `cache_read` over the sum of input, both over the answers that report
+  `cache_read`.
 
-Under the tiles, **Claims that failed** lists each claim that failed in some trusted decision, the
+Under the tiles, **Claims** lists each claim that failed in some trusted decision, the
 least held first: its text, its scenario (a click opens it), a square per attempt and how often it
 held (`1 of 3`). The first ten show, **Show all N** shows the rest; a line under them counts the
-claims that held in every attempt and those not decided: no trusted verdict yet, or not played. Beside it, **How the N
-dialogues ended** is a bar split by why each attempt stopped: the user finished, the turns ran out,
-the agent failed, the agent's service stayed busy, or convy's model failed, each with its count.
-When all ended one way, the panel says only that.
+claims that held in every attempt and those not decided: no trusted verdict yet, or not played.
 
 ## Percentiles and the switch
 
@@ -50,8 +53,8 @@ titles say which (`Time per answer · P90`). The tiles and the box plot show the
 
 Under the tiles, a box plot per scenario shows how it spreads: **Time per answer** over its
 answers, **Tokens per attempt** over its attempts. The whiskers run from the least to the largest
-value, the box from P10 to P90, and a line marks the median; the median and `n`, how many values,
-are written at the end. With few values the box reaches the whiskers; one value is a single tick.
+value, the box from P10 to P90, and a line marks the median; the median is written at the end,
+and the tooltip gives every number and `n`, how many values. With few values the box reaches the whiskers; one value is a single tick.
 The largest median comes first, the first ten (**Show all N** shows the rest). Each panel's scale
 runs from 0 to its largest value, written at its right end, so one very slow answer squashes the
 other boxes; the numbers stay in the text and in each row's tooltip.
@@ -61,7 +64,7 @@ was read from the cache and the new input, and a bar of output, each the chosen 
 turn's answers. The input is split only when every answer of the turn that reports tokens reports
 its cache reads; otherwise it is whole. Above it, the share read from the cache (`74%`); under it,
 how many answers it holds, faded under three answers. The dashed line marks the top of the scale,
-written under the chart; the tooltip gives each turn's numbers and scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
+written by the title; the tooltip gives each turn's numbers and scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
 have tokens.
 
 **Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
@@ -102,8 +105,9 @@ tokens are part of the input, and thinking part of the output, not added to them
 does not report is left out; a 0 it reports is shown.
 
 An answer that gives its [steps](agents.md#steps) shows them as a line that ends in the answer.
-The steps open unfolded; **Hide steps** folds them into one node, such as
-`2 thoughts · 4 calls · calls ran 2.1 s`, and **Show steps** unfolds them again. A thought shows its text. A call shows its bar on the line of the answer's calls,
+By default the steps are folded into one node, such as `2 thoughts · 4 calls · calls ran 2.1 s`;
+**Show steps** at the end of the answer's head, or a click on the node, unfolds them, and **Hide
+steps** in the same place folds them. A thought shows its text. A call shows its bar on the line of the answer's calls,
 from the first call's start to the last call's end: bars that overlap ran at the same time. It
 shows when it started (`from +0.6 s`), how long it took and its tokens; open it to see what it
 sent and received, JSON indented, or "not reported" and "empty".

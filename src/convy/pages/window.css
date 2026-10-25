@@ -76,8 +76,10 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .node.thought .said { white-space: pre-wrap; overflow-wrap: anywhere; }
 .node.answer .dot { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 60%, var(--rule)); }
 .node.answer .card { border-color: color-mix(in srgb, var(--ink) 25%, var(--rule)); }
-.card.fold { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-style: dashed; font-size: 13.5px; }
-.card.fold .link { margin-left: auto; }
+.card.fold { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-style: dashed; font-size: 13.5px; cursor: pointer; }
+.card.fold:hover { border-color: var(--focus); }
+.bhead .steps { min-width: 11ch; text-align: right; }
+.bhead .steps::after { content: " ▸"; } .bhead .steps[aria-expanded="true"]::after { content: " ▾"; }
 .node.call summary { display: grid; grid-template-columns: 4.5ch minmax(10ch, 1fr) minmax(48px, 120px) 28ch 14px; align-items: center; gap: 4px 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
 .node.call summary::-webkit-details-marker { display: none; }
 .node.call summary::after { content: "▸"; color: var(--muted); font-size: 11px; }
@@ -88,7 +90,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .node .m { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
 .io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 12px 12px; border-top: 1px solid var(--rule); }
 .io .box { margin: 0; height: 150px; overflow: auto; padding: 8px 10px; background: var(--side); border: 1px solid var(--rule); border-radius: 8px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px system-ui, sans-serif; }
+.io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px var(--sans); }
 @media (max-width: 600px) {
   .io { grid-template-columns: 1fr; }
   .node.call summary { grid-template-columns: 4.5ch minmax(0, 1fr) 14px; }

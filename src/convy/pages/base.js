@@ -152,11 +152,11 @@ function turnChart(title, turns, top) {
       el("span", {className: "tn"}, `Turn ${t.turn}`),
       el("span", {className: "sub"}, plural(t.answers, "answer")));
   });
-  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title, el("span", {className: "top"}, `dashed line ${count(top)}`)),
     el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "topline", "aria-hidden": "true"}), cols)),
     el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
       swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
-    el("p", {className: "caption"}, [`The dashed line: ${count(top)} tokens. `, split && "Above a turn: the share of its input read from the cache. ", "Later turns hold only the longer dialogues."]));
+    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache."));
 }
 const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
 
