@@ -32,7 +32,8 @@
 .fill.value { background: var(--muted); } .fill.cache { background: var(--cache); } .fill.stub { background: var(--rule); }
 .group th { white-space: normal; }
 .group td { white-space: nowrap; }
-.group td.setup { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; }
+.group td.setup { white-space: nowrap; }
+@media (max-width: 1100px) { .group td.setup { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; } }
 .group th, .group td { padding-left: 9px; padding-right: 9px; }
 td.changed { color: var(--focus); } td.changed::before { content: "● "; font-size: 9px; vertical-align: 2px; }
 .group tbody tr:last-child td { border-bottom: 0; }

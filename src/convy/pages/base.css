@@ -1,7 +1,7 @@
 :root {
   --page: #eef1f5; --surface: #ffffff; --side: #f4f6f9; --ink: #18212f; --muted: #4a5464;
   --rule: #d5dbe3; --user: #eef1f5; --focus: #2c4a74; --thought: #7a4fc4;
-  --cache: #28a0bd; --input: #3939c6; --output: #d26f2d; --thinking: #c639c6;
+  --cache: #5d85ce; --input: #3a4aa7; --output: #bc7c40; --thinking: #8d58b7;
   --pass: #1a6b43; --pass-bg: #e3f2ea; --fail: #b3261e; --fail-bg: #f8e3e1;
   --flaky: #8a5100; --flaky-bg: #f6ecd9; --none: #4a5464; --none-bg: #e2e7ee; --on-status: #ffffff;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -11,7 +11,7 @@
   :root:not([data-theme="light"]) {
     --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
     --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
-    --cache: #28a0bd; --input: #5757db; --output: #bd6428; --thinking: #a63fa6;
+    --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
     --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
     --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
     color-scheme: dark;
@@ -20,7 +20,7 @@
 :root[data-theme="dark"] {
   --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
   --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
-  --cache: #28a0bd; --input: #5757db; --output: #bd6428; --thinking: #a63fa6;
+  --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
   --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
   --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
   color-scheme: dark;
@@ -58,8 +58,10 @@ button { font: inherit; color: inherit; }
 .tile .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* table */
-.tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 22px 0 6px; }
-.tools h2 { font-size: 15px; margin: 0; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 32px 0 10px; }
+.tools h2 { font-size: 16px; font-weight: 650; margin: 0 auto 0 0; }
+.block:has(> .charts:empty) { display: none; }
+.block > .charts { margin-top: 0; }
 input[type=search] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; width: 220px; max-width: 100%; }
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
@@ -87,7 +89,8 @@ tbody tr.row:hover td { background: var(--side); }
 .chart .empty { padding: 12px 0; }
 .chart h3 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
 .chart .rrow, .chart .scale { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
-.chart .rrow { font-size: 13px; min-height: 24px; }
+.chart .rrow { font-size: 13px; min-height: 26px; border-radius: 6px; }
+.chart .rrow[title]:hover { background: var(--side); }
 .chart .rid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chart .rrow .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .chart .track { position: relative; height: 16px; }
@@ -134,19 +137,21 @@ tbody tr.row:hover td { background: var(--side); }
 
 /* tokens by turn and by part: parts apart by a 2px gap of the panel's surface */
 .charts:empty { display: none; }
-.turns { display: flex; align-items: flex-start; gap: 14px; width: max-content; padding: 2px 0 4px; }
-.turns .axis { display: flex; flex-direction: column; justify-content: space-between; margin-top: calc(3.3em + 3px); height: 120px; font-size: 11.5px; line-height: 1.2; text-align: right; color: var(--muted); min-width: 4ch; }
-.turn { display: grid; justify-items: center; gap: 3px; font-size: 11.5px; width: 11ch; }
-.turn .share { color: var(--muted); text-align: center; height: 3.3em; display: flex; align-items: flex-end; }
-.turn .bars { display: flex; align-items: flex-end; gap: 2px; height: 120px; }
-.turn .bar { width: 16px; display: flex; flex-direction: column; gap: 2px; }
-.turn .tn { font-weight: 600; }
-.turn .sub { text-align: center; max-width: 12ch; }
-.turn.few .sub { color: var(--muted); }
+.turns { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(76px, 1fr); min-width: max-content; padding: 4px 0 2px; }
+.turns .topline { position: absolute; left: 0; right: 0; top: calc(4px + 1.6em + 4px); border-top: 1px dashed var(--rule); font-size: 11px; line-height: 1; color: var(--muted); text-align: right; }
+.turn { display: grid; justify-items: center; gap: 4px; font-size: 12px; }
+.turn .share { height: 1.6em; display: flex; align-items: flex-end; font-weight: 650; font-variant-numeric: tabular-nums; }
+.turn .bars { display: flex; align-items: flex-end; justify-content: center; gap: 3px; width: 100%; height: 160px; border-bottom: 1px solid var(--muted); }
+.turn .bar { width: 24px; display: flex; flex-direction: column; gap: 2px; }
+.turn .bar > .seg:first-child { border-radius: 4px 4px 1px 1px; }
+.turn .tn { font-weight: 650; margin-top: 2px; }
+.turn .sub { color: var(--muted); text-align: center; }
+.turn.few .bars { opacity: .55; }
 .seg { flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 2px; }
 .seg.cache, .key.cache { background: var(--cache); } .seg.input, .key.input { background: var(--input); }
 .seg.output, .key.output { background: var(--output); } .seg.thinking, .key.thinking { background: var(--thinking); }
 .chart .ptrack { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 16px; }
-.pbar { display: flex; gap: 2px; height: 10px; min-width: 2px; }
-.pbar.thin { height: 5px; }
+.pbar { display: flex; gap: 2px; height: 12px; min-width: 2px; }
+.pbar.thin { height: 6px; }
+.pbar > .seg:last-child { border-radius: 2px 4px 4px 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

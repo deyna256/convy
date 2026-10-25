@@ -84,11 +84,11 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .node.call .card[open] > summary::after { content: "▾"; }
 .node.call .name { font: 650 14px/1.3 var(--mono); overflow-wrap: anywhere; }
 .node .track { position: relative; height: 10px; border-radius: 5px; background: var(--side); }
-.node .bar { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--muted); }
+.node .bar { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--focus); }
 .node .m { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
 .io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 12px 12px; border-top: 1px solid var(--rule); }
 .io .box { margin: 0; height: 150px; overflow: auto; padding: 8px 10px; background: var(--side); border: 1px solid var(--rule); border-radius: 8px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.io .box.none { display: grid; place-items: center; color: var(--muted); font: italic 13px system-ui, sans-serif; }
+.io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px system-ui, sans-serif; }
 @media (max-width: 600px) {
   .io { grid-template-columns: 1fr; }
   .node.call summary { grid-template-columns: 4.5ch minmax(0, 1fr) 14px; }
@@ -96,3 +96,5 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
   .node.call .track, .node.call .m { grid-column: 1 / -1; text-align: left; }
   .node.call .m { white-space: normal; }
 }
+.node.found .card { box-shadow: 0 0 0 2px var(--focus); transition: box-shadow .3s; }
+@media (prefers-reduced-motion: reduce) { .node.found .card { transition: none; } }

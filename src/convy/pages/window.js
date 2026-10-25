@@ -103,9 +103,9 @@ function judgeLines(attempt, run) {
   }));
 }
 function dialogue(attempt) {
-  return attempt.turns.flatMap(t => [
+  return attempt.turns.flatMap((t, i) => [
     el("div", {className: "msg user"}, el("span", {className: "who"}, "USER"), el("div", {className: "bubble"}, t.user)),
-    el("div", {className: "msg agent"}, t.steps.length ? timeline(t) : el("div", {className: "bubble"}, answerHead(t), markdown(t.agent))),
+    el("div", {className: "msg agent", "data-turn": i}, t.steps.length ? timeline(t) : el("div", {className: "bubble"}, answerHead(t), markdown(t.agent))),
   ]);
 }
 function answerHead(t, toggle = null) {
@@ -115,7 +115,8 @@ function answerHead(t, toggle = null) {
       : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]));
 }
 // An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, the steps
-// are one node; the button that unfolds or folds them hands its focus to the one that replaces it.
+// are one node; they open unfolded. The button that unfolds or folds them hands its focus to the
+// one that replaces it.
 function timeline(t) {
   const box = el("div", {className: "bubble flow"});
   let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
@@ -126,28 +127,37 @@ function timeline(t) {
       draw(!open, true);
     });
     const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
-    const steps = open ? t.steps.map(s => s.type === "thought" ? thoughtNode(s) : callNode(s))
+    const steps = open ? t.steps.map((s, i) => s.type === "thought" ? thoughtNode(s) : callNode(s, i))
       : [node("steps", el("div", {className: "card fold"}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary), toggle))];
     box.replaceChildren(answerHead(t, open ? toggle : null),
       el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
     box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
     if (focus) toggle.focus();
   };
-  draw(false, false);
+  draw(true, false);
   return box;
 }
-const node = (type, card) => el("li", {className: `node ${type}`}, el("span", {className: "dot"}, glyph(type)), card);
+const node = (type, card, step = null) => el("li", {className: `node ${type}`, "data-step": step}, el("span", {className: "dot"}, glyph(type)), card);
 const thoughtNode = s => node("thought", el("div", {className: "card"}, el("span", {className: "kind"}, "Thought"), el("div", {className: "said"}, s.text)));
 // A call: its bar on the line of the answer's calls, where it started and how long it took; opened,
 // what it sent and received.
-function callNode(c) {
+function callNode(c, step) {
   return node("call", el("details", {className: "card"},
     el("summary", {},
       el("span", {className: "kind"}, "Call"), el("span", {className: "name"}, c.name),
       el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: max(3px, ${c.width * 100}%)`})),
       el("span", {className: "m"}, el("span", {className: "muted"}, `from +${secs(c.start)} `), el("strong", {}, secs(c.seconds)), " · ",
         c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`)),
-    el("div", {className: "io"}, said("Sent", c.sent), said("Received", c.received))));
+    el("div", {className: "io"}, said("Sent", c.sent), said("Received", c.received))), step);
+}
+// Opens one call of the window's dialogue, brings it into view and marks it for a moment.
+function reveal(turn, step) {
+  const call = document.querySelector(`dialog [data-turn="${turn}"] [data-step="${step}"]`);
+  if (!call) return;
+  call.querySelector("details").open = true;
+  call.scrollIntoView({block: "center"});
+  call.classList.add("found");
+  setTimeout(() => call.classList.remove("found"), 1600);
 }
 // Text the agent reported, in a box that scrolls: JSON indented, "empty" and "not reported" as words.
 function said(label, text) {

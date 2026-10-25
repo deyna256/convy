@@ -28,6 +28,7 @@ from convy.dialog import (
 from convy.report import (
     NO_CHANGE,
     STATS,
+    CallPlace,
     CallStats,
     CallView,
     Claims,
@@ -1476,11 +1477,23 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
     )
     journal(tmp_path, "bot", "1", 2, *played)
     assert Report(only(tmp_path)).page().calls == (
-        CallStats("lookup", 1, 5, single(5), None),
-        CallStats("gpt", 2, 4, Spread(2, 2, 2, 2, 2, 2, 2), None),
+        CallStats("lookup", 1, 5, single(5), None, (CallPlace("b", 1, 0, 1, 5, None),)),
+        CallStats(
+            "gpt",
+            2,
+            4,
+            Spread(2, 2, 2, 2, 2, 2, 2),
+            None,
+            (CallPlace("a", 1, 0, 2, 2, None), CallPlace("b", 1, 0, 0, 2, None)),
+        ),
         # 1 and 3 s: p10 at 0.1, 1.2; p90 at 0.9, 2.8; 7 and 11 tokens: 7.4 and 10.6
         CallStats(
-            "search", 2, 4, Spread(2, 1, 1.2, 2, 2.8, 3, 2), Spread(2, 7, 7.4, 9, 10.6, 11, 9)
+            "search",
+            2,
+            4,
+            Spread(2, 1, 1.2, 2, 2.8, 3, 2),
+            Spread(2, 7, 7.4, 9, 10.6, 11, 9),
+            (CallPlace("a", 1, 1, 0, 3, 11), CallPlace("a", 1, 0, 1, 1, 7)),
         ),
     )
 

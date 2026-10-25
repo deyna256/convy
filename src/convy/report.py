@@ -437,6 +437,17 @@ class TurnPair(Struct, frozen=True):
     after: TurnStats | None
 
 
+class CallPlace(Struct, frozen=True):
+    """Where one call was made: its scenario, attempt, turn and step, the last two from 0."""
+
+    scenario: str
+    attempt: int
+    turn: int
+    step: int
+    seconds: float
+    tokens: int | None
+
+
 class CallStats(Struct, frozen=True):
     """The calls of one name over a run's answers."""
 
@@ -445,6 +456,7 @@ class CallStats(Struct, frozen=True):
     total: float  # their seconds together
     seconds: Spread  # per call
     tokens: Spread | None  # per call that reports them
+    places: tuple[CallPlace, ...]  # the slowest first, then in the scenarios' order
 
 
 class FailedClaim(Struct, frozen=True):
@@ -825,27 +837,27 @@ class Summary(Struct, frozen=True):
     def calls(self, scenarios: Iterable[ScenarioView]) -> tuple[CallStats, ...]:
         """Each name the agent's calls had, with how many, their seconds and tokens; the longest
         in total first, then by name."""
-        made: dict[str, list[CallView]] = {}
-        steps = (
-            step
-            for view in scenarios
-            for attempt in view.attempts
-            for turn in attempt.turns
-            for step in turn.steps
-        )
-        for step in steps:
-            match step:
-                case CallView(name=name):
-                    made.setdefault(name, []).append(step)
-                case ThoughtView():
-                    pass
+        made: dict[str, list[CallPlace]] = {}
+        for view in scenarios:
+            for attempt in view.attempts:
+                for turn, answer in enumerate(attempt.turns):
+                    for step, made_step in enumerate(answer.steps):
+                        match made_step:
+                            case CallView(name=name, seconds=seconds, tokens=tokens):
+                                place = CallPlace(
+                                    view.id, attempt.attempt, turn, step, seconds, tokens
+                                )
+                                made.setdefault(name, []).append(place)
+                            case ThoughtView():
+                                pass
         stats = []
         for name, calls in made.items():
             seconds = self.spread(call.seconds for call in calls)
             if seconds is not None:  # always: every name has a call
                 tokens = self.spread(call.tokens for call in calls)
                 total = sum(call.seconds for call in calls)
-                stats.append(CallStats(name, len(calls), total, seconds, tokens))
+                places = tuple(sorted(calls, key=lambda c: -c.seconds))
+                stats.append(CallStats(name, len(calls), total, seconds, tokens, places))
         return tuple(sorted(stats, key=lambda s: (-s.total, s.name)))
 
     def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:

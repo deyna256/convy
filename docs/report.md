@@ -59,9 +59,9 @@ other boxes; the numbers stay in the text and in each row's tooltip.
 **Tokens by turn** has a column per turn of the dialogues, from 1: a bar of input, split into what
 was read from the cache and the new input, and a bar of output, each the chosen statistic of that
 turn's answers. The input is split only when every answer of the turn that reports tokens reports
-its cache reads; otherwise it is whole and says `cache not reported`. Above it, the share read
-from the cache (`74% cached`); under it, how many answers and scenarios it holds, greyed under
-three answers. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
+its cache reads; otherwise it is whole. Above it, the share read from the cache (`74%`); under it,
+how many answers it holds, faded under three answers. The dashed line marks the top of the scale,
+written under the chart; the tooltip gives each turn's numbers and scenarios. Later turns hold only the longer dialogues. It is hidden when fewer than two turns
 have tokens.
 
 **Tokens by part** has a bar per scenario: its mean tokens per attempt split into what was read
@@ -71,7 +71,9 @@ P90 do not add up to the P90.
 
 **The agent's calls**, when the answers give their [steps](agents.md#steps): per call name, how
 many calls, their total time, and the chosen statistic of the seconds and the tokens per call
-(`—` when not reported). The longest in total comes first.
+(`—` when not reported). The longest in total comes first. Open a name to see its slowest calls,
+five at first, each with its scenario, attempt and turn; click one to open that answer with the
+call unfolded.
 
 ## Scenarios
 
@@ -100,8 +102,8 @@ tokens are part of the input, and thinking part of the output, not added to them
 does not report is left out; a 0 it reports is shown.
 
 An answer that gives its [steps](agents.md#steps) shows them as a line that ends in the answer.
-By default the steps are folded into one node, such as `2 thoughts · 4 calls · calls ran 2.1 s`; **Show steps**
-unfolds them. A thought shows its text. A call shows its bar on the line of the answer's calls,
+The steps open unfolded; **Hide steps** folds them into one node, such as
+`2 thoughts · 4 calls · calls ran 2.1 s`, and **Show steps** unfolds them again. A thought shows its text. A call shows its bar on the line of the answer's calls,
 from the first call's start to the last call's end: bars that overlap ran at the same time. It
 shows when it started (`from +0.6 s`), how long it took and its tokens; open it to see what it
 sent and received, JSON indented, or "not reported" and "empty".

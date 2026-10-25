@@ -41,9 +41,10 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="Before and after in numbers"></section>
-  <div id="switch"></div>
-  <section id="changes" class="charts changes" aria-label="Changes by scenario"></section>
-  <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section>
+  <div class="block"><div class="tools" id="switch"><h2>Changes by scenario</h2></div>
+    <section id="changes" class="charts changes" aria-label="Changes by scenario"></section></div>
+  <div class="block"><div class="tools"><h2>Tokens</h2></div>
+    <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section></div>
   <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
 </div>
@@ -228,7 +229,7 @@ function draw() {
 document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("tiles").replaceChildren(...tiles());
-document.getElementById("switch").replaceChildren(statSwitch(draw));
+document.getElementById("switch").append(statSwitch(draw));
 document.getElementById("filter").addEventListener("input", draw);
 draw();
 const opened = fromAddress();

@@ -144,19 +144,19 @@ function turnChart(title, turns, top) {
     const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
     const parts = cached == null ? [el("span", {className: "seg input"})]
       : [el("span", {className: "seg input", style: `flex-grow: ${input - cached}`}), el("span", {className: "seg cache", style: `flex-grow: ${cached}`})];
-    return el("div", {className: t.answers < 3 ? "turn few" : "turn", title: said},
-      el("span", {className: "share"}, cached == null ? "cache not reported" : `${pct(input ? cached / input : null)} cached`),
+    return el("div", {className: t.answers < 3 ? "turn few" : "turn", title: `${said} · ${plural(t.answers, "answer")} of ${plural(t.scenarios, "scenario")}`},
+      el("span", {className: "share"}, cached == null ? "" : pct(input ? cached / input : null)),
       el("div", {className: "bars", "aria-hidden": "true"},
         el("span", {className: "bar", style: `height: ${h(input)}`}, parts),
         el("span", {className: "bar", style: `height: ${h(output)}`}, el("span", {className: "seg output"}))),
       el("span", {className: "tn"}, `Turn ${t.turn}`),
-      el("span", {className: "sub"}, `${plural(t.answers, "answer")} · ${plural(t.scenarios, "scenario")}`));
+      el("span", {className: "sub"}, plural(t.answers, "answer")));
   });
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
-    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "axis"}, el("span", {}, count(top)), el("span", {}, "0")), cols)),
+    el("div", {className: "scroll"}, el("div", {className: "turns"}, el("span", {className: "topline", "aria-hidden": "true"}), cols)),
     el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
       swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
-    el("p", {className: "caption"}, "Later turns hold only the longer dialogues."));
+    el("p", {className: "caption"}, [`The dashed line: ${count(top)} tokens. `, split && "Above a turn: the share of its input read from the cache. ", "Later turns hold only the longer dialogues."]));
 }
 const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
 

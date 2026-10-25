@@ -11,7 +11,15 @@
 .hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
 #spread { --tail: 13ch; }
 #calls table { min-width: 620px; }
-#calls .cname { max-width: 28ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#calls .cname { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: 8px; }
+#calls .chev { flex: none; width: 6px; height: 6px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+#calls [aria-expanded="true"] .chev { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { #calls .chev { transition: none; } }
+#calls .places td { background: var(--side); padding: 6px 12px 12px 36px; cursor: default; }
+#calls .places ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+#calls .places li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; }
+#calls .places .open { color: var(--focus); font-size: 13px; padding: 3px 0; }
+#calls .places .open:hover { text-decoration: underline; }
 .tot { display: flex; align-items: center; gap: 8px; min-width: 180px; }
 .tot .track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--side); }
 .tot .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--muted); }
@@ -19,8 +27,8 @@
 .crow:first-of-type { border-top: 0; padding-top: 0; }
 .crow .from { grid-column: 1; font-size: 12px; color: var(--muted); }
 .crow .tally { grid-row: 1 / 3; grid-column: 2; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
-.ends { display: flex; gap: 2px; height: 14px; }
-.ends span { min-width: 3px; border-radius: 3px; }
+.ends { display: flex; gap: 2px; height: 22px; margin: 4px 0 8px; }
+.ends span { min-width: 4px; border-radius: 4px; display: grid; place-items: center; overflow: hidden; color: var(--on-status); font: 700 11.5px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
 .end.user_stop { background: var(--pass); } .end.max_turns { background: var(--flaky); } .end.agent_failure { background: var(--fail); }
 .end.agent_busy { background: var(--none); } .end.model_failure { background: transparent; border: 1.5px solid var(--none); }
 </style>
@@ -32,11 +40,14 @@
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
-  <section id="outcomes" class="charts" aria-label="Claims that failed and how the dialogues ended"></section>
-  <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section>
-  <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section>
+  <div class="block"><div class="tools"><h2>Outcomes</h2></div>
+    <section id="outcomes" class="charts" aria-label="Claims that failed and how the dialogues ended"></section></div>
+  <div class="block"><div class="tools"><h2>Spread by scenario</h2></div>
+    <section id="spread" class="charts" aria-label="Time and tokens by scenario"></section></div>
+  <div class="block"><div class="tools" id="tokens-head"><h2>Tokens</h2></div>
+    <section id="tokens" class="charts" aria-label="Tokens by turn and by part"></section></div>
   <section id="calls" aria-label="The agent's calls"></section>
-  <div class="tools" id="scenarios"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
   <p class="hint" id="hint"></p>
 </div>
@@ -150,7 +161,7 @@ function ends() {
   const title = `How the ${plural(total, "dialogue")} ended`;
   if (DATA.ends.length === 1) return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "caption"}, `Every one: ${STOPS[DATA.ends[0][0]]}`));
   return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
-    el("div", {className: "ends", "aria-hidden": "true"}, DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, title: `${STOPS[end]}: ${n}`}))),
+    el("div", {className: "ends", "aria-hidden": "true"}, DATA.ends.map(([end, n]) => el("span", {className: `end ${end}`, style: `flex: ${n}`, title: `${STOPS[end]}: ${n}`}, n / total >= .08 ? String(n) : ""))),
     el("div", {className: "legend"}, DATA.ends.map(([end, n]) => el("span", {}, el("i", {className: `key end ${end}`}), `${STOPS[end]} · ${n}`))));
 }
 
@@ -190,20 +201,44 @@ function parts() {
 }
 
 // The agent's calls by name: how many, their total time as a bar on a scale from 0 to the largest
-// total, and the chosen statistic of the seconds and tokens per call.
+// total, and the chosen statistic of the seconds and tokens per call. A name opens to its slowest
+// calls, each a way to the answer that made it.
+const PLACES = 5;
+const unfolded = new Set();  // the names opened; `every` keeps those showing all their calls
 function calls() {
   if (!DATA.calls.length) return [];
   const top = Math.max(...DATA.calls.map(c => c.total));
-  return [el("div", {className: "tools"}, el("h2", {}, "The agent's calls")),
+  const rows = DATA.calls.flatMap(c => {
+    const open = unfolded.has(c.name);
+    const name = el("button", {className: "open cname", type: "button", "aria-expanded": String(open), title: c.name}, el("span", {className: "chev", "aria-hidden": "true"}), c.name);
+    const row = el("tr", {className: "row"},
+      el("td", {}, name),
+      el("td", {className: "n"}, String(c.calls)),
+      el("td", {}, el("span", {className: "tot"}, el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "fill", style: `width: max(3px, ${top ? c.total / top * 100 : 0}%)`})), el("span", {className: "n"}, secs(c.total)))),
+      el("td", {className: "n"}, secs(chosen(c.seconds))),
+      el("td", {className: "n"}, count(chosen(c.tokens))));
+    row.addEventListener("click", () => {
+      open ? unfolded.delete(c.name) : unfolded.add(c.name);
+      draw();
+      document.querySelector(`#calls .cname[title="${CSS.escape(c.name)}"]`).focus();  // the redrawn button keeps the focus
+    });
+    if (!open) return [row];
+    const key = `call ${c.name}`, all = every.has(key), shown = c.places.slice(0, all ? c.places.length : PLACES);
+    const more = c.places.length > PLACES && el("button", {className: "more", type: "button"}, all ? "Show fewer" : `Show all ${c.places.length}`);
+    if (more) more.addEventListener("click", () => { all ? every.delete(key) : every.add(key); draw(); });
+    return [row, el("tr", {className: "places"}, el("td", {colSpan: 5},
+      el("ol", {}, shown.map(p => {
+        const go = el("button", {className: "open", type: "button"}, `${p.scenario} · attempt ${p.attempt} · turn ${p.turn + 1}`);
+        go.addEventListener("click", () => { show(p.scenario, p.attempt); reveal(p.turn, p.step); });
+        return el("li", {}, go, el("span", {className: "muted"}, `${secs(p.seconds)}${p.tokens == null ? "" : ` · ${count(p.tokens)} tokens`}`));
+      })), more))];
+  });
+  return [el("div", {className: "tools", id: "calls-head"}, el("h2", {}, "The agent's calls")),
     el("div", {className: "panel scroll"}, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Call"), el("th", {className: "n"}, "Calls"), el("th", {}, "Total time"),
         el("th", {className: "n"}, `Seconds per call · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per call · ${STAT[stat]}`))),
-      el("tbody", {}, DATA.calls.map(c => el("tr", {},
-        el("td", {}, el("div", {className: "cname mono", title: c.name}, c.name)),
-        el("td", {className: "n"}, String(c.calls)),
-        el("td", {}, el("span", {className: "tot"}, el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "fill", style: `width: max(3px, ${top ? c.total / top * 100 : 0}%)`})), el("span", {className: "n"}, secs(c.total)))),
-        el("td", {className: "n"}, secs(chosen(c.seconds))),
-        el("td", {className: "n"}, count(chosen(c.tokens))))))))];
+      el("tbody", {}, rows))),
+    el("p", {className: "hint"}, "Open a call to see its slowest runs and go to the answer that made each one.")];
 }
 
 function draw() {
@@ -216,9 +251,9 @@ function draw() {
     byTurn && turnChart(`Tokens by turn · ${STAT[stat]} per answer`, DATA.turns, turnTop(DATA.turns)),
     DATA.by_parts.length > 0 && parts()].filter(Boolean));
   document.getElementById("calls").replaceChildren(...calls());
-  // The switch sits just before the first panel that follows it.
+  // The switch sits in the head of the first section that follows it.
   const first = byTurn ? "tokens" : DATA.calls.length ? "calls" : "scenarios";
-  document.getElementById(first).before(chooser);
+  document.getElementById(`${first}-head`).append(chooser);
   document.getElementById("table").replaceChildren(table());
 }
 
