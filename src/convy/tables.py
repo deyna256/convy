@@ -26,7 +26,7 @@ from convy.dialog import (
     Verdict,
 )
 from convy.report import Run
-from convy.scenario import Outcome, Stop
+from convy.scenario import Outcome, Requirement, Stop
 
 type Tokens = tuple[int | None, int | None, int | None, int | None, int | None]
 
@@ -40,6 +40,7 @@ class RunRow(Struct, frozen=True, kw_only=True):
     k: int
     turn_timeout: float
     trust: float
+    claim_threshold: float
     convy: str
     started: datetime
     status: Literal["running", "finished", "interrupted"]
@@ -69,6 +70,7 @@ class ClaimRow(Struct, frozen=True, kw_only=True):
     scenario: str
     claim: int
     text: str
+    required: bool
 
 
 class AttemptRow(Struct, frozen=True, kw_only=True):
@@ -286,6 +288,7 @@ class Tables(Struct, frozen=True):
             k=spec.k,
             turn_timeout=spec.turn_timeout,
             trust=spec.trust,
+            claim_threshold=spec.claim_threshold,
             convy=spec.convy,
             started=spec.started,
             status=status,
@@ -303,8 +306,14 @@ class Tables(Struct, frozen=True):
             unreadable=run.unreadable,
         )
 
-    def claim(self, run: Run, scenario: str, number: int, claim: str) -> ClaimRow:
-        return ClaimRow(run=run.spec.id, scenario=scenario, claim=number, text=claim)
+    def claim(self, run: Run, scenario: str, number: int, claim: Requirement) -> ClaimRow:
+        return ClaimRow(
+            run=run.spec.id,
+            scenario=scenario,
+            claim=number,
+            text=claim.text,
+            required=claim.required,
+        )
 
     def attempt(self, run: Run, outcome: Outcome) -> AttemptRow:
         match outcome.verdict:

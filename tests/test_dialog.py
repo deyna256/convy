@@ -17,7 +17,6 @@ from convy.dialog import (
     SimulatedUser,
     Transcript,
     Turn,
-    Verdict,
 )
 from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
@@ -105,11 +104,6 @@ async def test_judge_finds_its_decisions_in_the_answer(answer: str, claims: tupl
     assert await ChatJudge(FakeModel(answer)).decide(TRANSCRIPT, ("greets",)) == claims
 
 
-def test_a_verdict_passes_only_when_every_claim_holds():
-    assert Verdict((Claim(True), Claim(True))).passed
-    assert not Verdict((Claim(True), Claim(False, Reason("no")))).passed
-
-
 async def test_simulated_user_with_an_empty_message_fails():
     with pytest.raises(ModelFailure, match="the simulated user gave an empty message"):
         await SimulatedUser(FakeModel("  \n"), "").next(TRANSCRIPT)
@@ -195,25 +189,23 @@ def sure(passed: bool, value: float | None = None) -> Claim:
 
 
 @pytest.mark.parametrize(
-    ("claims", "decided", "passed"),
+    ("claim", "held"),
     [
-        ((sure(True, 0.9), sure(True, 0.95)), True, True),
-        ((sure(True, 0.9), sure(False, 0.85)), True, False),
-        ((sure(True, 0.6), sure(False, 0.85)), True, False),
-        ((sure(True, 0.9), sure(False, 0.6)), False, False),
-        ((sure(True), sure(True, 0.8)), True, True),
+        (sure(True, 0.9), True),
+        (sure(True, 0.8), True),
+        (sure(True, 0.79), False),
+        (sure(False, 0.9), False),
+        (sure(False, 0.5), False),
+        (sure(True), True),
+        (sure(False), False),
     ],
 )
-def test_a_verdict_counts_when_a_trusted_claim_failed_or_every_claim_is_trusted(
-    claims: tuple[Claim, ...], decided: bool, passed: bool
-):
-    verdict = Verdict(claims)
-    assert verdict.decided(0.8) is decided
-    assert verdict.passed is passed
+def test_a_claim_holds_only_with_a_positive_decision_and_enough_confidence(claim, held):
+    assert claim.holds(0.8) is held
 
 
-def test_trust_0_trusts_every_decision():
-    assert Verdict((sure(True, 0.0), sure(False, 0.1))).decided(0)
+def test_trust_zero_accepts_even_zero_confidence():
+    assert sure(True, 0).holds(0)
 
 
 @pytest.mark.parametrize(

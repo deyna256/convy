@@ -359,7 +359,7 @@ def test_a_run_of_an_older_format_is_not_resumed(
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err == (
         f"error: {folder.relative_to(project)}: unsupported run format 6; "
-        "expected 7; start a new run\n"
+        "expected 8; start a new run\n"
     )
     assert recorded(folder) == before
     assert json.loads((folder / "run.json").read_text())["format"] == 6
@@ -434,15 +434,15 @@ models = Models(user=FakeModel("Hello!", "###STOP###"), judge=FakeJudge((unsure,
 """
 
 
-def test_trust_goes_into_the_run_and_cuts_unsure_decisions(project: Path, capsys):
+def test_trust_goes_into_the_run_and_fails_unsure_decisions(project: Path, capsys):
     (project / "models.py").write_text(UNSURE_MODELS)
     assert convy("run", "echo", "--scenarios", "clarify-*", "--trust", "0.8") == 0
     (folder,) = runs(project, "echo")
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     assert file.spec.trust == 0.8
     out = capsys.readouterr().out
-    assert "? clarify-backup #1" in out
-    assert out.count("not trusted") == 1
+    assert "✗ clarify-backup #1" in out
+    assert out.count("confidence below trust counts as failed") == 1
 
 
 def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
@@ -450,15 +450,20 @@ def test_a_trust_outside_0_to_1_exits_with_2(project: Path, capsys):
     assert "trust" in capsys.readouterr().err
 
 
-def test_resume_keeps_the_trust_of_the_run(project: Path, monkeypatch: pytest.MonkeyPatch, capsys):
+def test_resume_keeps_the_scoring_settings_of_the_run(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys
+):
     talkative = UNSURE_MODELS.replace('FakeModel("Hello!", "###STOP###")', 'FakeModel("Hello!")')
-    folder = started_run(project, monkeypatch, talkative, ("--trust", "0.8"))
+    folder = started_run(
+        project, monkeypatch, talkative, ("--trust", "0.8", "--claim-threshold", "0.5")
+    )
     before = recorded(folder)
     capsys.readouterr()
     assert convy("resume", folder.name) == 0
-    assert capsys.readouterr().out.count("not trusted") == 3 - before
+    assert capsys.readouterr().out.count("confidence below trust counts as failed") == 3 - before
     file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
     assert file.spec.trust == 0.8
+    assert file.spec.claim_threshold == 0.5
 
 
 def test_resume_plays_with_the_current_limits(
@@ -590,11 +595,11 @@ def test_a_run_exits_by_its_pass_rate_bar(
     assert line in capsys.readouterr().out
 
 
-def test_a_run_with_no_judged_attempt_is_below_the_bar(project: Path, capsys):
-    (project / "models.py").write_text(UNSURE_MODELS)  # every decision is cut by --trust 0.8
+def test_low_confidence_attempts_are_failures_below_the_bar(project: Path, capsys):
+    (project / "models.py").write_text(UNSURE_MODELS)  # every decision fails at --trust 0.8
     argv = ("run", "echo", "--scenarios", "clarify-*", "--trust", "0.8", "--fail-under", "0.5")
     assert convy(*argv) == 3
-    assert "echo: no attempt judged, below 50%\n" in capsys.readouterr().out
+    assert "echo: pass rate 0 of 1 (0.0%), below 50%\n" in capsys.readouterr().out
 
 
 def test_an_agent_error_wins_over_the_bar(project: Path):
@@ -687,6 +692,7 @@ def test_compare_lists_a_noisy_drop_without_failing_ci(project: Path, capsys):
     [
         (FAILING_MODELS, "changed-backup", ()),
         (UNSURE_MODELS, "clarify-backup", ("--trust", "0.8")),
+        (FAKE_MODELS, "clarify-backup", ("--claim-threshold", "0.5")),
     ],
 )
 def test_compare_refuses_a_ci_verdict_when_nothing_can_be_compared(
@@ -698,7 +704,8 @@ def test_compare_refuses_a_ci_verdict_when_nothing_can_be_compared(
     capsys.readouterr()
     assert convy("compare", before, after, "--fail-on-regression") == 3
     captured = capsys.readouterr()
-    assert "no scenario can be compared" in captured.out
+    reason = "different trust or claim threshold" if options else "no scenario can be compared"
+    assert reason in captured.out
     assert captured.err == ""
 
 
@@ -833,3 +840,47 @@ def test_export_that_cannot_write_its_files_says_so(project: Path, capsys):
     capsys.readouterr()
     assert convy("export", "results") == 2
     assert capsys.readouterr().err.startswith("error: ")  # the OS's own words differ by system
+
+
+@pytest.mark.parametrize("threshold", ["-0.1", "1.1", "nan", "inf", "-inf"])
+def test_an_invalid_claim_threshold_starts_no_run(project: Path, capsys, threshold):
+    assert convy("run", "echo", "--claim-threshold", threshold) == 2
+    assert "claim" in capsys.readouterr().err
+    assert not (project / "results" / "echo").exists()
+
+
+@pytest.mark.parametrize(
+    ("threshold", "required", "passed"),
+    [("0.5", False, True), ("0.51", False, False), ("0.5", True, False)],
+)
+def test_claim_threshold_and_required_flags_agree_in_progress_and_ci(
+    project: Path, capsys, threshold, required, passed
+):
+    (project / "models.py").write_text(
+        "from convy import Claim, Models\n"
+        "from convy.fakes import FakeJudge, FakeModel\n"
+        'models = Models(FakeModel("hi"), FakeJudge((Claim(True), Claim(False))))\n'
+    )
+    (project / "scenarios" / "scoring.yaml").write_text(
+        "id: scoring\nmax_turns: 1\nuser: Ask.\njudge:\n"
+        f"  - first\n  - claim: second\n    required: {str(required).lower()}\n"
+    )
+    assert convy(
+        "run",
+        "echo",
+        "--scenarios",
+        "scoring",
+        "--claim-threshold",
+        threshold,
+        "--fail-under",
+        "1",
+    ) == (0 if passed else 3)
+    output = capsys.readouterr().out
+    assert f"{'✓' if passed else '✗'} scoring #1" in output
+    assert "1/2 claims (50.0%)" in output
+    if required:
+        assert "required claims failed: 2" in output
+    (folder,) = runs(project, "echo")
+    file = msgspec.json.decode((folder / "run.json").read_bytes(), type=RunFile)
+    assert file.spec.claim_threshold == float(threshold)
+    assert file.spec.scenarios[0].claims[1].required is required

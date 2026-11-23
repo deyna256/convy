@@ -54,9 +54,9 @@
 <script>
 /*include base.js*/
 const claimMarks = (attempts, i) => attempts.map(a => {
-  const d = a.claims[i], shown = d.passed != null && d.trusted;
-  return {attempt: a.attempt, result: shown ? kind(d.passed) : "none",
-    word: d.passed == null ? "not decided" : !d.trusted ? "not trusted" : d.passed ? "held" : "failed"};
+  const d = a.claims[i];
+  return {attempt: a.attempt, result: kind(d.held),
+    word: d.passed == null ? "not decided" : !d.trusted ? "failed confidence check" : d.passed ? "held" : "failed"};
 });
 
 </script>
@@ -108,7 +108,7 @@ function header() {
     el("div", {},
       el("div", {className: "eyebrow"}, el("a", {href: "../../index.html"}, "CONVY"), ` / ${RUN.agent} / ${RUN.short}`),
       el("h1", {}, `Run ${when(RUN.started)}`),
-      el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, RUN.trust > 0 && `trust ${RUN.trust}`,
+      el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, `trust ${RUN.trust}`, `claim threshold ${RUN.claim_threshold}`,
         RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
     ),
     el("div", {className: "controls"}, cutSwitch(), themeButton()));
@@ -126,7 +126,7 @@ function tiles() {
   const measured = (label, m, unit, note) => tile(label, unit(m.spread?.mean), el("span", {className: "s"}, `mean of ${note}${cut}`));
   return el("div", {className: "tiles five"},
     el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
-      el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${M.open ? ` · ${M.open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
+      el("span", {className: "s"}, `attempts passed${M.open ? ` · ${M.open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
     tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
@@ -238,7 +238,7 @@ function show(id, number) {
       el("div", {className: "side"},
         el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, s.user),
         el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
-        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text),
+        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text, c.required && el("small", {className: "muted"}, " · required")),
           el("span", {className: "tally"}, squares(claimMarks(s.attempts, i), "Decisions", attempt && attempt.attempt, n => { show(id, n); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); }), claimTally(c)))))),
       el("div", {className: "main"},
         attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]

@@ -8,7 +8,8 @@ polars, or export the tables as files for any other tool.
 A `Run` holds everything a run did:
 
 - `spec`: what it played and with what — the agent and its `version`, the user's and the judge's
-  models, `k`, `trust`, the limits, the convy version, and a copy of every scenario with its claims;
+  models, `k`, `trust`, `claim_threshold`, the limits, the convy version, and a copy of every
+  scenario with its claims;
 - `status`: `Running`, `Finished` or `Interrupted`, with the time it ended;
 - `outcomes`: one per attempt, with its dialogue, each answer's time, tokens and steps, and the
   judge's decisions;
@@ -50,9 +51,9 @@ drop nothing. The keys come first:
 
 | table | keys | columns |
 |---|---|---|
-| `runs` | `run` | `agent`, `version`, `user_model`, `judge_model`, `k`, `turn_timeout`, `trust`, `convy`, `started`, `status` (`running`, `finished` or `interrupted`), `ended`, `agent_parallel`, `user_parallel`, `judge_parallel`, `agent_per_minute`, `user_per_minute`, `judge_per_minute`, `agent_file`, `models_file` (sha256), `format`, `path` (the run's folder inside `results/`, with `/`), `unreadable` |
+| `runs` | `run` | `agent`, `version`, `user_model`, `judge_model`, `k`, `turn_timeout`, `trust`, `claim_threshold`, `convy`, `started`, `status` (`running`, `finished` or `interrupted`), `ended`, `agent_parallel`, `user_parallel`, `judge_parallel`, `agent_per_minute`, `user_per_minute`, `judge_per_minute`, `agent_file`, `models_file` (sha256), `format`, `path` (the run's folder inside `results/`, with `/`), `unreadable` |
 | `scenarios` | `run`, `scenario` | `instructions`, `max_turns` |
-| `claims` | `run`, `scenario`, `claim` | `text` |
+| `claims` | `run`, `scenario`, `claim` | `text`, `required` |
 | `attempts` | `run`, `scenario`, `attempt` | `verdict` (`verdict`, `failed` or `no_verdict`), `error`, `stop` |
 | `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence` |
 | `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
@@ -81,12 +82,12 @@ random part of a run's id is:
 runs["short"] = runs["run"].str.rpartition("_")[2]
 ```
 
-And whether an attempt passed: every decision passed. This covers attempts with a verdict only;
-join it to `attempts` and take a `failed` attempt as not passed:
-
-```python
-passed = decisions.groupby(["run", "scenario", "attempt"])["passed"].all()
-```
+Whether an attempt passed is also computed. `decisions.passed` is the **raw judge decision**,
+not the effective result after confidence and required claims. Join decisions to the run's `trust`
+and `claim_threshold`, and to each claim's `required` flag; apply the
+[scoring rule](scenarios.md#passing-an-attempt). The [full example](#a-full-example) below does this
+and includes agent failures in the pass rate. Completion fractions and final attempt results are
+not stored as redundant columns.
 
 ## Export
 
@@ -135,19 +136,30 @@ runs = pd.DataFrame(tables.runs().records())
 attempts = pd.DataFrame(tables.attempts().records())
 decisions = pd.DataFrame(tables.decisions().records())
 
-# Counted and passed as the pass rate in report.md says.
-decisions = decisions.merge(runs[["run", "trust"]], on="run")
-decisions["trusted"] = decisions["confidence"].fillna(1.0) >= decisions["trust"]
-decisions["trusted_fail"] = decisions["trusted"] & ~decisions["passed"]
+claims = pd.DataFrame(tables.claims().records())
+
+# Raw decisions stay intact; derive effective claims and attempt results.
+decisions = decisions.merge(runs[["run", "trust", "claim_threshold"]], on="run")
+decisions = decisions.merge(
+    claims[["run", "scenario", "claim", "required"]], on=["run", "scenario", "claim"]
+)
+decisions["held"] = decisions["passed"] & (
+    decisions["confidence"].fillna(1.0) >= decisions["trust"]
+)
+decisions["required_failed"] = decisions["required"] & ~decisions["held"]
 keys = ["run", "scenario", "attempt"]
 verdicts = decisions.groupby(keys).agg(
-    passed=("passed", "all"), trusted=("trusted", "all"), trusted_fail=("trusted_fail", "any")
+    held=("held", "sum"),
+    total=("held", "size"),
+    required_failed=("required_failed", "any"),
+    threshold=("claim_threshold", "first"),
 )
-verdicts["decided"] = verdicts["trusted"] | verdicts["trusted_fail"]
-attempts = attempts.join(verdicts, on=keys)
-failed = attempts["verdict"] == "failed"
-attempts["counted"] = failed | attempts["decided"].eq(True)
-attempts["passed"] = ~failed & attempts["passed"].eq(True)
+verdicts["passed"] = ~verdicts["required_failed"] & (
+    verdicts["held"] / verdicts["total"] >= verdicts["threshold"]
+)
+attempts = attempts.join(verdicts[["passed"]], on=keys)
+attempts["counted"] = attempts["verdict"].isin(["verdict", "failed"])
+attempts["passed"] = attempts["verdict"].eq("verdict") & attempts["passed"].eq(True)
 
 rate = attempts[attempts["counted"]].groupby("run")["passed"].mean().rename("rate")
 by_time = runs.join(rate, on="run").sort_values("started")

@@ -10,6 +10,7 @@ from typing import Any, get_args
 import msgspec
 import pytest
 
+from convy import Requirement
 from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
@@ -89,8 +90,9 @@ def journal(
     id: str = "",
     k: int = 1,
     asks: str = "Say hi.",
-    claims: tuple[str, ...] = ("greets",),
+    claims: tuple[Requirement, ...] = (Requirement("greets"),),
     trust: float = 0.0,
+    claim_threshold: float = 1.0,
     convy: str = CONVY,
     limits: Limits = DEFAULT_LIMITS,
 ) -> RunJournal:
@@ -109,6 +111,7 @@ def journal(
         scenarios=played,
         started=started,
         trust=trust,
+        claim_threshold=claim_threshold,
         convy=convy,
         limits=limits,
     )
@@ -119,7 +122,7 @@ def journal(
     return written
 
 
-@pytest.mark.parametrize("format", [1, 2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("format", [1, 2, 3, 4, 5, 6, 7, 9])
 def test_unsupported_runs_are_rejected_without_changing_their_files(tmp_path, format):
     written = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
     folder = written.folder()
@@ -508,7 +511,15 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
     decided = Verdict((Claim(True, Reason("said hi")), Claim(False, Reason("too long"))))
     held = Verdict((Claim(True), Claim(True)))
     played = (outcome("a", v, attempt=n) for n, v in enumerate((decided, held, Failed("down")), 1))
-    journal(tmp_path, "bot", "1", 1, *played, k=3, claims=("greets", "is brief"))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        *played,
+        k=3,
+        claims=(Requirement("greets"), Requirement("is brief")),
+    )
     (scenario,) = Report(only(tmp_path)).page().scenarios
     assert [(c.text, c.held, c.judged, c.result) for c in scenario.claims] == [
         ("greets", 2, 2, "passing"),
@@ -935,7 +946,7 @@ def test_no_runs_make_an_empty_index(tmp_path):
         ({"models": ("fake", "other")}, ("judge: fake → other",)),
         ({"convy": "0.1.0"}, (f"convy: {CONVY} → 0.1.0",)),
         ({"convy": ""}, (f"convy: {CONVY} → unknown",)),
-        ({"trust": 0.5}, ("trust: 0 → 0.5",)),
+        ({"trust": 0.5}, ("trust: 0.0 → 0.5",)),
         ({"k": 3}, ()),  # more attempts measure the same thing
         ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
     ],
@@ -1016,7 +1027,7 @@ def test_the_comparison_offers_the_statistics_of_a_spread_in_their_order(tmp_pat
     assert f"const STATS = {json.dumps(list(STATS))};" in html
 
 
-def test_attempts_below_trust_are_cut_out_and_counted(tmp_path):
+def test_attempts_below_trust_fail_and_are_counted(tmp_path):
     journal(
         tmp_path,
         "bot",
@@ -1030,21 +1041,21 @@ def test_attempts_below_trust_are_cut_out_and_counted(tmp_path):
         trust=0.8,
     )
     page = Report(only(tmp_path)).page()
-    assert (page.metrics.passed, page.metrics.judged, page.metrics.cut) == (1, 1, 3)
-    assert page.metrics.open == 0  # the cut attempts have a verdict, not trusted
+    assert (page.metrics.passed, page.metrics.judged) == (1, 4)
+    assert page.metrics.open == 0  # low confidence still gives a verdict
     assert page.run.trust == 0.8
     a, b = sorted(page.scenarios, key=lambda s: s.id)
-    assert (a.result, b.result) == ("passing", "none")
-    assert [(x.passed, x.cut) for x in a.attempts] == [(True, False), (None, True)]
-    assert [(c.held, c.judged, c.cut) for c in a.claims] == [(1, 1, 1)]
+    assert (a.result, b.result) == ("flaky", "failing")
+    assert [x.passed for x in a.attempts] == [True, False]
+    assert [(c.held, c.judged) for c in a.claims] == [(1, 2)]
     assert [(c.confidence, c.trusted) for c in a.attempts[1].claims] == [(0.5, False)]
-    assert page.metrics.stable == 0  # a cut attempt is not a pass
+    assert page.metrics.stable == 0  # a low-confidence attempt is not a pass
 
 
-def test_trust_0_cuts_nothing(tmp_path):
+def test_trust_zero_counts_even_low_confidence(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", unsure(False, 0.1)))
     page = Report(only(tmp_path)).page()
-    assert (page.metrics.passed, page.metrics.judged, page.metrics.cut) == (0, 1, 0)
+    assert (page.metrics.passed, page.metrics.judged) == (0, 1)
     assert page.scenarios[0].result == "failing"
 
 
@@ -1061,10 +1072,12 @@ def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.5)), started=at(6), trust=0.8)
     page = Comparison(*both(tmp_path)).page()
     assert (page.before.trust, page.after.trust) == (0, 0.8)
-    assert (page.was.judged, page.now.judged, page.now.cut) == (1, 0, 1)
-    assert page.differences == ()  # trust is not a warning
+    assert (page.was.judged, page.now.judged, page.now.passed) == (1, 1, 0)
+    assert page.quality_reason
+    assert page.deltas.rate == NO_CHANGE
+    assert page.deltas.stable == NO_CHANGE
     (group,) = Index(Runs(tmp_path)).page().agents
-    assert [(row.run.trust, row.cut) for row in group.rows] == [(0.8, 1), (0, 0)]
+    assert [(row.run.trust, row.judged) for row in group.rows] == [(0.8, 1), (0, 1)]
 
 
 def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
@@ -1471,3 +1484,133 @@ def test_the_scripts_of_every_page_parse(tmp_path):
         file.write_text(body, encoding="utf-8")
         done = subprocess.run(["node", "--check", str(file)], check=False, capture_output=True)
         assert done.returncode == 0, done.stderr.decode()
+
+
+@pytest.mark.parametrize("threshold", [0.5, 1])
+def test_attempt_details_keep_raw_decisions_and_explain_both_failure_causes(tmp_path, threshold):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", Verdict((Claim(True, Reason("said hi"), Confidence(0.5)), Claim(True)))),
+        claims=(Requirement("greets", True), Requirement("brief")),
+        trust=0.8,
+        claim_threshold=threshold,
+    )
+    page = Report(only(tmp_path)).page()
+    (scenario,) = page.scenarios
+    (attempt,) = scenario.attempts
+    assert not attempt.passed
+    assert attempt.completion is not None
+    assert (attempt.completion.held, attempt.completion.total, attempt.completion.fraction) == (
+        1,
+        2,
+        0.5,
+    )
+    assert "Required claims failed: 1." in attempt.completion.failures
+    assert len(attempt.completion.failures) == (2 if threshold == 1 else 1)
+    first, second = attempt.claims
+    assert (first.passed, first.held, first.required, first.trusted, first.reason) == (
+        True,
+        False,
+        True,
+        False,
+        "said hi",
+    )
+    assert (second.passed, second.held, second.required) == (True, True, False)
+    assert [(c.required, c.held, c.judged) for c in scenario.claims] == [
+        (True, 0, 1),
+        (False, 1, 1),
+    ]
+    assert (page.metrics.passed, page.metrics.judged) == (0, 1)
+    assert page.run.claim_threshold == threshold
+
+
+def test_threshold_zero_accepts_valid_verdicts_but_not_errors(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", FAILED),
+        outcome("a", Failed("agent down"), attempt=2),
+        outcome("a", NoVerdict("judge down"), attempt=3),
+        k=3,
+        claim_threshold=0,
+    )
+    page = Report(only(tmp_path)).page()
+    attempts = page.scenarios[0].attempts
+    assert [a.passed for a in attempts] == [True, False, None]
+    assert attempts[0].completion is not None
+    assert attempts[0].completion.fraction == 0
+    assert [a.completion for a in attempts[1:]] == [None, None]
+    assert (page.metrics.passed, page.metrics.judged, page.metrics.open) == (1, 2, 1)
+
+
+def test_different_thresholds_disable_quality_comparison_but_keep_resource_differences(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, tokens=10), started=at(5))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED, tokens=20),
+        started=at(6),
+        claim_threshold=0.5,
+    )
+    page = Comparison(*both(tmp_path)).page()
+    assert (page.before.claim_threshold, page.after.claim_threshold) == (1, 0.5)
+    assert page.quality_reason
+    assert (page.deltas.rate, page.deltas.stable) == (NO_CHANGE, NO_CHANGE)
+    (row,) = page.rows
+    assert row.group == "apart"
+    assert row.held == NO_CHANGE
+    assert row.claims == ()
+    assert row.tokens.mean.value == 100  # token use doubled
+    assert page.by_tokens.mean == ("a",)
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [r.run.claim_threshold for r in group.rows] == [0.5, 1]
+    assert "claim threshold: 1.0 → 0.5" in group.rows[0].changes
+
+
+def test_changing_only_a_required_flag_changes_the_scenario_for_comparison(tmp_path):
+    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        outcome("a", PASSED),
+        started=at(6),
+        claims=(Requirement("greets", True),),
+    )
+    (row,) = Comparison(*both(tmp_path)).page().rows
+    assert row.group == "apart"
+    assert row.held == NO_CHANGE
+
+
+@pytest.mark.parametrize("setting", ["trust", "claim_threshold"])
+def test_setup_changes_preserve_precision_that_can_change_acceptance(tmp_path, setting):
+    verdict = Verdict(
+        (Claim(True, confidence=Confidence(2 / 3)), Claim(True), Claim(setting == "trust"))
+    )
+    for hour, value in ((5, 0.6666666), (6, 0.6666667)):
+        journal(
+            tmp_path,
+            "bot",
+            "1",
+            1,
+            outcome("a", verdict),
+            started=at(hour),
+            claims=tuple(Requirement(str(i)) for i in range(3)),
+            trust=value if setting == "trust" else 0.0,
+            claim_threshold=value if setting == "claim_threshold" else 1.0,
+        )
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [row.rate for row in group.rows] == [0, 1]
+    expected = f"{setting.replace('_', ' ')}: 0.6666666 → 0.6666667"
+    assert group.rows[0].changes == (expected,)
+    page = Comparison(*both(tmp_path)).page()
+    assert expected in page.differences
+    assert page.quality_reason

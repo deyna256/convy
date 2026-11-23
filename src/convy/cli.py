@@ -35,33 +35,41 @@ from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
 from convy.report import Comparison, Run, Runs, Summary
-from convy.scenario import Matching, Outcome, Scenario
+from convy.scenario import Matching, Outcome, Requirement, Scenario
 from convy.tables import Tables
 
 SMOKE = Scenario(
     id="smoke",
     max_turns=2,
     instructions="Greet the assistant and ask what it can help with, then thank it.",
-    claims=("The agent answered the greeting",),
+    claims=(Requirement("The agent answered the greeting"),),
 )
 
 
 class Printed(Struct, frozen=True):
-    """A journal that also prints each outcome as it is recorded; one the judge was not sure
-    enough of, at the run's `trust`, is marked "not trusted"."""
+    """A journal that also prints each outcome using the run's scoring policy."""
 
     journal: Journal
-    trust: float
+    spec: RunSpec
 
     def record(self, outcome: Outcome) -> None:
         self.journal.record(outcome)
         note = ""
         match outcome.verdict:
-            case Verdict() as verdict if not verdict.decided(self.trust):
-                mark, note = "?", "  not trusted"
-            case Verdict(passed=True):
-                mark = "✓"
-            case Verdict() | Failed():
+            case Verdict() as verdict:
+                scenario = next(s for s in self.spec.scenarios if s.id == outcome.scenario)
+                score = scenario.score(verdict, self.spec.trust, self.spec.claim_threshold)
+                mark = "✓" if score.passed else "✗"
+                note = f"  {score.held}/{score.total} claims ({score.fraction:.1%})"
+                if score.required_failed:
+                    note += "; required claims failed: " + ", ".join(
+                        map(str, score.required_failed)
+                    )
+                if score.fraction < score.threshold:
+                    note += f"; below {score.threshold:.10g} claim threshold"
+                if any(not claim.trusted(self.spec.trust) for claim in verdict.claims):
+                    note += "; confidence below trust counts as failed"
+            case Failed():
                 mark = "✗"
             case NoVerdict():
                 mark = "?"
@@ -114,7 +122,7 @@ class Recorded(Struct, frozen=True):
         self, bench: Bench, agent: Agent, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
         try:
-            printed = Printed(self.journal, self.journal.spec.trust)
+            printed = Printed(self.journal, self.journal.spec)
             return asyncio.run(self.journal.play(bench, agent, printed, done))
         except KeyboardInterrupt:
             spec = self.journal.spec
@@ -158,7 +166,13 @@ class RunCommand(BaseModel):
         0.0,
         ge=0,
         le=1,
-        description="cut out the judge's decisions it is less sure of than this, from 0 to 1",
+        description="claims with confidence below this fail, from 0 to 1",
+    )
+    claim_threshold: float = Field(
+        1.0,
+        ge=0,
+        le=1,
+        description="fraction of all claims that must hold, in addition to every required claim",
     )
     fail_under: float | None = Field(
         None, ge=0, le=1, description="exit with 3 when a pass rate is below this, from 0 to 1"
@@ -237,6 +251,7 @@ class RunCommand(BaseModel):
             k=bench.attempts,
             turn_timeout=self.turn_timeout,
             trust=self.trust,
+            claim_threshold=self.claim_threshold,
             scenarios=bench.scenarios,
             started=started,
             files=files,
@@ -338,6 +353,9 @@ class CompareCommand(BaseModel):
         page = Comparison(before, after).page()
         print(f"comparison: {project.compare(before, after, page)}")
         if self.fail_on_regression:
+            if page.quality_reason:
+                print(page.quality_reason)
+                raise SystemExit(3)
             if page.before.status != "finished" or page.after.status != "finished":
                 print("both runs must be finished to check for regression")
                 raise SystemExit(3)

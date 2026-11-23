@@ -14,15 +14,13 @@ alone; how it changed since another run is on a [comparison](#compare-two-runs),
 at the foot of the page.
 
 - **Pass rate**: the share of counted attempts that passed, and beside it how many of how many
-  (`67% 8 / 12`). An attempt counts when the agent failed (it did not pass), or when
-  the judge's verdict is decided at the run's trust: every decision is trusted, or a trusted
-  decision failed. A decision without a confidence is trusted. Attempts with no verdict — convy's
-  models failed, or the agent's service stayed busy — and verdicts not decided are left out; with
-  `--trust`, the tile says how many were not trusted (`· 4 not trusted`), and apart from them how
-  many had no verdict (`· 2 without a verdict`). Under it, one line
-  splits the scenarios by the share of their counted attempts that passed, from 0%, each part as
-  long as how many scenarios have it, coloured by their status and with their count; those without
-  a verdict last. Pointing at a part lights it up.
+  (`67% 8 / 12`). An attempt counts when the agent failed (it did not pass), or when it has a
+  valid judge verdict. The [scoring rule](scenarios.md#passing-an-attempt) determines whether a
+  judged attempt passed; low-confidence decisions count as failed claims. Attempts with no verdict
+  — convy's models failed, or the agent's service stayed busy — are left out and counted separately.
+  Under the tile, one line splits the scenarios by the share of their counted attempts that passed,
+  from 0%, each part as long as how many scenarios have it, coloured by their status and with their
+  count; those without a verdict last. Pointing at a part lights it up.
 - **Flaky scenarios**: how many have passed and failed counted attempts.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models, with
   their kinds (`1 agent failure · 2 model failures`), or `none failed`.
@@ -103,18 +101,21 @@ Each scenario gets a row and a status:
 - **Failing**: no counted attempt passed.
 - **Flaky**: some counted attempts passed.
 - **Passing**: every counted attempt passed.
-- **No verdict**: no attempt was counted: none was played yet, or each had no verdict or a verdict
-  not decided at the run's trust.
+- **No verdict**: no attempt was counted: none was played yet, or each had no verdict.
 
 The row also shows the mean of its time and of its tokens per answer, over the answers the cut
 keeps, each with its Max under it.
-**Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict or not trusted. Click one
+**Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict. Click one
 to open that attempt. A filter such as `refund-*` narrows the list.
 
-Click a row to open the scenario. You see what the simulated user was told, and each claim with how
-many attempts it held in, a square per attempt with the judge's decision on it, and how many of its
-decisions were not trusted. A claim's count is over its trusted decisions. For each attempt you see
-the judge's yes/no decision on every claim and its reason, and the dialogue
+Click a row to open the scenario. You see what the simulated user was told, required claims marked,
+and how many attempts each claim held in. A claim's count includes all its decisions; insufficient
+confidence is a failed claim. Each judged attempt shows its completion count and percentage next to
+its final result. A failed attempt identifies the required claims that failed, an unmet percentage
+threshold, or both. Agent failures and attempts without a verdict have no measured completion.
+
+For each claim you can see its effective result, the original yes/no decision, reason and
+confidence. A confidence failure is explained separately from the judge's reason. The dialogue comes
 with the time and tokens of each answer; **Total answer time** adds them up for the attempt. An
 answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached
 tokens are part of the input, and thinking part of the output, not added to them. A part the agent
@@ -135,8 +136,8 @@ did not say. The address keeps the open scenario, so you can send a link to it.
 
 `results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
 shows the rest). The **setup** is what a run is measured with: the user's model, the judge,
-convy's version, the trust and the set of scenarios; not the agent's version or the number of
-attempts. Each agent's header names its newest run's user and judge, its scenarios × attempts, and
+convy's version, the trust, the claim threshold and the set of scenarios; not the agent's version
+or the number of attempts. Each agent's header names its newest run's user and judge, its scenarios × attempts, and
 its trust when there is one. Beside it a strip shows the agent's newest 40 runs, newest left: a bar
 per run as high as its pass rate and coloured by its result, and a line where the setup changed.
 
@@ -193,7 +194,11 @@ squares of its attempts before and after and how many more or fewer passed. A sc
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.
 
-Each run is read with its own `trust`, shown next to it in the page's head.
+Each run is read with its own `trust` and `claim_threshold`, shown in its setup. Changing a claim's
+required flag changes the scenario, so that scenario is not compared. If either scoring setting
+differs, the page cannot establish a quality improvement or regression, and
+[`--fail-on-regression`](runs.md#fail-ci-when-the-pass-rate-regresses) exits with 3. Time and token
+measurements remain available.
 
 The runs may be of different agents. The page warns when the user's or the judge's model, or the
 convy version, differs.

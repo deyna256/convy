@@ -58,7 +58,7 @@ function header() {
 }
 
 // What the agent's newest run is measured with.
-const setup = run => [`user ${run.user}`, `judge ${run.judge}`, `${plural(run.scenarios, "scenario")} × ${run.k}`, run.trust > 0 && `trust ${run.trust}`].filter(Boolean).join(" · ");
+const setup = run => [`user ${run.user}`, `judge ${run.judge}`, `${plural(run.scenarios, "scenario")} × ${run.k}`, `trust ${run.trust}`, `claim threshold ${run.claim_threshold}`].filter(Boolean).join(" · ");
 
 // The agent's runs, newest left: a bar per run as high as its pass rate, coloured by its result,
 // and a line where the setup changed.
@@ -79,7 +79,7 @@ function line(row) {
   const tr = el("tr", {},
     el("td", {}, box),
     el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short))),
-    el("td", {className: "rate"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, `${row.passed} of ${row.judged}${notTrusted(row.cut)}`), row.errors > 0 && el("span", {className: "errors"}, ` · ${plural(row.errors, "error")}`)),
+    el("td", {className: "rate"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, `${row.passed} of ${row.judged}`), row.errors > 0 && el("span", {className: "errors"}, ` · ${plural(row.errors, "error")}`)),
     el("td", {className: "mono"}, run.version || "—"),
     el("td", {className: "muted"}, when(run.started), state && ` · ${state}`),
     el("td", {className: "rest"}));

@@ -25,7 +25,7 @@ from convy.dialog import (
     Turn,
     Verdict,
 )
-from convy.scenario import Outcome, Scenario, Stop
+from convy.scenario import Outcome, Requirement, Scenario, Stop
 
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
@@ -36,8 +36,8 @@ class RunFormat(Struct, frozen=True):
     format: int
 
     def __post_init__(self) -> None:
-        if self.format != 7:
-            raise ValueError(f"unsupported run format {self.format}; expected 7; start a new run")
+        if self.format != 8:
+            raise ValueError(f"unsupported run format {self.format}; expected 8; start a new run")
 
 
 class Run(Struct, frozen=True):
@@ -50,7 +50,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[7] = 7
+    format: Literal[8] = 8
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -207,6 +207,8 @@ class ClaimView(Struct, frozen=True):
 
     passed: bool | None  # None: the judge was not asked, or gave no verdict
     reason: str
+    held: bool | None  # effective decision after applying trust
+    required: bool
     confidence: float | None = None  # None: the judge did not say
     trusted: bool = True  # False: less sure than the run's trust
 
@@ -242,10 +244,19 @@ class TurnView(Struct, frozen=True):
     span: float  # seconds from the first call's start to the last call's end; 0 without calls
 
 
+class Completion(Struct, frozen=True):
+    """A valid verdict's effective claim completion and reasons the attempt failed."""
+
+    held: int
+    total: int
+    fraction: float
+    failures: tuple[str, ...]
+
+
 class AttemptView(Struct, frozen=True):
     attempt: int
     passed: bool | None  # None: no verdict, left out of pass rates
-    cut: bool  # the judge was not sure enough: left out of pass rates
+    completion: Completion | None  # None: no measured claim completion
     stop: Stop
     error: str  # the agent's error, or the failure of convy's model
     claims: tuple[ClaimView, ...]
@@ -267,7 +278,7 @@ class ClaimSummary(Struct, frozen=True):
     held: int
     judged: int
     result: Result
-    cut: int  # decisions less sure than the run's trust
+    required: bool
 
 
 class Parts(Struct, frozen=True):
@@ -318,7 +329,6 @@ class Metrics(Struct, frozen=True):
 
     passed: int  # judged attempts that passed
     judged: int
-    cut: int  # attempts left out because the judge was not sure enough
     open: int  # attempts without a verdict: convy's models failed, or the agent stayed busy
     rate: float | None
     stable: int  # scenarios whose k attempts all passed
@@ -452,6 +462,7 @@ class RunHead(Struct, frozen=True):
     scenarios: int
     unreadable: int
     trust: float
+    claim_threshold: float
     confident: bool  # some decision of the run says how sure the judge was
 
 
@@ -474,6 +485,7 @@ class RunPage(Struct, frozen=True):
 
 class ClaimChange(Struct, frozen=True):
     text: str
+    required: bool
     before: Result
     after: Result
     change: Change
@@ -497,6 +509,7 @@ class ComparePage(Struct, frozen=True):
     was: Metrics
     now: Metrics
     deltas: Deltas
+    quality_reason: str  # why quality cannot be compared, or ""
     differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
     rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
     by_seconds: PerStat[tuple[str, ...]]  # compared ids with a change, the largest rise first
@@ -512,7 +525,6 @@ class IndexRow(Struct, frozen=True):
     rate: float | None
     passed: int
     judged: int
-    cut: int  # attempts not trusted
     errors: int
     result: Result
     changes: tuple[str, ...]  # the setup changed since the agent's run before: `judge: a → b`
@@ -631,6 +643,7 @@ class Summary(Struct, frozen=True):
             scenarios=len(spec.scenarios),
             unreadable=self.run.unreadable,
             trust=spec.trust,
+            claim_threshold=spec.claim_threshold,
             confident=self.confident(),
         )
 
@@ -656,8 +669,7 @@ class Summary(Struct, frozen=True):
         return Metrics(
             passed=sum(judged),
             judged=len(judged),
-            cut=sum(a.cut for a in attempts),
-            open=sum(a.passed is None and not a.cut for a in attempts),
+            open=sum(a.passed is None for a in attempts),
             rate=Tally(sum(judged), len(judged)).rate(),
             stable=sum(
                 len(v.attempts) == k and all(a.passed is True for a in v.attempts) for v in views
@@ -914,33 +926,44 @@ class Summary(Struct, frozen=True):
             else cached / (cached + parts.input),
         )
 
-    def claim(self, claim: str, decisions: list[ClaimView]) -> ClaimSummary:
-        """Tally trusted decisions and count the rest as cut."""
-        trusted = [d for d in decisions if d.passed is not None and d.trusted]
-        tally = Tally(sum(d.passed is True for d in trusted), len(trusted))
-        cut = sum(d.passed is not None and not d.trusted for d in decisions)
-        return ClaimSummary(claim, tally.held, tally.judged, tally.result(), cut)
+    def claim(self, claim: Requirement, decisions: list[ClaimView]) -> ClaimSummary:
+        """Count every effective decision, including confidence failures."""
+        judged = [d.held for d in decisions if d.held is not None]
+        tally = Tally(sum(judged), len(judged))
+        return ClaimSummary(claim.text, tally.held, tally.judged, tally.result(), claim.required)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
-        trust = self.run.spec.trust
-        cut = False
+        spec = self.run.spec
+        completion = None
         match outcome.verdict:
             case Verdict(claims=decided) as verdict:
-                cut = not verdict.decided(trust)
-                judged: tuple[bool | None, str] = (None if cut else verdict.passed, "")
-                claims = tuple(self.decision(claim, trust) for claim in decided)
+                score = scenario.score(verdict, spec.trust, spec.claim_threshold)
+                failures = []
+                if score.required_failed:
+                    numbers = ", ".join(str(i) for i in score.required_failed)
+                    failures.append(f"Required claims failed: {numbers}.")
+                if score.fraction < score.threshold:
+                    failures.append(
+                        f"Claim completion is below the {score.threshold * 100:.6g}% threshold."
+                    )
+                completion = Completion(score.held, score.total, score.fraction, tuple(failures))
+                judged: tuple[bool | None, str] = (score.passed, "")
+                claims = tuple(
+                    self.decision(claim, requirement, spec.trust)
+                    for claim, requirement in zip(decided, scenario.claims, strict=True)
+                )
             case Failed(reason=reason):
                 judged = (False, reason)
-                claims = tuple(ClaimView(None, "") for _ in scenario.claims)
+                claims = tuple(ClaimView(None, "", None, c.required) for c in scenario.claims)
             case NoVerdict(error=error):
                 judged = (None, error)
-                claims = tuple(ClaimView(None, "") for _ in scenario.claims)
+                claims = tuple(ClaimView(None, "", None, c.required) for c in scenario.claims)
         passed, error = judged
         return AttemptView(
             attempt=outcome.attempt,
             passed=passed,
-            cut=cut,
+            completion=completion,
             stop=outcome.stop,
             error=error,
             claims=claims,
@@ -955,7 +978,7 @@ class Summary(Struct, frozen=True):
             turns=turns,
         )
 
-    def decision(self, claim: Claim, trust: float) -> ClaimView:
+    def decision(self, claim: Claim, requirement: Requirement, trust: float) -> ClaimView:
         match claim.confidence:
             case Confidence(value=value):
                 sure: float | None = value
@@ -966,7 +989,14 @@ class Summary(Struct, frozen=True):
                 reason = text
             case NoReason():
                 reason = ""
-        return ClaimView(claim.passed, reason, sure, claim.trusted(trust))
+        return ClaimView(
+            claim.passed,
+            reason,
+            claim.holds(trust),
+            requirement.required,
+            sure,
+            claim.trusted(trust),
+        )
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
@@ -1124,6 +1154,8 @@ class Setups(Struct, frozen=True):
             ("user", self.was.user, self.now.user),
             ("judge", self.was.judge, self.now.judge),
             ("convy", self.was.convy or "unknown", self.now.convy or "unknown"),
+            ("trust", self.was.trust, self.now.trust),
+            ("claim threshold", self.was.claim_threshold, self.now.claim_threshold),
             *more,
         )
         return tuple(f"{name}: {a} → {b}" for name, a, b in pairs if a != b)
@@ -1142,7 +1174,11 @@ class Comparison(Struct, frozen=True):
         unchanged = self.unchanged()
         rows = [self.row(id, before.get(id), after.get(id), unchanged) for id in {*before, *after}]
         rows.sort(key=lambda row: (GROUPS[row.group], row.id))
-        compared = [row for row in rows if row.group != "apart"]
+        compared = [
+            row
+            for row in rows
+            if row.group != "apart" or (self.quality_reason() and row.id in unchanged)
+        ]
         old, new = was.metrics(before.values()), now.metrics(after.values())
         return ComparePage(
             before=was.head(),
@@ -1150,6 +1186,7 @@ class Comparison(Struct, frozen=True):
             was=old,
             now=new,
             deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
+            quality_reason=self.quality_reason(),
             differences=self.differences(),
             rows=tuple(rows),
             by_seconds=self.ranked((r.id, r.seconds) for r in compared),
@@ -1213,6 +1250,13 @@ class Comparison(Struct, frozen=True):
             ("agent limit per minute", f"{was.agent_per_minute:g}", f"{now.agent_per_minute:g}"),
         )
 
+    def quality_reason(self) -> str:
+        """Different acceptance rules cannot support a quality comparison."""
+        was, now = self.before.spec, self.after.spec
+        if was.trust != now.trust or was.claim_threshold != now.claim_threshold:
+            return "Quality not compared: different trust or claim threshold."
+        return ""
+
     def unchanged(self) -> set[str]:
         """The scenarios both runs have, not edited between them."""
         before = {scenario.id: scenario for scenario in self.before.spec.scenarios}
@@ -1226,6 +1270,18 @@ class Comparison(Struct, frozen=True):
             return self.apart(id, why, was, now)
         if id not in unchanged:
             return self.apart(id, "edited between the runs", was, now)
+        if reason := self.quality_reason():
+            return CompareRow(
+                id,
+                "apart",
+                reason,
+                was,
+                now,
+                (),
+                NO_CHANGE,
+                self.changes(was.seconds, now.seconds),
+                self.changes(was.tokens, now.tokens),
+            )
         if was.rate is None or now.rate is None:
             return self.apart(id, "no verdict in one of the runs", was, now)
         group: Group = (
@@ -1257,13 +1313,13 @@ class Comparison(Struct, frozen=True):
             change: Change = "unchanged"
             if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
-            changes.append(ClaimChange(new.text, old.result, new.result, change))
+            changes.append(ClaimChange(new.text, new.required, old.result, new.result, change))
         return tuple(changes)
 
     def deltas(
         self, was: Metrics, now: Metrics, shown: Literal["better", "worse"] | None
     ) -> Deltas:
-        if was.rate is None or now.rate is None:
+        if self.quality_reason() or was.rate is None or now.rate is None:
             rate = NO_CHANGE
         else:
             points = round((now.rate - was.rate) * 100, 6)
@@ -1271,7 +1327,9 @@ class Comparison(Struct, frozen=True):
             rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
         return Deltas(
             rate=rate,
-            stable=self.delta(was.stable, now.stable, more_is_better=True),
+            stable=NO_CHANGE
+            if self.quality_reason()
+            else self.delta(was.stable, now.stable, more_is_better=True),
             seconds=self.units(was.seconds, now.seconds),
             tokens=self.units(was.tokens, now.tokens),
             cached=self.points(was.cached, now.cached),
@@ -1340,7 +1398,9 @@ class Comparison(Struct, frozen=True):
     def evidence(
         self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
     ) -> Evidence:
-        """The tallies of the scenarios both runs played unchanged and judged."""
+        """The tallies of unchanged, judged scenarios under the same acceptance rules."""
+        if self.quality_reason():
+            return Evidence(())
         return Evidence(
             tuple(
                 (Tally(before[id].held, before[id].judged), Tally(after[id].held, after[id].judged))
@@ -1381,7 +1441,6 @@ class Index(Struct, frozen=True):
             rate=metrics.rate,
             passed=metrics.passed,
             judged=metrics.judged,
-            cut=metrics.cut,
             errors=metrics.errors,
             result=Tally(metrics.passed, metrics.judged).result(),
             changes=() if previous is None else self.changes(previous.spec, run.spec),
@@ -1394,7 +1453,7 @@ class Index(Struct, frozen=True):
         `judge: a → b`, and the scenarios as `scenarios: +1 -2`, with a minus sign. Neither the
         agent's version (comparing versions is the point) nor the number of attempts counts; nor
         a scenario edited under the same id, which the comparison tells apart."""
-        changes = list(Setups(was, now).differences(("trust", f"{was.trust:g}", f"{now.trust:g}")))
+        changes = list(Setups(was, now).differences())
         before, ids = {s.id for s in was.scenarios}, {s.id for s in now.scenarios}
         moved = " ".join(
             f"{sign}{len(found)}"

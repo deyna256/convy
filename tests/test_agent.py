@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from convy import Requirement
 from convy.agent import (
     AgentFailure,
     Answer,
@@ -55,7 +56,7 @@ async def test_time_limited_fails_a_slow_opening_or_closing(agent: Slow):
 
 @pytest.mark.parametrize("agent", SLOW)
 async def test_a_slow_opening_or_closing_fails_the_attempt(agent: Slow):
-    scenario = Scenario("greet", 1, "Say hi.", ("greets",))
+    scenario = Scenario("greet", 1, "Say hi.", (Requirement("greets"),))
     models = Models(
         user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}'))
     )

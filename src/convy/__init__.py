@@ -45,7 +45,7 @@ from convy.env import Env
 from convy.http import HttpFailure, JsonAgent, JsonEndpoint, Tls, TokenPaths
 from convy.model import Model, ModelFailure, Models, OpenAiModel
 from convy.report import Comparison, Index, Report, Run, Runs
-from convy.scenario import Matching, Outcome, Scenario, Scenarios
+from convy.scenario import Matching, Outcome, Requirement, Scenario, Scenarios, Score
 from convy.tables import (
     AnswerRow,
     AttemptRow,
@@ -103,6 +103,7 @@ __all__ = [
     "Reason",
     "Report",
     "Reported",
+    "Requirement",
     "Run",
     "RunInUse",
     "RunJournal",
@@ -113,6 +114,7 @@ __all__ = [
     "Scenario",
     "ScenarioRow",
     "Scenarios",
+    "Score",
     "StepRow",
     "Table",
     "Tables",

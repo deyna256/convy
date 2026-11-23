@@ -151,30 +151,22 @@ class Claim(Struct, frozen=True, forbid_unknown_fields=True):
     confidence: Confidence | NoConfidence = NoConfidence()
 
     def trusted(self, trust: float) -> bool:
-        """Whether the decision counts at `trust`: a judge that did not say is trusted."""
+        """Whether confidence meets `trust`: a judge that did not say is trusted."""
         match self.confidence:
             case Confidence(value=value):
                 return value >= trust
             case NoConfidence():
                 return True
 
+    def holds(self, trust: float) -> bool:
+        """A positive decision holds only when its confidence meets the run's trust."""
+        return self.passed and self.trusted(trust)
+
 
 class Verdict(Struct, frozen=True, tag="verdict"):
     """The judge's decision on each claim, in the order of the scenario's claims."""
 
     claims: tuple[Claim, ...]
-
-    @property
-    def passed(self) -> bool:
-        """An attempt passes when every claim holds."""
-        return all(claim.passed for claim in self.claims)
-
-    def decided(self, trust: float) -> bool:
-        """Whether the verdict counts at `trust`: a trusted claim failed, or every claim is
-        trusted. One that does not count is cut out of the sample; `passed` still says what the
-        judge decided."""
-        trusted = [claim for claim in self.claims if claim.trusted(trust)]
-        return len(trusted) == len(self.claims) or any(not claim.passed for claim in trusted)
 
 
 class Failed(Struct, frozen=True, tag="failed"):

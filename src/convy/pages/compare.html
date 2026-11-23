@@ -76,7 +76,6 @@
 
 // What only the comparison draws: the statistic switch, changes, spread tiles, tokens by turn and
 // by part.
-const atTrust = trust => trust > 0 ? ` · trust ${trust}` : "";
 // The statistic of each time and token spread that the charts and tables after the switch show,
 // P50 by default. The address keeps it as stat=, beside the open scenario's id and
 // attempt; P50 is not written.
@@ -213,7 +212,7 @@ const GROUPS = {worse: "Worse", better: "Better", same: "Same", apart: "Not comp
 
 function header() {
   const title = BEFORE.agent === AFTER.agent ? BEFORE.agent : `${BEFORE.agent} vs ${AFTER.agent}`;
-  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)}${atTrust(run.trust)}`);
+  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)} · trust ${run.trust} · claim threshold ${run.claim_threshold}`);
   return el("div", {className: "top"},
     el("div", {},
       el("div", {className: "eyebrow"}, el("a", {href: "../index.html"}, "CONVY"), " / compare"),
@@ -237,8 +236,9 @@ function tiles() {
     el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta, extra);
   const was = (spread, unit) => spread ? `was ${STATS.map(k => unit(spread[k])).join(" · ")}` : "was —";
   return [
+    DATA.quality_reason && el("p", {className: "caption"}, DATA.quality_reason),
     el("div", {className: "tiles"},
-      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, points), {hero: true}),
+      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}`, change(D.rate, points), {hero: true}),
       tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
       tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v)))),
     el("div", {className: "tiles two"},
@@ -304,6 +304,7 @@ function table() {
     for (const r of rows) {
       const open = el("button", {className: "open", type: "button", "aria-label": `Open ${r.id}`}, r.id);
       const metric = (now, was) => [now, el("small", {}, was)];
+      const unavailable = r.why && r.why !== DATA.quality_reason;
       const row = el("tr", {className: "row"}, el("td", {}, open),
         el("td", {}, el("span", {className: "pair"},
             r.before ? squares(attemptMarks(r.before.attempts), "Before", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
@@ -311,8 +312,8 @@ function table() {
             r.after ? squares(attemptMarks(r.after.attempts), "After", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
             r.held.value != null && el("span", {className: `delta ${r.held.tone}`}, passedChange(r.held.value))),
           r.why && el("div", {className: "muted", style: "font-size:12.5px;margin-top:4px"}, r.why)),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(chosen(r.after.seconds)), `was ${secs(chosen(r.before.seconds))}`)),
-        el("td", {className: "n metric"}, r.why ? "—" : metric(count(chosen(r.after.tokens)), `was ${count(chosen(r.before.tokens))}`)));
+        el("td", {className: "n metric"}, unavailable ? "—" : metric(secs(chosen(r.after.seconds)), `was ${secs(chosen(r.before.seconds))}`)),
+        el("td", {className: "n metric"}, unavailable ? "—" : metric(count(chosen(r.after.tokens)), `was ${count(chosen(r.before.tokens))}`)));
       row.addEventListener("click", () => show(r.id, 1));
       body.push(row);
     }
@@ -330,7 +331,7 @@ function column(word, run, view, number) {
   const attempt = view.attempts.find(a => a.attempt === number) ?? view.attempts[0];
   return el("div", {},
     el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
-      attempt ? (attempt.cut ? badge("none", {none: "Not trusted"}) : badge(kind(attempt.passed), ATTEMPT)) : null),
+      attempt ? badge(kind(attempt.passed), ATTEMPT) : null),
     attempt ? [attemptTiles(attempt), judgeLines(attempt, run), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
 }
 
@@ -348,7 +349,7 @@ function show(id, number) {
     return tab;
   }));
   const claims = r.claims.length
-    ? el("ol", {className: "claims"}, r.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.after), el("span", {}, c.text),
+    ? el("ol", {className: "claims"}, r.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.after), el("span", {}, c.text, c.required && el("small", {className: "muted"}, " · required")),
         el("span", {className: "tally"}, c.change === "unchanged" ? "unchanged" : [icon(c.before), "→", icon(c.after), c.change === "worse" ? "got worse" : "got better"]))))
     : el("p", {className: "told muted"}, r.why || "No claims to compare.");
   dialog.replaceChildren(el("div", {className: "frame"},
