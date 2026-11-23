@@ -36,8 +36,8 @@ class RunFormat(Struct, frozen=True):
     format: int
 
     def __post_init__(self) -> None:
-        if self.format != 8:
-            raise ValueError(f"unsupported run format {self.format}; expected 8; start a new run")
+        if self.format != 9:
+            raise ValueError(f"unsupported run format {self.format}; expected 9; start a new run")
 
 
 class Run(Struct, frozen=True):
@@ -50,7 +50,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[8] = 8
+    format: Literal[9] = 9
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -219,6 +219,7 @@ class ThoughtView(Struct, frozen=True, tag="thought"):
 
 class CallView(Struct, frozen=True, tag="call", kw_only=True):
     name: str
+    kind: Literal["model", "tool"]
     seconds: float
     left: float  # where its bar starts on the answer's time line of calls, 0..1
     width: float  # how much of that line it takes, 0..1
@@ -242,6 +243,7 @@ class TurnView(Struct, frozen=True):
     thoughts: int  # how many of the steps are thoughts
     calls: int  # and how many are calls
     span: float  # seconds from the first call's start to the last call's end; 0 without calls
+    tool_calls: int | None  # None: the answer's trace is missing or partial
 
 
 class Completion(Struct, frozen=True):
@@ -268,6 +270,7 @@ class AttemptView(Struct, frozen=True):
     thinking_tokens: int | None
     cache_read: int | None
     cache_write: int | None
+    tool_calls: int | None  # None: no answers, or any answer's trace is incomplete
     turns: tuple[TurnView, ...]
 
 
@@ -421,6 +424,7 @@ class ScenarioNumbers(Struct, frozen=True):
     attempt_seconds: Spread | None  # sum of recorded answer times per attempt with answers
     attempt_tokens: Spread | None  # per attempt with every answer's usage reported
     attempts: int  # recorded attempts kept, including those without measurements
+    tool_calls: Spread | None  # per attempt whose answers all report complete traces
 
 
 class View(Struct, frozen=True):
@@ -436,6 +440,7 @@ class View(Struct, frozen=True):
     attempt_seconds: Spread | None
     attempt_tokens: Spread | None
     attempts: int
+    tool_calls: Spread | None
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
@@ -821,6 +826,7 @@ class Summary(Struct, frozen=True):
             self.spread(a.seconds for a in attempts if a.turns),
             self.spread(a.tokens for a in attempts),
             len(attempts),
+            self.spread(a.tool_calls for a in attempts),
             tuple(view.id for view in scenarios if view.id in out),
         )
 
@@ -833,6 +839,7 @@ class Summary(Struct, frozen=True):
             self.spread(a.seconds for a in attempts if a.turns),
             self.spread(a.tokens for a in attempts),
             len(attempts),
+            self.spread(a.tool_calls for a in attempts),
         )
 
     def fence(self, values: list[float | None]) -> float | None:
@@ -990,6 +997,7 @@ class Summary(Struct, frozen=True):
             thinking_tokens=self.total(turn.thinking_tokens for turn in turns),
             cache_read=self.total(turn.cache_read for turn in turns),
             cache_write=self.total(turn.cache_write for turn in turns),
+            tool_calls=self.complete_total(turn.tool_calls for turn in turns),
             turns=turns,
         )
 
@@ -1029,13 +1037,14 @@ class Summary(Struct, frozen=True):
             case NoUsage():
                 tokens = (None, None, None, None, None, None)
         first, length = self.line(turn.answer.steps)
-        thoughts = calls = 0
+        thoughts = calls = tools = 0
         for step in turn.answer.steps:
             match step:
                 case Thought():
                     thoughts += 1
-                case Call():
+                case Call(kind=kind):
                     calls += 1
+                    tools += kind == "tool"
         steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
         return TurnView(
             turn.message.text,
@@ -1046,6 +1055,7 @@ class Summary(Struct, frozen=True):
             thoughts,
             calls,
             length,
+            tools if turn.answer.steps_complete else None,
         )
 
     def count(self, count: int | NotReported) -> int | None:
@@ -1082,6 +1092,7 @@ class Summary(Struct, frozen=True):
                 offset = step.started.timestamp() - first
                 return CallView(
                     name=step.name,
+                    kind=step.kind,
                     seconds=step.seconds,
                     left=offset / length if length else 0.0,
                     width=step.seconds / length if length else 0.0,

@@ -244,6 +244,7 @@ return Answer(
     steps=(
         Thought("The order number comes first."),
         Call(
+            kind="tool",
             name="get_order",
             started=datetime(2026, 10, 20, 12, 0, 1, tzinfo=UTC),
             seconds=1.2,
@@ -254,13 +255,24 @@ return Answer(
 )
 ```
 
+- `kind` is required: `"model"` for a direct model call, `"tool"` for a tool invocation,
+  including search. convy does not infer it from the name or token usage.
 - `started` is when a call started, by the agent's own clock, with a time zone:
   `datetime.now(UTC)`, or the start of a span from your tracer. `seconds` is how long it took.
 - `usage`, `sent` and `received` are optional. `Reported("")` is text that was empty, such as a
   search that found nothing; `NotReported()`, the default, is text you did not give.
-- convy shows the steps as you give them and checks them against nothing; see
-  [why](decisions/0010-answer-steps.md). A call without a name or a time zone, or with seconds
-  below 0, fails the turn as an agent error.
+- convy shows the steps as you give them without reconciling their time or tokens with the
+  answer; see [why](decisions/0010-answer-steps.md). An invalid call kind, a call without a name
+  or a time zone, or seconds below 0 fails the turn as an agent error.
+
+`Answer.steps_complete` defaults to `False`: steps may be partial or absent. Set it to `True`
+only when `steps` lists every call made for that answer, including model calls and every tool
+retry or failed invocation. The example above leaves it false because it shows only the order
+lookup. A complete trace may omit thinking, since thoughts are not calls.
+
+An answer with no calls can explicitly report that fact with `Answer(text, steps_complete=True)`.
+An empty or partial trace with `steps_complete=False` has an unknown tool count. Complete traces
+enable [tool invocations per task](report.md#tool-invocations); partial steps remain visible.
 
 ### Thinking
 

@@ -24,9 +24,11 @@ from convy.model import ModelFailure
 TRANSCRIPT = Transcript().with_turn(Turn(Message("hi"), Answer("hello"), 1.0))
 LOOKED_UP = Answer(
     "hello",
+    steps_complete=True,
     steps=(
         Thought("greet back"),
         Call(
+            kind="tool",
             name="crm",
             started=datetime(2026, 10, 20, 12, 0, tzinfo=UTC),
             seconds=1,

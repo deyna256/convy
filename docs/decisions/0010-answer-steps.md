@@ -23,12 +23,14 @@ often better to grade what the agent produced, not the path it took"
 ## Decision
 
 - **An answer is its text, its total usage and its steps in order**, a step being a `Thought` or a
-  `Call`; the thinking is a thought. How to give them is in [Connect an agent](../agents.md#steps).
+  `Call`; the thinking is a thought. Call classification and trace completeness follow
+  [decision 13](0013-tool-invocations.md). How to give them is in [Connect an agent](../agents.md#steps).
 - **convy shows the steps and checks nothing between them and its own numbers:** it neither adds up
   the calls' tokens nor sets the calls against its own time of the answer. Calls are placed against
   each other, by the agent's clock, which needs an absolute time with a time zone.
 - **A text a call sent or received is reported or not:** an empty result is not a missing one.
 - **The judge sees only what the user and the agent said**; `reviews_agent_thinking` is removed.
+  A Python judge receives empty steps with the completeness flag cleared too.
 - **Only an agent's own class gives steps** for now.
 
 ## Alternatives

@@ -116,6 +116,7 @@ async def test_thinking_tokens_above_the_output_fail_the_turn_not_the_run(build)
 class LikeCall(msgspec.Struct, frozen=True, tag="call", kw_only=True):
     """The shape of `Call` without its checks, as an agent's own class might send it."""
 
+    kind: str = "tool"
     name: str = "search"
     started: datetime = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
     seconds: float = -1
@@ -427,3 +428,22 @@ async def test_the_judge_sees_only_requirement_texts_in_order():
 def test_direct_scoring_rejects_invalid_acceptance_settings(setting, value):
     with pytest.raises(ValueError, match="must be from 0 to 1"):
         SCENARIO.score(Verdict((Claim(True),)), **{setting: value})
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"steps": (LikeCall(kind="unknown", seconds=0),)},
+        {"steps_complete": 1},
+        {"steps_complete": "true"},
+        {"steps_complete": None},
+    ],
+    ids=["invalid-kind", "integer-completeness", "string-completeness", "null-completeness"],
+)
+async def test_invalid_trace_metadata_fails_at_the_agent_boundary(fields: dict[str, Any]):
+    answer = Answer("x", **fields)
+    outcome = await SCENARIO.outcome(FakeAgent(answer), models("hi"), 1, alone())
+    assert outcome.stop == "agent_failure"
+    assert "the answer is not a valid Answer" in str(outcome.verdict)
+    assert outcome.transcript.turns[-1].answer.steps_complete is False
+    assert msgspec.json.decode(msgspec.json.encode(outcome), type=Outcome) == outcome

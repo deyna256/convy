@@ -56,8 +56,8 @@ drop nothing. The keys come first:
 | `claims` | `run`, `scenario`, `claim` | `text`, `required` |
 | `attempts` | `run`, `scenario`, `attempt` | `verdict` (`verdict`, `failed` or `no_verdict`), `error`, `stop` |
 | `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence` |
-| `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
-| `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
+| `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `steps_complete`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
+| `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `call_kind` (`model` or `tool`, `None` for a thought), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
 
 - `run` is the run's id, `scenario` the scenario's id, `attempt` the attempt's number; an
   unfinished run may skip numbers. `claim`, `turn` and `step` count from 1, as on the report.
@@ -75,7 +75,11 @@ Each table has a `name`, the type of its rows in `row`, so an empty table still 
 and its `rows`. `records()` gives the rows as dicts, with times as `datetime`; `csv()` and `jsonl()`
 give the table as a file's text. Iterating `tables` gives the seven tables in the order above.
 
-Two values are left out on purpose, since they are computed. With the tables as DataFrames, the
+`answers.steps_complete` and `steps.call_kind` preserve the [agent's reported facts](agents.md#steps).
+Tool counts are derived, not exported: use the [tool-invocation rule](report.md#tool-invocations)
+to distinguish complete measurements from partial traces.
+
+Other values are left out on purpose, since they are computed. With the tables as DataFrames, the
 random part of a run's id is:
 
 ```python
@@ -118,8 +122,8 @@ new ones: close it and export again. An agent named `export` shares the folder w
 
 The report's rules — what counts in the pass rate and which scenario is stable — are in
 [The report](report.md#tiles). Its [measured population](report.md#measured-population) defines
-means and medians per answer and per task, including missing token measurements. Follow these
-rules and your numbers are convy's.
+means and medians per answer and per task, including missing token measurements and
+[tool invocations](report.md#tool-invocations). Follow these rules and your numbers are convy's.
 
 ## A full example
 

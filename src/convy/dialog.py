@@ -65,7 +65,10 @@ class Transcript(Struct, frozen=True):
         """The same dialogue with only what was said, without the steps of the answers."""
         return Transcript(
             tuple(
-                msgspec.structs.replace(turn, answer=msgspec.structs.replace(turn.answer, steps=()))
+                msgspec.structs.replace(
+                    turn,
+                    answer=msgspec.structs.replace(turn.answer, steps=(), steps_complete=False),
+                )
                 for turn in self.turns
             )
         )
