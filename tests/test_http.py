@@ -187,14 +187,20 @@ def json_agent(
 
 
 async def test_json_agent_fills_text_session_and_history():
-    service = Service(*[httpx2.Response(200, json={"a": "ok"})] * 2)
+    service = Service(*[httpx2.Response(200, json={"a": "ok"})] * 3)
     body = {"m": "{text} ({session})", "h": "{history}", "n": [1, "{text}"]}
-    async with json_agent(service, body=body).conversation() as conversation:
+    agent = json_agent(service, body=body)
+    async with agent.conversation() as conversation, agent.conversation() as other:
         await conversation.answer(Message("hi {session}"))
+        await other.answer(Message("separate"))
         await conversation.answer(Message("again"))
-    first, second = (httpx2.Response(200, content=r.read()).json() for r in service.requests)
+    first, separate, second = (
+        httpx2.Response(200, content=r.read()).json() for r in service.requests
+    )
     session = first["m"].removeprefix("hi {session} (").removesuffix(")")
     assert len(session) == 36
+    assert separate["m"] != f"separate ({session})"
+    assert separate["h"] == [{"role": "user", "content": "separate"}]
     assert second["m"] == f"again ({session})"
     assert second["n"] == [1, "again"]
     assert second["h"] == [

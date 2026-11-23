@@ -71,17 +71,21 @@ function markdown(text) {
 
 // The scenario window's parts, and the filter of its table.
 function claimTally(c) {
-  const grades = c.grades.filter(([, n]) => n).reverse().map(([grade, n]) => ` · ${grade} ${n}`).join("");  // best first
-  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + grades + notTrusted(c.cut);
+  return !c.judged ? "no verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`;
 }
 function attemptTiles(attempt) {
   const answers = attempt.turns.length;
   const result = kind(attempt.passed);
   return el("div", {className: "mini"},
-    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), attempt.cut ? "Not trusted" : ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
-    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
+    el("div", {}, el("span", {className: "l"}, "Claim completion"),
+      el("span", {className: "v"}, attempt.completion ? `${attempt.completion.held}/${attempt.completion.total} · ${pct(attempt.completion.fraction)}` : "—"),
+      el("span", {className: "s"}, attempt.completion ? attempt.completion.failures.join(" ") : "No measured claim completion")),
+    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, answers ? secs(attempt.seconds) : "—"), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
-      el("span", {className: "s"}, attempt.input == null ? "not reported" : tokenParts(attempt))));
+      el("span", {className: "s"}, attempt.input == null ? "not reported" : tokenParts(attempt))),
+    el("div", {className: "tools-total"}, el("span", {className: "l"}, "Tool calls"), el("span", {className: "v"}, count(attempt.tool_calls)),
+      el("span", {className: "s"}, attempt.tool_calls != null ? "complete traces for all recorded answers" : answers ? "unmeasured: an answer trace is missing or incomplete" : "unmeasured: no answers")));
 }
 // In and out, each with the parts that were reported, a reported 0 too.
 function tokenParts(v) {
@@ -92,14 +96,14 @@ function tokenParts(v) {
 function sure(claim, run) {
   if (claim.confidence == null) return run.confident ? "sure: not given" : null;
   const said = `${Math.floor(claim.confidence * 100)}% sure`;
-  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(run.trust * 100)}%`;
+  return claim.trusted ? said : `failed confidence check: ${said}, needs ${run.trust * 100}%`;
 }
 function judgeLines(attempt, run) {
   if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
   return el("div", {className: "judge"}, attempt.claims.map((claim, i) => {
     const note = sure(claim, run);
-    return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
-      el("span", {className: "why"}, claim.grade != null && [el("strong", {}, claim.grade), " · "], claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
+    return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.held)),
+      el("span", {className: "why"}, claim.required && el("strong", {}, "Required · "), claim.reason || "No reason given.", el("small", {className: "muted"}, ` · Judge: ${claim.passed == null ? "no verdict" : claim.passed ? "passed" : "failed"}`), note && el("small", {className: "muted"}, ` · ${note}`)));
   }));
 }
 function dialogue(attempt) {
@@ -112,7 +116,8 @@ function answerHead(t, toggle = null) {
   return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
     el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
     el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
-      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
+      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]),
+    el("span", {className: "m muted"}, t.tool_calls == null ? "tool calls unmeasured: trace missing or incomplete" : `${plural(t.tool_calls, "tool call")} · complete trace`), toggle);
 }
 // An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, all the
 // steps show as one node, and clicking it unfolds them. The button that unfolds or folds them stays
@@ -145,7 +150,7 @@ const thoughtNode = s => node("thought", el("div", {className: "card"}, el("span
 function callNode(c, step) {
   return node("call", el("details", {className: "card"},
     el("summary", {},
-      el("span", {className: "kind"}, "Call"), el("span", {className: "name"}, c.name),
+      el("span", {className: "kind"}, c.kind === "tool" ? "Tool call" : "Model call"), el("span", {className: "name"}, c.name),
       el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: max(3px, ${c.width * 100}%)`})),
       el("span", {className: "m"}, el("span", {className: "muted"}, `from +${secs(c.start)} `), el("strong", {}, secs(c.seconds)), " · ",
         c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`)),

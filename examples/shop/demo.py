@@ -23,19 +23,15 @@ class Demo:
         self.folder = folder
 
     def site(self) -> None:
-        """The reports, the index and the comparison, with report.html and compare.html at the
-        site's root leading to the newer run and to the comparison: the README links those."""
+        """Check both journals before rebuilding the index and linking to the newer report."""
         older, newer = self.runs()
         before, after = (run.rpartition("_")[2] for run in (older, newer))
-        self.convy("report")
         self.convy(f"compare {before} {after}")
+        self.convy("report")
         results = self.folder / "results"
-        lead = {
-            "report.html": f"shop_bot/{newer}/report.html",
-            "compare.html": f"compare/{before}-vs-{after}.html",
-        }
-        for page, target in lead.items():
-            (results / page).write_text(LEAD.format(target), encoding="utf-8")
+        (results / "report.html").write_text(
+            LEAD.format(f"shop_bot/{newer}/report.html"), encoding="utf-8"
+        )
 
     def record(self) -> None:
         missing = [tool for tool in TOOLS if shutil.which(tool) is None]

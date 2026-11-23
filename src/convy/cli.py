@@ -35,33 +35,41 @@ from convy.fakes import FakeModel, MemoryJournal
 from convy.model import Models
 from convy.project import Project, ProjectAgent
 from convy.report import Comparison, Run, Runs, Summary
-from convy.scenario import Matching, Outcome, Scenario
+from convy.scenario import Matching, Outcome, Requirement, Scenario
 from convy.tables import Tables
 
 SMOKE = Scenario(
     id="smoke",
     max_turns=2,
     instructions="Greet the assistant and ask what it can help with, then thank it.",
-    claims=("The agent answered the greeting",),
+    claims=(Requirement("The agent answered the greeting"),),
 )
 
 
 class Printed(Struct, frozen=True):
-    """A journal that also prints each outcome as it is recorded; one the judge was not sure
-    enough of, at the run's `trust`, is marked "not trusted"."""
+    """A journal that also prints each outcome using the run's scoring policy."""
 
     journal: Journal
-    trust: float
+    spec: RunSpec
 
     def record(self, outcome: Outcome) -> None:
         self.journal.record(outcome)
         note = ""
         match outcome.verdict:
-            case Verdict() as verdict if not verdict.decided(self.trust):
-                mark, note = "?", "  not trusted"
-            case Verdict(passed=True):
-                mark = "✓"
-            case Verdict() | Failed():
+            case Verdict() as verdict:
+                scenario = next(s for s in self.spec.scenarios if s.id == outcome.scenario)
+                score = scenario.score(verdict, self.spec.trust, self.spec.claim_threshold)
+                mark = "✓" if score.passed else "✗"
+                note = f"  {score.held}/{score.total} claims ({score.fraction:.1%})"
+                if score.required_failed:
+                    note += "; required claims failed: " + ", ".join(
+                        map(str, score.required_failed)
+                    )
+                if score.fraction < score.threshold:
+                    note += f"; below {score.threshold:.10g} claim threshold"
+                if any(not claim.trusted(self.spec.trust) for claim in verdict.claims):
+                    note += "; confidence below trust counts as failed"
+            case Failed():
                 mark = "✗"
             case NoVerdict():
                 mark = "?"
@@ -114,7 +122,7 @@ class Recorded(Struct, frozen=True):
         self, bench: Bench, agent: Agent, done: frozenset[Pair] = frozenset()
     ) -> tuple[Outcome, ...]:
         try:
-            printed = Printed(self.journal, self.journal.spec.trust)
+            printed = Printed(self.journal, self.journal.spec)
             return asyncio.run(self.journal.play(bench, agent, printed, done))
         except KeyboardInterrupt:
             spec = self.journal.spec
@@ -158,7 +166,13 @@ class RunCommand(BaseModel):
         0.0,
         ge=0,
         le=1,
-        description="cut out the judge's decisions it is less sure of than this, from 0 to 1",
+        description="claims with confidence below this fail, from 0 to 1",
+    )
+    claim_threshold: float = Field(
+        1.0,
+        ge=0,
+        le=1,
+        description="fraction of all claims that must hold, in addition to every required claim",
     )
     fail_under: float | None = Field(
         None, ge=0, le=1, description="exit with 3 when a pass rate is below this, from 0 to 1"
@@ -173,7 +187,9 @@ class RunCommand(BaseModel):
         try:
             agents = [project.agent(name) for name in self.agents]
             benches = [self.bench(project, loaded.name) for loaded in agents]
-            fingerprints = [project.files(loaded.name) for loaded in agents]
+            fingerprints = {
+                loaded.name: project.files(loaded.name) for loaded in agents if not self.smoke
+            }
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()
             raise SystemExit(2) from None
@@ -182,12 +198,12 @@ class RunCommand(BaseModel):
             raise SystemExit(2) from None
         failed = False
         played = []
-        for loaded, bench, files in zip(agents, benches, fingerprints, strict=True):
+        for loaded, bench in zip(agents, benches, strict=True):
             agent = TimeLimited(loaded.agent, self.turn_timeout)
             if self.smoke:
                 outcomes = asyncio.run(self.smoked(bench, agent, loaded.name))
             else:
-                journal = self.journal(project, bench, loaded, files)
+                journal = self.journal(project, bench, loaded, fingerprints[loaded.name])
                 outcomes = Recorded(project, journal).outcomes(bench, agent)
                 played.append(journal)
             failed |= any(outcome.failed() for outcome in outcomes)
@@ -237,6 +253,7 @@ class RunCommand(BaseModel):
             k=bench.attempts,
             turn_timeout=self.turn_timeout,
             trust=self.trust,
+            claim_threshold=self.claim_threshold,
             scenarios=bench.scenarios,
             started=started,
             files=files,
@@ -279,8 +296,6 @@ class ResumeCommand(BaseModel):
             match run.status:
                 case Finished():
                     raise ValueError(f"run {spec.id} is finished; there is nothing to resume")
-            if run.format < 6:  # resuming would write format 6 lines over lines of an older one
-                raise ValueError(f"run {spec.id} was written by an older convy; start a new run")
             if changes := spec.code_changes(project.files(spec.agent), CONVY):
                 raise ValueError(f"run {self.run} cannot resume: {'; '.join(changes)}")
             loaded = project.agent(spec.agent)  # the project's code runs only after the check above
@@ -330,35 +345,16 @@ class CompareCommand(BaseModel):
     )
 
     def cli_cmd(self) -> None:
-        project = Project(Path())
-        runs = Runs(project.results())
+        runs = Runs(Project(Path()).results())
         try:
             before, after = runs.run(self.before), runs.run(self.after)
         except ValueError as error:  # no such run, or several
             print(f"error: {error}", file=sys.stderr)
             raise SystemExit(2) from None
-        page = Comparison(before, after).page()
-        print(f"comparison: {project.compare(before, after, page)}")
+        summary, failed = Comparison(before, after).check()
+        print(summary)
         if self.fail_on_regression:
-            if page.before.status != "finished" or page.after.status != "finished":
-                print("both runs must be finished to check for regression")
-                raise SystemExit(3)
-            compared = [row for row in page.rows if row.group != "apart"]
-            if not compared:
-                print("no scenario can be compared")
-                raise SystemExit(3)
-            verdict = {
-                "bad": "worse",
-                "good": "better",
-                "noise": "may be chance",
-                "same": "same",
-                "none": "not available",
-            }[page.deltas.rate.tone]
-            print(f"pass rate {page.was.rate:.0%} → {page.now.rate:.0%}: {verdict}")
-            worse = [row.id for row in compared if row.group == "worse"]
-            if worse:
-                print(f"lower pass rate: {', '.join(worse)}")
-            raise SystemExit(3 if page.deltas.rate.tone == "bad" else 0)
+            raise SystemExit(3 if failed else 0)
 
 
 class ExportCommand(BaseModel):
@@ -435,7 +431,7 @@ class Convy(BaseSettings):
     )
     report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
     compare: CliSubCommand[CompareCommand] = Field(
-        description="write a page that compares two runs: before, then after"
+        description="compare the pass rates of two runs: before, then after"
     )
     export: CliSubCommand[ExportCommand] = Field(
         description="write runs as tables to results/export/: CSV and JSON Lines"

@@ -16,7 +16,6 @@ from convy.dialog import (
     Checked,
     Failed,
     Finished,
-    Graded,
     NoVerdict,
     SimulatedUser,
     Transcript,
@@ -43,20 +42,62 @@ class Outcome(Struct, frozen=True):
         return self.stop in ("agent_failure", "agent_busy", "model_failure")
 
 
+class Requirement(Struct, frozen=True, forbid_unknown_fields=True):
+    """A claim to judge, optionally required for the attempt to pass."""
+
+    text: str = field(name="claim")
+    required: bool = False
+
+
+class Score(Struct, frozen=True, kw_only=True):
+    """The effective claims held, and the run's rule for passing this attempt."""
+
+    held: int
+    total: int
+    required_failed: tuple[int, ...]
+    threshold: float
+
+    @property
+    def fraction(self) -> float:
+        return self.held / self.total
+
+    @property
+    def passed(self) -> bool:
+        return not self.required_failed and self.fraction >= self.threshold
+
+
 class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
-    """A scenario, as written in `scenarios/<id>.yaml`: `user` holds the simulated user's
-    instructions and `judge` the claims that must all hold, each a text or graded."""
+    """A scenario's user instructions and requirements, in judge order."""
 
     id: str
     max_turns: int
     instructions: str = field(name="user")
-    claims: tuple[str | Graded, ...] = field(name="judge")
+    claims: tuple[Requirement, ...] = field(name="judge")
 
     def __post_init__(self) -> None:
         if self.max_turns < 1:
             raise ValueError(f"max_turns must be at least 1, got {self.max_turns}")
         if not self.claims:
             raise ValueError("judge must list at least one claim")
+
+    def score(self, verdict: Verdict, trust: float = 0, threshold: float = 1) -> Score:
+        """All claims have equal weight; required claims must also hold individually."""
+        if not 0 <= trust <= 1:
+            raise ValueError(f"trust must be from 0 to 1, got {trust}")
+        if not 0 <= threshold <= 1:
+            raise ValueError(f"threshold must be from 0 to 1, got {threshold}")
+        held = tuple(claim.holds(trust) for claim in verdict.claims)
+        required_failed = tuple(
+            number
+            for number, (requirement, holds) in enumerate(zip(self.claims, held, strict=True), 1)
+            if requirement.required and not holds
+        )
+        return Score(
+            held=sum(held),
+            total=len(self.claims),
+            required_failed=required_failed,
+            threshold=threshold,
+        )
 
     async def outcome(self, agent: Agent, models: Models, attempt: int, places: Places) -> Outcome:
         """Play the scenario once against the agent, whose `places` wait for its busy service."""
@@ -84,7 +125,9 @@ class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
         except Exception as error:  # opening or closing the conversation is the agent's code too
             return self.failed(attempt, transcript, self.agent_error(error))
         try:
-            decided = await Checked(models.judge).decide(transcript, self.claims)
+            decided = await Checked(models.judge).decide(
+                transcript, tuple(claim.text for claim in self.claims)
+            )
         except ModelFailure as failure:
             return self.ended(attempt, transcript, NoVerdict(str(failure)), "model_failure")
         return self.ended(attempt, transcript, Verdict(decided), stop)
@@ -138,6 +181,25 @@ class TurnFailed(Exception):
         self.turn = turn
 
 
+class ScenarioInput(Struct, frozen=True, forbid_unknown_fields=True):
+    """The YAML boundary, where a plain text claim is shorthand for a requirement."""
+
+    id: str
+    max_turns: int
+    instructions: str = field(name="user")
+    claims: tuple[str | Requirement, ...] = field(name="judge")
+
+    def scenario(self) -> Scenario:
+        claims = []
+        for claim in self.claims:
+            match claim:
+                case str():
+                    claims.append(Requirement(claim))
+                case Requirement():
+                    claims.append(claim)
+        return Scenario(self.id, self.max_turns, self.instructions, tuple(claims))
+
+
 class Scenarios(Struct, frozen=True):
     """Every `*.yaml` scenario in a directory and the folders under it, checked as it is read."""
 
@@ -148,8 +210,8 @@ class Scenarios(Struct, frozen=True):
         for path in sorted(self.directory.rglob("*.yaml")):
             try:
                 scenario = msgspec.convert(
-                    yamlrocks.loads(path.read_text(encoding="utf-8")), Scenario
-                )
+                    yamlrocks.loads(path.read_text(encoding="utf-8")), ScenarioInput
+                ).scenario()
             except ValueError as error:  # YAML and validation errors are both ValueError
                 raise ValueError(f"{path}: {error}") from error
             if scenario.id in seen:

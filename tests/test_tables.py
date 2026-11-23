@@ -13,6 +13,7 @@ from convy import (
     ClaimRow,
     DecisionRow,
     Report,
+    Requirement,
     RunRow,
     ScenarioRow,
     StepRow,
@@ -25,8 +26,6 @@ from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoVerdict,
     Reason,
     Transcript,
@@ -37,9 +36,13 @@ from convy.report import Run
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
-GRADED = Graded("solved", ("none", "partial", "full"), "partial")
-REFUND = Scenario("refund", 4, "Ask for a refund.", ("asks for the order", GRADED))
-HELLO = Scenario("hello", 2, "Say hi.", ("greets",))
+REFUND = Scenario(
+    "refund",
+    4,
+    "Ask for a refund.",
+    (Requirement("asks for the order", required=True), Requirement("solved")),
+)
+HELLO = Scenario("hello", 2, "Say hi.", (Requirement("greets"),))
 SPEC = RunSpec(
     id="2026-10-06T00-00-00_ab12",
     agent="bot",
@@ -53,9 +56,11 @@ SPEC = RunSpec(
     convy="0.6.0",
     files=Files(agent="aa", models="bb"),
     trust=0.5,
+    claim_threshold=0.5,
     limits=Limits(agent=2, user=3, judge=1, agent_per_minute=60, judge_per_minute=30),
 )
 CALL = Call(
+    kind="tool",
     name="search",
     started=DAY,
     seconds=0.5,
@@ -63,14 +68,19 @@ CALL = Call(
     sent=Reported("order 7"),
     received=Reported(""),
 )
-SILENT = Call(name="lookup", started=DAY, seconds=0.1)  # no tokens, no text: not reported
+SILENT = Call(
+    kind="model", name="gpt", started=DAY, seconds=0.1
+)  # no tokens, no text: not reported
 FULL = Answer(
-    "Your order?", Usage(100, 20, 5, cache_read=60, cache_write=0), (Thought("ask"), CALL, SILENT)
+    "Your order?",
+    Usage(100, 20, 5, cache_read=60, cache_write=0),
+    (Thought("ask"), CALL, SILENT),
+    steps_complete=True,
 )
 VERDICT = Verdict(
     (
         Claim(True, Reason("asked"), Confidence(0.9)),
-        Claim(False, grade=Grade("none")),
+        Claim(False),
     )
 )
 TALK = Transcript(
@@ -104,6 +114,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         k=2,
         turn_timeout=600,
         trust=0.5,
+        claim_threshold=0.5,
         convy="0.6.0",
         started=DAY,
         status="finished",
@@ -116,7 +127,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         judge_per_minute=30,
         agent_file="aa",
         models_file="bb",
-        format=6,
+        format=9,
         path="bot/2026-10-06T00-00-00_ab12",
         unreadable=0,
     )
@@ -158,18 +169,16 @@ def test_claims_come_in_the_order_of_their_scenario():
             scenario="refund",
             claim=1,
             text="asks for the order",
-            grades=None,
-            threshold=None,
+            required=True,
         ),
         ClaimRow(
             run=RUN_ID,
             scenario="refund",
             claim=2,
             text="solved",
-            grades=("none", "partial", "full"),
-            threshold="partial",
+            required=False,
         ),
-        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets", grades=None, threshold=None),
+        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets", required=False),
     )
 
 
@@ -224,7 +233,6 @@ def test_decisions_hold_what_the_judge_said_and_none_for_what_it_did_not():
             passed=True,
             reason="asked",
             confidence=0.9,
-            grade=None,
         ),
         DecisionRow(
             run=RUN_ID,
@@ -234,7 +242,6 @@ def test_decisions_hold_what_the_judge_said_and_none_for_what_it_did_not():
             passed=False,
             reason=None,
             confidence=None,
-            grade="none",
         ),
     )
 
@@ -248,6 +255,7 @@ def test_answers_hold_the_dialogue_and_each_token_count_or_none():
             turn=1,
             message="Refund,\nplease",
             answer="Your order?",
+            steps_complete=True,
             seconds=1.5,
             input=100,
             output=20,
@@ -262,6 +270,7 @@ def test_answers_hold_the_dialogue_and_each_token_count_or_none():
             turn=2,
             message="7",
             answer="Done",
+            steps_complete=False,
             seconds=0.5,
             input=None,
             output=None,
@@ -281,6 +290,7 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=1,
             kind="thought",
+            call_kind=None,
             text="ask",
             name=None,
             started=None,
@@ -300,6 +310,7 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=2,
             kind="call",
+            call_kind="tool",
             text=None,
             name="search",
             started=DAY,
@@ -319,8 +330,9 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=3,
             kind="call",
+            call_kind="model",
             text=None,
-            name="lookup",
+            name="gpt",
             started=DAY,
             seconds=0.1,
             input=None,
@@ -349,8 +361,7 @@ def test_every_row_finds_its_parent_by_its_keys():
     assert {(r.run, r.scenario, r.attempt, r.turn) for r in TABLES.steps().rows} <= turns
 
 
-def test_records_keep_none_tuples_and_datetimes():
-    assert TABLES.claims().records()[1]["grades"] == ("none", "partial", "full")
+def test_records_keep_none_and_datetimes():
     assert TABLES.runs().records()[0]["started"] == DAY
     assert TABLES.runs().records()[1]["ended"] is None
 
@@ -373,6 +384,7 @@ def test_tables_come_in_order_with_their_rows_and_columns():
                 "k",
                 "turn_timeout",
                 "trust",
+                "claim_threshold",
                 "convy",
                 "started",
                 "status",
@@ -391,10 +403,14 @@ def test_tables_come_in_order_with_their_rows_and_columns():
             ],
         ),
         ("scenarios", ScenarioRow, ["run", "scenario", "instructions", "max_turns"]),
-        ("claims", ClaimRow, ["run", "scenario", "claim", "text", "grades", "threshold"]),
+        ("claims", ClaimRow, ["run", "scenario", "claim", "text", "required"]),
         ("attempts", AttemptRow, [*keys, "verdict", "error", "stop"]),
-        ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence", "grade"]),
-        ("answers", AnswerRow, [*keys, "turn", "message", "answer", "seconds", *tokens]),
+        ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence"]),
+        (
+            "answers",
+            AnswerRow,
+            [*keys, "turn", "message", "answer", "steps_complete", "seconds", *tokens],
+        ),
         (
             "steps",
             StepRow,
@@ -403,6 +419,7 @@ def test_tables_come_in_order_with_their_rows_and_columns():
                 "turn",
                 "step",
                 "kind",
+                "call_kind",
                 "text",
                 "name",
                 "started",
@@ -434,6 +451,7 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("RunSpec", "convy"): ("runs.convy",),
     ("RunSpec", "files"): (),
     ("RunSpec", "trust"): ("runs.trust",),
+    ("RunSpec", "claim_threshold"): ("runs.claim_threshold",),
     ("RunSpec", "limits"): (),
     ("Files", "agent"): ("runs.agent_file",),
     ("Files", "models"): ("runs.models_file",),
@@ -448,10 +466,9 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Scenario", "id"): ("scenarios.scenario",),
     ("Scenario", "max_turns"): ("scenarios.max_turns",),
     ("Scenario", "instructions"): ("scenarios.instructions",),
-    ("Scenario", "claims"): ("claims.text",),  # a plain claim is its text
-    ("Graded", "text"): ("claims.text",),
-    ("Graded", "grades"): ("claims.grades",),
-    ("Graded", "threshold"): ("claims.threshold",),
+    ("Scenario", "claims"): (),
+    ("Requirement", "text"): ("claims.text",),
+    ("Requirement", "required"): ("claims.required",),
     ("Outcome", "scenario"): ("attempts.scenario",),
     ("Outcome", "attempt"): ("attempts.attempt",),
     ("Outcome", "transcript"): (),
@@ -464,16 +481,15 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Claim", "passed"): ("decisions.passed",),
     ("Claim", "reason"): (),
     ("Claim", "confidence"): (),
-    ("Claim", "grade"): (),
     ("Reason", "text"): ("decisions.reason",),
     ("Confidence", "value"): ("decisions.confidence",),
-    ("Grade", "value"): ("decisions.grade",),
     ("Turn", "message"): (),
     ("Turn", "answer"): (),
     ("Turn", "seconds"): ("answers.seconds",),
     ("Message", "text"): ("answers.message",),
     ("Answer", "text"): ("answers.answer",),
     ("Answer", "usage"): (),
+    ("Answer", "steps_complete"): ("answers.steps_complete",),
     ("Answer", "steps"): ("steps.kind",),  # which kind of step
     ("Usage", "input"): ("answers.input", "steps.input"),
     ("Usage", "output"): ("answers.output", "steps.output"),
@@ -481,6 +497,7 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Usage", "cache_read"): ("answers.cache_read", "steps.cache_read"),
     ("Usage", "cache_write"): ("answers.cache_write", "steps.cache_write"),
     ("Thought", "text"): ("steps.text",),
+    ("Call", "kind"): ("steps.call_kind",),
     ("Call", "name"): ("steps.name",),
     ("Call", "started"): ("steps.started",),
     ("Call", "seconds"): ("steps.seconds",),
@@ -532,7 +549,7 @@ def test_every_column_but_the_keys_holds_a_field_of_a_run():
 class Cells(msgspec.Struct, frozen=True, kw_only=True):
     text: str | None
     flag: bool
-    grades: tuple[str, ...] | None
+    items: tuple[str, ...] | None
     at: datetime | None
     number: float
 
@@ -541,22 +558,22 @@ CELLS = Table(
     "cells",
     Cells,
     (
-        Cells(text='two\nlines, "quoted"', flag=True, grades=("a", "b"), at=DAY, number=0.5),
-        Cells(text="", flag=False, grades=None, at=None, number=2),
+        Cells(text='two\nlines, "quoted"', flag=True, items=("a", "b"), at=DAY, number=0.5),
+        Cells(text="", flag=False, items=None, at=None, number=2),
     ),
 )
 
 
 def test_csv_quotes_every_value_writes_what_is_not_text_as_json_and_leaves_a_missing_one_empty():
     assert CELLS.csv() == (
-        '"text","flag","grades","at","number"\r\n'
+        '"text","flag","items","at","number"\r\n'
         '"two\nlines, ""quoted""","true","[""a"",""b""]","2026-10-06T00:00:00Z","0.5"\r\n'
         '"","false",,,"2"\r\n'
     )
 
 
 def test_an_empty_table_still_has_its_header():
-    assert Table("cells", Cells, ()).csv() == '"text","flag","grades","at","number"\r\n'
+    assert Table("cells", Cells, ()).csv() == '"text","flag","items","at","number"\r\n'
 
 
 def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
@@ -566,11 +583,11 @@ def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
         {
             "text": 'two\nlines, "quoted"',
             "flag": True,
-            "grades": ["a", "b"],
+            "items": ["a", "b"],
             "at": "2026-10-06T00:00:00Z",
             "number": 0.5,
         },
-        {"text": "", "flag": False, "grades": None, "at": None, "number": 2},
+        {"text": "", "flag": False, "items": None, "at": None, "number": 2},
     ]
 
 
@@ -580,20 +597,24 @@ def trusted(decision: DecisionRow, trust: float) -> bool:
 
 
 def counted(tables: Tables, trust: float) -> dict[tuple[str, int], bool]:
-    """Pass rate: the counted attempts and whether each passed. One counts when the agent failed,
-    or when every decision is trusted or a trusted decision failed."""
+    """Pass rate: every verdict and agent failure counts; scoring uses recorded requirements."""
     decisions: defaultdict[tuple[str, int], list[DecisionRow]] = defaultdict(list)
-    for d in tables.decisions().rows:
-        decisions[d.scenario, d.attempt].append(d)
-    found: dict[tuple[str, int], bool] = {}
-    for a in tables.attempts().rows:
-        made = decisions[a.scenario, a.attempt]
-        sure = [d for d in made if trusted(d, trust)]
-        match a.verdict:
+    for decision in tables.decisions().rows:
+        decisions[decision.scenario, decision.attempt].append(decision)
+    (run,) = tables.runs().rows
+    required = {(c.scenario, c.claim) for c in tables.claims().rows if c.required}
+    found = {}
+    for attempt in tables.attempts().rows:
+        made = decisions[attempt.scenario, attempt.attempt]
+        held = {d.claim for d in made if d.passed and trusted(d, trust)}
+        match attempt.verdict:
             case "failed":
-                found[a.scenario, a.attempt] = False
-            case "verdict" if len(sure) == len(made) or any(not d.passed for d in sure):
-                found[a.scenario, a.attempt] = all(d.passed for d in made)
+                found[attempt.scenario, attempt.attempt] = False
+            case "verdict":
+                mandatory = {claim for scenario, claim in required if scenario == attempt.scenario}
+                found[attempt.scenario, attempt.attempt] = (
+                    mandatory <= held and len(held) / len(made) >= run.claim_threshold
+                )
     return found
 
 
@@ -609,13 +630,15 @@ def seconds_per_answer(tables: Tables) -> float:
 
 
 def tokens_per_attempt(tables: Tables) -> float:
-    """Tokens per attempt: the mean, over the attempts that report them, of the sum of their
-    answers' input and output."""
+    """Tokens per attempt: the mean of complete recorded answer totals."""
     tokens: defaultdict[tuple[str, int], int] = defaultdict(int)
+    missing = set()
     for a in tables.answers().rows:
         if a.input is not None and a.output is not None:
             tokens[a.scenario, a.attempt] += a.input + a.output
-    return mean(tokens.values())
+        else:
+            missing.add((a.scenario, a.attempt))
+    return mean(value for key, value in tokens.items() if key not in missing)
 
 
 def cache_share(tables: Tables) -> float:
@@ -630,37 +653,16 @@ def cache_share(tables: Tables) -> float:
 
 
 def claim_counts(tables: Tables, trust: float) -> list[tuple[int, int]]:
-    """Scenarios: a claim's count, held of judged, is over its trusted decisions."""
+    """Scenarios: every decision counts, with low confidence treated as failure."""
     counts = []
     for c in tables.claims().rows:
         made = [
-            d.passed
+            d.passed and trusted(d, trust)
             for d in tables.decisions().rows
-            if (d.scenario, d.claim) == (c.scenario, c.claim) and trusted(d, trust)
+            if (d.scenario, d.claim) == (c.scenario, c.claim)
         ]
         counts.append((sum(made), len(made)))
     return counts
-
-
-def typical_grade(tables: Tables, trust: float, scenario: str) -> str | None:
-    """Scenarios: a claim's typical grade is the middle one of its trusted grades, in the claim's
-    order; with two in the middle, the worse."""
-    ((number, levels),) = [
-        (c.claim, c.grades)
-        for c in tables.claims().rows
-        if c.scenario == scenario and c.grades is not None
-    ]
-    grades = sorted(
-        (
-            d.grade
-            for d in tables.decisions().rows
-            if (d.scenario, d.claim) == (scenario, number)
-            and trusted(d, trust)
-            and d.grade is not None
-        ),
-        key=levels.index,
-    )
-    return grades[(len(grades) - 1) // 2] if grades else None
 
 
 def answered(usage: Usage | NoUsage, seconds: float) -> Turn:
@@ -680,10 +682,14 @@ def sure(passed: bool, value: float) -> Claim:
 NUMBERS = Run(
     Path("bot/numbers"),
     msgspec.structs.replace(
-        SPEC, k=6, trust=0.8, scenarios=(Scenario("s", 2, "Ask.", ("one", "two")),)
+        SPEC,
+        k=6,
+        trust=0.8,
+        claim_threshold=1,
+        scenarios=(Scenario("s", 2, "Ask.", (Requirement("one"), Requirement("two"))),),
     ),
     Finished(DAY),
-    (  # 0.8 is the trust: trusted at >=, so attempt 1 counts and claim one holds 3 of 3
+    (  # 0.8 is the trust: trusted at >=, so attempt 1 counts and claim one holds 3 of 4
         played(
             "s",
             1,
@@ -704,72 +710,91 @@ NUMBERS = Run(
 )
 NUMBERS_PAGE = Report(NUMBERS).page()
 NUMBERS_TABLES = Tables((NUMBERS,))
-GRADES = Run(
-    Path("bot/grades"),
+CONSISTENCY = Run(
+    Path("bot/consistency"),
     msgspec.structs.replace(
         SPEC,
         k=2,
         trust=0.5,
         scenarios=(
-            Scenario("a", 2, "Ask.", ("one",)),
-            Scenario("b", 2, "Ask.", (GRADED,)),
-            Scenario("c", 2, "Ask.", ("one",)),
-            Scenario("d", 2, "Ask.", ("one",)),
-            Scenario("e", 2, "Ask.", ("one",)),
+            Scenario("a", 2, "Ask.", (Requirement("one"),)),
+            Scenario("b", 2, "Ask.", (Requirement("solved"),)),
+            Scenario("c", 2, "Ask.", (Requirement("one"),)),
+            Scenario("d", 2, "Ask.", (Requirement("one"),)),
+            Scenario("e", 2, "Ask.", (Requirement("one"),)),
         ),
     ),
     Finished(DAY),
     (
         played("a", 1, Verdict((Claim(True),))),
         played("a", 2, Verdict((Claim(True),))),
-        played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9), grade=Grade("full")),))),
-        played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1), grade=Grade("none")),))),
+        played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9)),))),
+        played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1)),))),
         played("c", 1, Verdict((Claim(True),))),
         played("d", 1, Verdict((Claim(True),))),
         played("d", 2, Verdict((Claim(False),))),
         played("e", 1, Verdict((Claim(True),))),
         played("e", 2, Verdict((sure(True, 0.1),))),
-    ),  # with the unsure grade, b's grades are none and full, and the worse of two is none
-)  # stable: a only; c has an attempt not played, d one that failed, e one not counted
-GRADES_PAGE = Report(GRADES).page()
-GRADES_TABLES = Tables((GRADES,))
+    ),
+)  # stable: a only; c has an attempt not played, d one that failed, e one below trust
+CONSISTENCY_PAGE = Report(CONSISTENCY).page()
+CONSISTENCY_TABLES = Tables((CONSISTENCY,))
 
 
 def test_the_pass_rate_is_the_share_of_counted_attempts_that_passed():
     passed = list(counted(NUMBERS_TABLES, 0.8).values())
     metrics = NUMBERS_PAGE.metrics
-    assert (sum(passed), len(passed)) == (metrics.passed, metrics.judged) == (2, 4)
+    assert (sum(passed), len(passed)) == (metrics.passed, metrics.judged) == (2, 5)
 
 
 def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
-    assert stable(GRADES_TABLES, 2, 0.5) == GRADES_PAGE.metrics.stable == 1
+    assert stable(CONSISTENCY_TABLES, 2, 0.5) == CONSISTENCY_PAGE.metrics.stable == 1
 
 
 def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
-    seconds = NUMBERS_PAGE.metrics.seconds
+    seconds = NUMBERS_PAGE.views.all.numbers.seconds
     assert seconds is not None
     assert seconds_per_answer(NUMBERS_TABLES) == seconds.mean == 1.75
 
 
-def test_the_tokens_per_attempt_are_the_mean_over_the_attempts_that_report_them():
-    tokens = NUMBERS_PAGE.metrics.tokens
+@pytest.mark.parametrize("partial", [False, True])
+def test_exported_tokens_reproduce_the_mean_of_complete_tasks(partial):
+    first, *rest = NUMBERS.outcomes
+    if partial:
+        first = msgspec.structs.replace(
+            first, transcript=first.transcript.with_turn(answered(NoUsage(), 1.0))
+        )
+    run = msgspec.structs.replace(NUMBERS, outcomes=(first, *rest))
+    tokens = Report(run).page().views.all.numbers.attempt_tokens
     assert tokens is not None
-    assert tokens_per_attempt(NUMBERS_TABLES) == tokens.mean == 430 / 3
+    assert tokens_per_attempt(Tables((run,))) == tokens.mean == (160 if partial else 430 / 3)
 
 
 def test_the_cache_share_is_over_the_answers_that_report_a_cache_read():
     assert cache_share(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.cached == 100 / 300
 
 
-def test_a_claim_s_count_is_over_its_trusted_decisions():
+def test_a_claim_s_count_includes_low_confidence_as_failures():
     (scenario,) = NUMBERS_PAGE.scenarios
     assert (
         claim_counts(NUMBERS_TABLES, 0.8)
         == [(c.held, c.judged) for c in scenario.claims]
-        == [(3, 3), (2, 3)]
+        == [(3, 4), (2, 4)]
     )
 
 
-def test_a_claim_s_typical_grade_is_the_middle_of_its_trusted_grades():
-    (b,) = (scenario for scenario in GRADES_PAGE.scenarios if scenario.id == "b")
-    assert typical_grade(GRADES_TABLES, 0.5, "b") == b.claims[0].typical == "full"
+@pytest.mark.parametrize(
+    ("trust", "threshold", "passed"), [(0.5, 0.5, True), (0.5, 1, False), (1, 0, False)]
+)
+def test_exported_requirements_reproduce_scoring_without_rewriting_judge_decisions(
+    trust, threshold, passed
+):
+    run = msgspec.structs.replace(
+        RUN, spec=msgspec.structs.replace(SPEC, trust=trust, claim_threshold=threshold)
+    )
+    tables = Tables((run,))
+    first, second = tables.decisions().rows
+    assert (first.passed, first.confidence, second.passed) == (True, 0.9, False)
+    assert counted(tables, trust)["refund", 1] is passed
+    metrics = Report(run).page().metrics
+    assert (metrics.passed, metrics.judged) == (int(passed), 2)

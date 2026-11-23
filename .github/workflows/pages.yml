@@ -1,6 +1,6 @@
 name: Pages
 
-# The demo's pages: its committed runs, built into reports by the convy of this commit.
+# Publish the recorded demo unchanged; regenerating it requires fresh runs.
 on:
   push:
     branches: [main]
@@ -8,9 +8,6 @@ on:
 
 permissions:
   contents: read
-
-env:
-  UV_LOCKED: '1'
 
 concurrency:
   group: pages
@@ -25,20 +22,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-
-      - name: Set up Just
-        uses: extractions/setup-just@v4
-        with:
-          just-version: '1.58.0'
-
-      - name: Build the demo's pages
-        run: just demo-site
 
       - name: Upload the pages
         uses: actions/upload-pages-artifact@v5

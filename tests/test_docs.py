@@ -20,6 +20,8 @@ def test_run_from_python_example_runs(tmp_path: Path, monkeypatch: pytest.Monkey
     exec(found[1], {})
     page = (tmp_path / "results" / "echo" / "first" / "report.html").read_text(encoding="utf-8")
     assert '"agent":"echo"' in page
+    workspace = (tmp_path / "results" / "index.html").read_text(encoding="utf-8")
+    assert "echo/first/report.html" in workspace
     written = (tmp_path / "results" / "echo" / "first" / "run.json").read_bytes()
     assert msgspec.json.decode(written, type=RunFile).spec.convy == version("convy")
 
@@ -28,10 +30,9 @@ def test_running_from_python_is_public_api():
     names = {"Bench", "Scenario", "Scenarios", "Matching", "Outcome", "Verdict", "NoVerdict"}
     names |= {"Claim", "Failed", "Transcript", "Turn", "Journal", "RunJournal", "RunSpec"}
     names |= {"Files", "Running", "Finished", "Interrupted", "Run", "Runs", "Report"}
-    names |= {"Comparison", "Index"}
+    names |= {"Comparison", "Index", "Requirement", "Score"}
     names |= {"Judge", "ChatJudge"}
     names |= {"Confidence", "NoConfidence"}
-    names |= {"Graded", "Grade", "NoGrade"}
     names |= {"Thought", "Call", "Reported", "NotReported"}
     names |= {"Reason", "NoReason"}
     names |= {"TokenPaths"}

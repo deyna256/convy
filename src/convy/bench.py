@@ -76,12 +76,15 @@ class RunSpec(Struct, frozen=True, kw_only=True):
     started: datetime
     convy: str = CONVY
     files: Files = Files()
-    trust: float = 0.0  # decisions the judge is less sure of are cut out; 0 cuts nothing
+    trust: float = 0.0  # positive decisions below this confidence fail
+    claim_threshold: float = 1.0  # fraction of all claims that must hold
     limits: Limits = Limits()  # the limits the run started with; a resumed run may use others
 
     def __post_init__(self) -> None:
         if not 0 <= self.trust <= 1:
             raise ValueError(f"trust must be from 0 to 1, got {self.trust}")
+        if not 0 <= self.claim_threshold <= 1:
+            raise ValueError(f"claim_threshold must be from 0 to 1, got {self.claim_threshold}")
 
     def code_changes(self, files: Files, convy: str) -> tuple[str, ...]:
         """How the code that plays the run differs from the code it started with: the agent's
@@ -145,7 +148,7 @@ type Status = Running | Finished | Interrupted
 class RunFile(Struct, frozen=True):
     """What `run.json` holds."""
 
-    format: Literal[2, 3, 4, 5, 6]
+    format: Literal[9]
     spec: RunSpec
     status: Status
 
@@ -255,7 +258,7 @@ class RunJournal(Struct, frozen=True):
 
     def write(self, status: Status) -> None:
         temporary = self.folder() / "run.json.tmp"
-        temporary.write_bytes(msgspec.json.encode(RunFile(6, self.spec, status)))
+        temporary.write_bytes(msgspec.json.encode(RunFile(9, self.spec, status)))
         temporary.replace(self.folder() / "run.json")  # never half-written
 
     def record(self, outcome: Outcome) -> None:

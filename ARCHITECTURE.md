@@ -16,7 +16,7 @@ as it ends. The report is built from the runs.
 convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome ──▶ SimulatedUser ⇄ Conversation (agent)
                    │                                         └─▶ Judge
                    └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
-                                                        ├─▶ Comparison ──▶ results/compare/*.html
+                                                        ├─▶ Comparison ──▶ CLI regression verdict
                                                         ├─▶ Index ──▶ results/index.html
                                                         └─▶ Tables ──▶ results/export/
 ```
@@ -32,13 +32,13 @@ All code is in `src/convy/`.
 | `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template, and `TokenPaths`, where it finds an answer's tokens |
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; a scenario's `Graded` claims; its decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence` and `Grade` or `NoGrade`, and the attempts without them, `Failed` and `NoVerdict` |
-| `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
+| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; its yes/no decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence`, and the attempts without them, `Failed` and `NoVerdict` |
+| `scenario.py` | `Scenario` (read from YAML), its `Requirement` definitions and computed `Score`, and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
-| `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, each time and token number a `Spread` of its values, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
+| `report.py`, `pages/` | `Runs` reads saved runs. `Summary` builds run and scenario metrics, including each resource’s `Spread` and the pass counts in a `Tally`. `Report` renders a single run and `Index` renders the runs workspace. `Template` embeds the data and shared page assets. `Comparison` supplies the two-run CLI verdict. |
 | `tables.py` | a consumer of runs: `Tables`, a run's seven tables, and `Table`, one of them with its rows as records, CSV and JSON Lines; the row types |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index, comparisons and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
+| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
 | `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`, `ExportCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
 
@@ -85,13 +85,14 @@ in all of `src/convy/`.
    `Project.export` writes them. Domain objects still have no such methods.
 7. **Outside data becomes the domain's types where it enters; only those types travel inside.**
    Each entry turns what comes in into convy's own types at once. Scenarios: `yamlrocks`, then
-   `msgspec.convert` into `Scenario`. The run's folder: `msgspec.json.decode` into `RunFile` and
-   `Outcome`, an older format converted right there. An agent's answer: encoded and decoded with
-   `msgspec.json` as the run's folder will, so a wrong one fails its turn instead of the run. A
-   model's reply: read into the shape of an OpenAI chat completion. The judge model's reply: each
-   decision read into the type its claim needs. A judge's own answer: `Checked` encodes and
-   decodes it as the run's folder will, and wants one `Claim` per claim, a graded claim with one
-   of its grades and the `pass` the scenario gives that grade; a judge gets only what was said.
+   `msgspec.convert` into `ScenarioInput`, whose strings and requirement records become a `Scenario`.
+   The run's folder: `msgspec.json.decode` into `RunFile` and
+   `Outcome`, with unsupported formats rejected before decoding their contents. An agent's answer:
+   encoded and decoded with `msgspec.json` as the run's folder will, so a wrong one fails its turn
+   instead of the run. A model's reply: read into the shape of an OpenAI chat completion. The judge
+   model's reply: each decision read as a yes/no result. A judge's own answer: `Checked` encodes and
+   decodes it as the run's folder will, and wants one `Claim` per claim; a judge gets only what was
+   said.
    `[tool.convy]` of `pyproject.toml`: `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
    pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
    entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
@@ -107,7 +108,7 @@ in all of `src/convy/`.
 10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
     `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
     `int | NotReported` (a count of `Usage`),
-    `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a claim's `str | Graded`, a run's status —
+    `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a run's status —
     and records such as `Outcome`. Data from outside is read into such types where it enters
     (rule 7), so this holds for it too.
     Objects with behaviour are called through their interface, not checked for type. There are two
@@ -131,14 +132,20 @@ in all of `src/convy/`.
 
 ## The report
 
-`report.py` makes every number and decision on the pages: the tiles, a scenario's result, a claim's
-count, the change between two runs and its colour, whether a change of pass rate is real, the
-groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
-the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
-through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the
-scripts stay thin enough to need no tests of their own. Each page is assembled from shared parts in
-`pages/` — `base.css`, `base.js` and the tab's `icon.svg` for every page, `window.css` and
-`window.js` for the scenario window — and written as one standalone file.
+`Scenario.score` owns [attempt scoring](docs/scenarios.md#passing-an-attempt), using
+`Claim.holds(trust)` for effective decisions. The CLI and report use this same calculation; raw
+judge decisions remain unchanged in the journal and exports. Tool counts are derived from explicit
+call kinds and trace completeness ([decision 13](docs/decisions/0013-tool-invocations.md));
+[the report](docs/report.md#measured-population) defines their population and coverage.
+`report.py` builds the metric and scenario records for both pages. The index carries the run and
+scenario summaries and links to the detailed report, where claims and dialogues live. Filtering
+selects the same runs in the table, scatter plot and matrix. The optional reference and the CLI
+regression gate answer different questions. See [decision 14](docs/decisions/0014-runs-workspace.md).
+
+Each page embeds its own data, styles and scripts and works offline. Shared assets in `pages/`
+include `base.css`, `base.js` and `icon.svg`. The run report also uses `window.css` and
+`window.js` for the scenario window. Scripts add data as text. The run report renders agent
+Markdown with a small set of DOM nodes.
 
 The view records are internal and have no version: one convy version writes the template and the data
 into one file, and a page written earlier keeps working on its own. The durable formats are the
@@ -173,11 +180,10 @@ run `interrupted` on that, or on any other error, and re-raises it.
   ([decision 8](docs/decisions/0008-busy-services.md)).
 - `ModelFailure` — the simulated user's or the judge's model failed, stayed busy, or gave an answer
   convy cannot use: an empty message, or a judge's answer without one decision per claim whose
-  `"pass"` is `true` or `false`, or whose `"grade"` is one of the claim's; or raised any other
-  error, which `Contained` (the user's model) turns into `ModelFailure`; or a judge that raised any
-  error, or gave an answer that is not one `Claim` per claim with the grades the scenario allows,
-  which `Checked` turns into `ModelFailure`. The attempt has `NoVerdict` and is left out of the pass
-  rate.
+  `"pass"` is `true` or `false`; or raised any other error, which `Contained` (the user's model)
+  turns into `ModelFailure`; or a judge that raised any error, or gave an answer that is not one
+  valid `Claim` per claim, which `Checked` turns into `ModelFailure`. The attempt has `NoVerdict`
+  and is left out of the pass rate.
 - Configuration errors — raised while loading the project, or a run that cannot be resumed or that
   another process is playing (`RunInUse`), before any request: the command prints them and exits
   with code 2.

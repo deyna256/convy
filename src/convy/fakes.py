@@ -8,7 +8,7 @@ from msgspec import Struct
 
 from convy.agent import Answer, Conversation, Message, Usage
 from convy.busy import Busy
-from convy.dialog import Claim, Graded, Transcript
+from convy.dialog import Claim, Transcript
 from convy.model import ModelFailure
 from convy.scenario import Outcome
 
@@ -133,13 +133,11 @@ class FakeJudge:
             raise ValueError("FakeJudge needs at least one step")
         self.steps = steps
         self.delay = delay
-        self.calls: list[tuple[Transcript, tuple[str | Graded, ...]]] = []
+        self.calls: list[tuple[Transcript, tuple[str, ...]]] = []
         self.peak = 0
         self.busy = 0
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         step = self.steps[min(len(self.calls), len(self.steps) - 1)]
         self.calls.append((transcript, claims))
         self.busy += 1

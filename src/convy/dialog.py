@@ -32,8 +32,6 @@ JUDGE_PROMPT = """Below are a dialogue between a user and an agent, and a number
 about it. Check every claim strictly against the text of the dialogue.
 Answer with JSON only: {{"claims": [{{"pass": true or false, "reason": "a short explanation"}}, …]}}
 Give one entry per claim, in the order of the list. "pass" is true only if the claim holds.
-A claim that ends with "(grades: …)" is graded: instead of "pass", give "grade", exactly one of
-those grades. They are listed from worst to best.
 Write the reasons in the language of the claims.
 
 Dialogue:
@@ -67,7 +65,10 @@ class Transcript(Struct, frozen=True):
         """The same dialogue with only what was said, without the steps of the answers."""
         return Transcript(
             tuple(
-                msgspec.structs.replace(turn, answer=msgspec.structs.replace(turn.answer, steps=()))
+                msgspec.structs.replace(
+                    turn,
+                    answer=msgspec.structs.replace(turn.answer, steps=(), steps_complete=False),
+                )
                 for turn in self.turns
             )
         )
@@ -124,16 +125,6 @@ class NoConfidence(Struct, frozen=True, tag="no_confidence"):
     """The judge did not say how sure it is."""
 
 
-class Grade(Struct, frozen=True, tag="grade"):
-    """The judge's grade of a graded claim: one of the claim's grades, as text."""
-
-    value: str
-
-
-class NoGrade(Struct, frozen=True, tag="no_grade"):
-    """The claim is not graded: it only passes or fails."""
-
-
 class Reason(Struct, frozen=True, tag="reason"):
     """Why the judge decided as it did."""
 
@@ -148,80 +139,37 @@ class NoReason(Struct, frozen=True, tag="no_reason"):
     """The judge gave no reason."""
 
 
-class PassDecision(Struct, frozen=True):
+class PassDecision(Struct, frozen=True, forbid_unknown_fields=True):
     """The judge model's decision on a plain claim, as it writes it."""
 
     passed: bool = field(name="pass")
     reason: str | None = None
 
 
-class GradeDecision(Struct, frozen=True):
-    """The judge model's decision on a graded claim, as it writes it: a scale's 4 may come as 4."""
-
-    grade: str | int
-    reason: str | None = None
-
-
-class Graded(Struct, frozen=True, forbid_unknown_fields=True):
-    """A claim of a scenario graded on its own grades, from worst to best: `pass` is the worst
-    grade that still passes. YAML reads a scale such as `[1, 2, 3]` as numbers."""
-
-    text: str = field(name="claim")
-    grades: tuple[str | int, ...]
-    threshold: str | int = field(name="pass")
-
-    def __post_init__(self) -> None:
-        if len(self.grades) < 2:
-            raise ValueError(f"{self.text!r}: grades must list at least two grades")
-        if len(set(self.levels)) != len(self.levels):
-            raise ValueError(f"{self.text!r}: a grade is listed twice")
-        if str(self.threshold) not in self.levels:
-            raise ValueError(f"{self.text!r}: pass must be one of the grades")
-
-    @property
-    def levels(self) -> tuple[str, ...]:
-        """The grades as text, from worst to best."""
-        return tuple(str(grade) for grade in self.grades)
-
-    def passes(self, grade: str) -> bool:
-        """Whether `grade`, one of the claim's grades, is at or above `pass`."""
-        return self.levels.index(grade) >= self.levels.index(str(self.threshold))
-
-
-class Claim(Struct, frozen=True):
-    """The judge's decision on one claim of a scenario, and how sure it is. A graded claim also
-    has its grade, and passes as the scenario says of that grade."""
+class Claim(Struct, frozen=True, forbid_unknown_fields=True):
+    """The judge's decision on one claim of a scenario, and how sure it is."""
 
     passed: bool = field(name="pass")
     reason: Reason | NoReason = NoReason()
     confidence: Confidence | NoConfidence = NoConfidence()
-    grade: Grade | NoGrade = NoGrade()
 
     def trusted(self, trust: float) -> bool:
-        """Whether the decision counts at `trust`: a judge that did not say is trusted."""
+        """Whether confidence meets `trust`: a judge that did not say is trusted."""
         match self.confidence:
             case Confidence(value=value):
                 return value >= trust
             case NoConfidence():
                 return True
 
+    def holds(self, trust: float) -> bool:
+        """A positive decision holds only when its confidence meets the run's trust."""
+        return self.passed and self.trusted(trust)
+
 
 class Verdict(Struct, frozen=True, tag="verdict"):
     """The judge's decision on each claim, in the order of the scenario's claims."""
 
     claims: tuple[Claim, ...]
-
-    @property
-    def passed(self) -> bool:
-        """An attempt passes when every claim holds."""
-        return all(claim.passed for claim in self.claims)
-
-    def decided(self, trust: float) -> bool:
-        """Whether the verdict counts at `trust`: a trusted claim failed, or every claim is
-        trusted. One that does not count is cut out of the sample; `passed` still says what the
-        judge decided."""
-        trusted = [claim for claim in self.claims if claim.trusted(trust)]
-        return len(trusted) == len(self.claims) or any(not claim.passed for claim in trusted)
 
 
 class Failed(Struct, frozen=True, tag="failed"):
@@ -246,11 +194,8 @@ class Judge(Protocol):
         see it."""
         ...
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
-        """One decision per claim, in their order, or raise `ModelFailure`. A graded claim gets a
-        grade, a plain one none."""
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
+        """One decision per claim, in their order, or raise `ModelFailure`."""
         ...
 
 
@@ -264,26 +209,15 @@ class ChatJudge(Struct, frozen=True):
         """The model's name."""
         return self.model.name
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         prompt = JUDGE_PROMPT.format(
             dialogue=transcript.as_text(),
-            claims="\n".join(
-                f"{number}. {self.listed(claim)}" for number, claim in enumerate(claims, 1)
-            ),
+            claims="\n".join(f"{number}. {claim}" for number, claim in enumerate(claims, 1)),
         )
         answer = await self.model.reply([{"role": "user", "content": prompt}])
         return self.parsed(answer, claims)
 
-    def listed(self, claim: str | Graded) -> str:
-        match claim:
-            case str():
-                return claim
-            case Graded(text=text, levels=levels):
-                return f"{text} (grades: {', '.join(levels)})"
-
-    def parsed(self, text: str, claims: tuple[str | Graded, ...]) -> tuple[Claim, ...]:
+    def parsed(self, text: str, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         """The first JSON object with "claims" in the model's answer, even with text around it.
 
         An answer without one, or with claims convy cannot use, is a failure of the judge's model,
@@ -304,38 +238,19 @@ class ChatJudge(Struct, frozen=True):
             start = text.find("{", end)  # skip the whole object, nested braces included
         raise ModelFailure(f"the judge did not answer with JSON: {text[:200]}")
 
-    def claims(
-        self, items: list[object], claims: tuple[str | Graded, ...], text: str
-    ) -> tuple[Claim, ...]:
+    def claims(self, items: list[object], claims: tuple[str, ...], text: str) -> tuple[Claim, ...]:
         """The model's "claims", one per claim, each read into the decision its claim needs."""
         if len(items) != len(claims):
             raise ModelFailure(
                 f"the judge decided {len(items)} claims of {len(claims)}: {text[:200]}"
             )
-        return tuple(
-            self.claim(number, item, claim, text)
-            for number, (item, claim) in enumerate(zip(items, claims, strict=True), 1)
-        )
+        return tuple(self.claim(number, item, text) for number, item in enumerate(items, 1))
 
-    def claim(self, number: int, item: object, claim: str | Graded, text: str) -> Claim:
-        """A plain claim needs a "pass" of true or false, a graded one a "grade" of its own;
-        "true" or 1 is not a decision. A missing, null or blank "reason" is no reason."""
+    def claim(self, number: int, item: object, text: str) -> Claim:
+        """A claim needs a boolean pass; a missing, null or blank reason is no reason."""
         try:
-            match claim:
-                case str():
-                    said = msgspec.convert(item, PassDecision)
-                    return Claim(said.passed, self.reason(said.reason))
-                case Graded(levels=levels):
-                    graded = msgspec.convert(item, GradeDecision)
-                    grade = str(graded.grade)  # a scale's 4 is "4"
-                    if grade not in levels:
-                        raise ModelFailure(
-                            f"the judge's claim {number}: the grade {grade!r} is not one of "
-                            f"{', '.join(levels)}: {text[:200]}"
-                        )
-                    return Claim(
-                        claim.passes(grade), self.reason(graded.reason), grade=Grade(grade)
-                    )
+            said = msgspec.convert(item, PassDecision)
+            return Claim(said.passed, self.reason(said.reason))
         except msgspec.ValidationError as error:
             raise ModelFailure(f"the judge's claim {number}: {error}: {text[:200]}") from None
 
@@ -353,9 +268,7 @@ class PatientJudge(Struct, frozen=True):
     def name(self) -> str:
         return self.judge.name
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         return await self.places.call(lambda: self.judge.decide(transcript, claims))
 
 
@@ -371,9 +284,7 @@ class Checked(Struct, frozen=True):
     def name(self) -> str:
         return self.judge.name
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         try:
             answer = await self.judge.decide(transcript.without_steps(), claims)
         except ModelFailure:
@@ -391,22 +302,4 @@ class Checked(Struct, frozen=True):
             raise ModelFailure(f"{self.name}: the decisions are not claims: {error}") from error
         if len(decided) != len(claims):
             raise ModelFailure(f"{self.name}: decided {len(decided)} claims of {len(claims)}")
-        for number, (claim, decision) in enumerate(zip(claims, decided, strict=True), 1):
-            if error := self.wrong(claim, decision):
-                raise ModelFailure(f"{self.name}: claim {number}: {error}")
         return decided
-
-    def wrong(self, claim: str | Graded, decision: Claim) -> str:
-        """What is wrong with a decision on a claim, or "": a graded claim needs one of its
-        grades and the `pass` the scenario gives it; a plain claim takes no grade."""
-        match claim, decision.grade:
-            case str(), Grade(value=value):
-                return f"a grade, {value!r}, for a claim that is not graded"
-            case Graded(), NoGrade():
-                return "no grade for a graded claim"
-            case Graded(levels=levels), Grade(value=value) if value not in levels:
-                return f"the grade {value!r} is not one of {', '.join(levels)}"
-            case Graded(), Grade(value=value) if decision.passed != claim.passes(value):
-                verdict = "passes" if claim.passes(value) else "fails"
-                return f"the grade {value!r} {verdict}, but pass is {decision.passed}"
-        return ""

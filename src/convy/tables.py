@@ -18,10 +18,7 @@ from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoConfidence,
-    NoGrade,
     NoReason,
     NoVerdict,
     Reason,
@@ -29,7 +26,7 @@ from convy.dialog import (
     Verdict,
 )
 from convy.report import Run
-from convy.scenario import Outcome, Stop
+from convy.scenario import Outcome, Requirement, Stop
 
 type Tokens = tuple[int | None, int | None, int | None, int | None, int | None]
 
@@ -43,6 +40,7 @@ class RunRow(Struct, frozen=True, kw_only=True):
     k: int
     turn_timeout: float
     trust: float
+    claim_threshold: float
     convy: str
     started: datetime
     status: Literal["running", "finished", "interrupted"]
@@ -72,8 +70,7 @@ class ClaimRow(Struct, frozen=True, kw_only=True):
     scenario: str
     claim: int
     text: str
-    grades: tuple[str | int, ...] | None
-    threshold: str | int | None
+    required: bool
 
 
 class AttemptRow(Struct, frozen=True, kw_only=True):
@@ -93,7 +90,6 @@ class DecisionRow(Struct, frozen=True, kw_only=True):
     passed: bool
     reason: str | None
     confidence: float | None
-    grade: str | None
 
 
 class AnswerRow(Struct, frozen=True, kw_only=True):
@@ -103,6 +99,7 @@ class AnswerRow(Struct, frozen=True, kw_only=True):
     turn: int
     message: str
     answer: str
+    steps_complete: bool
     seconds: float
     input: int | None
     output: int | None
@@ -118,6 +115,7 @@ class StepRow(Struct, frozen=True, kw_only=True):
     turn: int
     step: int
     kind: Literal["thought", "call"]
+    call_kind: Literal["model", "tool"] | None
     text: str | None
     name: str | None
     started: datetime | None
@@ -292,6 +290,7 @@ class Tables(Struct, frozen=True):
             k=spec.k,
             turn_timeout=spec.turn_timeout,
             trust=spec.trust,
+            claim_threshold=spec.claim_threshold,
             convy=spec.convy,
             started=spec.started,
             status=status,
@@ -309,19 +308,13 @@ class Tables(Struct, frozen=True):
             unreadable=run.unreadable,
         )
 
-    def claim(self, run: Run, scenario: str, number: int, claim: str | Graded) -> ClaimRow:
-        match claim:
-            case str():
-                text, grades, threshold = claim, None, None
-            case Graded(text=text, grades=grades, threshold=threshold):
-                pass
+    def claim(self, run: Run, scenario: str, number: int, claim: Requirement) -> ClaimRow:
         return ClaimRow(
             run=run.spec.id,
             scenario=scenario,
             claim=number,
-            text=text,
-            grades=grades,
-            threshold=threshold,
+            text=claim.text,
+            required=claim.required,
         )
 
     def attempt(self, run: Run, outcome: Outcome) -> AttemptRow:
@@ -359,11 +352,6 @@ class Tables(Struct, frozen=True):
                 confidence = value
             case NoConfidence():
                 confidence = None
-        match claim.grade:
-            case Grade(value=value):
-                grade = value
-            case NoGrade():
-                grade = None
         return DecisionRow(
             run=run.spec.id,
             scenario=outcome.scenario,
@@ -372,7 +360,6 @@ class Tables(Struct, frozen=True):
             passed=claim.passed,
             reason=reason,
             confidence=confidence,
-            grade=grade,
         )
 
     def answer(self, run: Run, outcome: Outcome, number: int, turn: Turn) -> AnswerRow:
@@ -384,6 +371,7 @@ class Tables(Struct, frozen=True):
             turn=number,
             message=turn.message.text,
             answer=turn.answer.text,
+            steps_complete=turn.answer.steps_complete,
             seconds=turn.seconds,
             input=input,
             output=output,
@@ -399,8 +387,10 @@ class Tables(Struct, frozen=True):
             case Thought(text=said):
                 kind, text, name, started, seconds = "thought", said, None, None, None
                 usage, sent, received = NoUsage(), None, None
+                call_kind = None
             case Call(name=name, started=started, seconds=seconds, usage=usage):
                 kind, text = "call", None
+                call_kind = step.kind
                 sent, received = self.text(step.sent), self.text(step.received)
         input, output, thinking, cache_read, cache_write = self.tokens(usage)
         return StepRow(
@@ -410,6 +400,7 @@ class Tables(Struct, frozen=True):
             turn=turn,
             step=number,
             kind=kind,
+            call_kind=call_kind,
             text=text,
             name=name,
             started=started,

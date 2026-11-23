@@ -6,7 +6,7 @@ import math
 from collections.abc import AsyncIterator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 
 from msgspec import Struct
 
@@ -85,13 +85,14 @@ class Thought(Struct, frozen=True, tag="thought"):
 
 
 class Call(Struct, frozen=True, tag="call", kw_only=True):
-    """Something the agent called to give an answer: a model, a tool, a search. `started` is by
-    the agent's own clock, with a time zone; `sent` and `received` are the text it sent and got
-    back."""
+    """One invocation of a model or tool; a search is a tool. `started` is by the agent's own
+    clock, with a time zone; `sent` and `received` are the text it sent and got back. Repeated
+    and failed invocations are separate calls too."""
 
     name: str
     started: datetime
     seconds: float
+    kind: Literal["model", "tool"]
     usage: Usage | NoUsage = NoUsage()
     sent: Reported | NotReported = NotReported()
     received: Reported | NotReported = NotReported()
@@ -112,11 +113,13 @@ class Call(Struct, frozen=True, tag="call", kw_only=True):
 
 class Answer(Struct, frozen=True):
     """The agent's answer to a message: `text` is what it said, `usage` what it spent in all, and
-    `steps` how it got there, in order: what it thought and what it called."""
+    `steps` how it got there, in order: what it thought and what it called. `steps_complete`
+    asserts that every call is present; otherwise the trace is missing or partial."""
 
     text: str
     usage: Usage | NoUsage = NoUsage()
     steps: tuple[Thought | Call, ...] = ()
+    steps_complete: bool = False  # every call for this answer is present, including failed calls
 
 
 class AgentFailure(Exception):

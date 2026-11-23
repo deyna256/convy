@@ -20,8 +20,9 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); cursor: pointer; font-size: 13px; }
 .tab[aria-selected="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); font-weight: 650; }
-.mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+.mini { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
 .mini > div { background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mini > .tools-total { grid-column: 1 / -1; }
 .mini .l { font-size: 12.5px; color: var(--muted); }
 .mini .v { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .mini .v.failing { color: var(--fail); } .mini .v.passing { color: var(--pass); } .mini .v.none { color: var(--none); }
@@ -80,7 +81,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .card.fold:hover { border-color: var(--focus); }
 .bhead .steps { min-width: 11ch; text-align: right; }
 .bhead .steps::after { content: " ▸"; } .bhead .steps[aria-expanded="true"]::after { content: " ▾"; }
-.node.call summary { display: grid; grid-template-columns: 4.5ch minmax(10ch, 1fr) minmax(48px, 120px) 28ch 14px; align-items: center; gap: 4px 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.node.call summary { display: grid; grid-template-columns: 6ch minmax(10ch, 1fr) minmax(48px, 120px) 28ch 14px; align-items: center; gap: 4px 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
 .node.call summary::-webkit-details-marker { display: none; }
 .node.call summary::after { content: "▸"; color: var(--muted); font-size: 11px; }
 .node.call .card[open] > summary::after { content: "▾"; }
@@ -93,7 +94,7 @@ dialog.window::backdrop { background: rgb(0 0 0 / .5); }
 .io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px var(--sans); }
 @media (max-width: 600px) {
   .io { grid-template-columns: 1fr; }
-  .node.call summary { grid-template-columns: 4.5ch minmax(0, 1fr) 14px; }
+  .node.call summary { grid-template-columns: 6ch minmax(0, 1fr) 14px; }
   .node.call summary::after { grid-column: 3; grid-row: 1; }
   .node.call .track, .node.call .m { grid-column: 1 / -1; text-align: left; }
   .node.call .m { white-space: normal; }

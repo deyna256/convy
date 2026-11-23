@@ -49,7 +49,6 @@ const icon = result => el("span", {className: `si ${result}`, "aria-hidden": "tr
 const badge = (result, words = SCENARIO) => el("span", {className: `badge ${result}`}, icon(result), words[result]);
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const pct = rate => rate == null ? "—" : `${Math.round(rate * 100)}%`;
-const notTrusted = cut => cut ? ` · ${cut} not trusted` : "";
 const secs = s => s == null ? "—" : s > 0 && s < 0.1 ? `${Math.round(s * 1000)} ms` : s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
 const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
 const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
@@ -66,7 +65,7 @@ function squares(marks, what, open, go) {
     }));
 }
 const attemptMarks = attempts => attempts.map(a => ({attempt: a.attempt, result: kind(a.passed),
-  word: a.cut ? "not trusted" : a.passed == null ? "no verdict" : a.passed ? "passed" : "failed"}));
+  word: a.passed == null ? "no verdict" : a.passed ? "passed" : "failed"}));
 
 function readAddress() {
   const hash = location.hash.slice(1), first = hash.split("&")[0];

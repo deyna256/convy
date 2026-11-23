@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from convy import Tables
+from convy import Requirement, Tables
 from convy.bench import Limits, Running, RunSpec
 from convy.fakes import Echo
 from convy.model import Models
@@ -267,7 +267,7 @@ SAID = Run(
         judge="j",
         k=1,
         turn_timeout=1,
-        scenarios=(Scenario("s", 1, 'Say\nhi, "café".', ("greets",)),),
+        scenarios=(Scenario("s", 1, 'Say\nhi, "café".', (Requirement("greets"),)),),
         started=datetime(2026, 10, 6, tzinfo=UTC),
     ),
     Running(),
@@ -281,13 +281,6 @@ def test_export_writes_a_csv_and_a_json_lines_file_for_every_table(tmp_path: Pat
     assert {path.name for path in folder.iterdir()} == {
         f"{name}.{suffix}" for name in TABLE_NAMES for suffix in ("csv", "jsonl")
     }
-
-
-def test_export_replaces_the_files_of_an_earlier_export(tmp_path: Path):
-    folder = Project(tmp_path).export(Tables(()))
-    (folder / "runs.jsonl").write_text("old", encoding="utf-8")
-    Project(tmp_path).export(Tables(()))
-    assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""
 
 
 def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):

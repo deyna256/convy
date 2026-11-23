@@ -8,7 +8,8 @@ polars, or export the tables as files for any other tool.
 A `Run` holds everything a run did:
 
 - `spec`: what it played and with what — the agent and its `version`, the user's and the judge's
-  models, `k`, `trust`, the limits, the convy version, and a copy of every scenario with its claims;
+  models, `k`, `trust`, `claim_threshold`, the limits, the convy version, and a copy of every
+  scenario with its claims;
 - `status`: `Running`, `Finished` or `Interrupted`, with the time it ended;
 - `outcomes`: one per attempt, with its dialogue, each answer's time, tokens and steps, and the
   judge's decisions;
@@ -28,9 +29,9 @@ for run in runs:
 run = runs.run("7ad8")
 ```
 
-`Runs` converts older formats as it reads them. What an older run did not record comes as a
-default: the limits per minute are 0 in runs made before convy had them, `trust` is 0, and the
-files' digests and `convy` may be empty.
+`Runs` reads only the current run format. Earlier formats are unsupported and are not converted;
+see [run format compatibility](runs.md#run-format-compatibility). Reading does not change the
+saved files.
 
 ## Tables
 
@@ -50,13 +51,13 @@ drop nothing. The keys come first:
 
 | table | keys | columns |
 |---|---|---|
-| `runs` | `run` | `agent`, `version`, `user_model`, `judge_model`, `k`, `turn_timeout`, `trust`, `convy`, `started`, `status` (`running`, `finished` or `interrupted`), `ended`, `agent_parallel`, `user_parallel`, `judge_parallel`, `agent_per_minute`, `user_per_minute`, `judge_per_minute`, `agent_file`, `models_file` (sha256), `format`, `path` (the run's folder inside `results/`, with `/`), `unreadable` |
+| `runs` | `run` | `agent`, `version`, `user_model`, `judge_model`, `k`, `turn_timeout`, `trust`, `claim_threshold`, `convy`, `started`, `status` (`running`, `finished` or `interrupted`), `ended`, `agent_parallel`, `user_parallel`, `judge_parallel`, `agent_per_minute`, `user_per_minute`, `judge_per_minute`, `agent_file`, `models_file` (sha256), `format`, `path` (the run's folder inside `results/`, with `/`), `unreadable` |
 | `scenarios` | `run`, `scenario` | `instructions`, `max_turns` |
-| `claims` | `run`, `scenario`, `claim` | `text`, `grades`, `threshold` (the lowest grade that passes, the scenario file's `pass`) |
+| `claims` | `run`, `scenario`, `claim` | `text`, `required` |
 | `attempts` | `run`, `scenario`, `attempt` | `verdict` (`verdict`, `failed` or `no_verdict`), `error`, `stop` |
-| `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence`, `grade` |
-| `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
-| `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
+| `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence` |
+| `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `steps_complete`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
+| `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `call_kind` (`model` or `tool`, `None` for a thought), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
 
 - `run` is the run's id, `scenario` the scenario's id, `attempt` the attempt's number; an
   unfinished run may skip numbers. `claim`, `turn` and `step` count from 1, as on the report.
@@ -65,30 +66,32 @@ drop nothing. The keys come first:
 - Runs come by start time; in a run, scenarios and claims in the run's order, attempts by scenario
   then number, and decisions, answers and steps in their order.
 - `None` is a value the agent or the judge did not give, or one that does not apply: a thought has
-  no `name`, a plain claim no `grades`, an attempt with a verdict no `error`. `""` is text given
+  no `name`, an attempt with a verdict no `error`. `""` is text given
   empty. A run still running has no `ended`.
 - A key means one thing in every table. A value of two grains — `started`, `seconds`, the tokens —
   keeps its name in both tables, so join on the keys and pick the columns you need.
-- A decision's `grade` is text, as the judge gives it; a claim's `grades` and `threshold` keep the
-  scenario file's type (`2`, not `"2"`). Compare them as text.
 
 Each table has a `name`, the type of its rows in `row`, so an empty table still knows its columns,
 and its `rows`. `records()` gives the rows as dicts, with times as `datetime`; `csv()` and `jsonl()`
 give the table as a file's text. Iterating `tables` gives the seven tables in the order above.
 
-Two values are left out on purpose, since they are computed. With the tables as DataFrames, the
+`answers.steps_complete` and `steps.call_kind` preserve the [agent's reported facts](agents.md#steps).
+Tool counts are derived, not exported: use the [tool-invocation rule](report.md#tool-invocations)
+to distinguish complete measurements from partial traces.
+
+Other values are left out on purpose, since they are computed. With the tables as DataFrames, the
 random part of a run's id is:
 
 ```python
 runs["short"] = runs["run"].str.rpartition("_")[2]
 ```
 
-And whether an attempt passed: every decision passed. This covers attempts with a verdict only;
-join it to `attempts` and take a `failed` attempt as not passed:
-
-```python
-passed = decisions.groupby(["run", "scenario", "attempt"])["passed"].all()
-```
+Whether an attempt passed is also computed. `decisions.passed` is the **raw judge decision**,
+not the effective result after confidence and required claims. Join decisions to the run's `trust`
+and `claim_threshold`, and to each claim's `required` flag; apply the
+[scoring rule](scenarios.md#passing-an-attempt). The [full example](#a-full-example) below does this
+and includes agent failures in the pass rate. Completion fractions and final attempt results are
+not stored as redundant columns.
 
 ## Export
 
@@ -117,8 +120,10 @@ new ones: close it and export again. An agent named `export` shares the folder w
 
 ## How convy makes its numbers
 
-The report's rules — what counts in the pass rate, which scenario is stable, what each mean is over
-— are in [The report](report.md#tiles). Follow them and your numbers are convy's.
+The report's rules — what counts in the pass rate and which scenario is stable — are in
+[The report](report.md#tiles). Its [measured population](report.md#measured-population) defines
+means and medians per answer and per task, including missing token measurements and
+[tool invocations](report.md#tool-invocations). Follow these rules and your numbers are convy's.
 
 ## A full example
 
@@ -137,19 +142,30 @@ runs = pd.DataFrame(tables.runs().records())
 attempts = pd.DataFrame(tables.attempts().records())
 decisions = pd.DataFrame(tables.decisions().records())
 
-# Counted and passed as the pass rate in report.md says.
-decisions = decisions.merge(runs[["run", "trust"]], on="run")
-decisions["trusted"] = decisions["confidence"].fillna(1.0) >= decisions["trust"]
-decisions["trusted_fail"] = decisions["trusted"] & ~decisions["passed"]
+claims = pd.DataFrame(tables.claims().records())
+
+# Raw decisions stay intact; derive effective claims and attempt results.
+decisions = decisions.merge(runs[["run", "trust", "claim_threshold"]], on="run")
+decisions = decisions.merge(
+    claims[["run", "scenario", "claim", "required"]], on=["run", "scenario", "claim"]
+)
+decisions["held"] = decisions["passed"] & (
+    decisions["confidence"].fillna(1.0) >= decisions["trust"]
+)
+decisions["required_failed"] = decisions["required"] & ~decisions["held"]
 keys = ["run", "scenario", "attempt"]
 verdicts = decisions.groupby(keys).agg(
-    passed=("passed", "all"), trusted=("trusted", "all"), trusted_fail=("trusted_fail", "any")
+    held=("held", "sum"),
+    total=("held", "size"),
+    required_failed=("required_failed", "any"),
+    threshold=("claim_threshold", "first"),
 )
-verdicts["decided"] = verdicts["trusted"] | verdicts["trusted_fail"]
-attempts = attempts.join(verdicts, on=keys)
-failed = attempts["verdict"] == "failed"
-attempts["counted"] = failed | attempts["decided"].eq(True)
-attempts["passed"] = ~failed & attempts["passed"].eq(True)
+verdicts["passed"] = ~verdicts["required_failed"] & (
+    verdicts["held"] / verdicts["total"] >= verdicts["threshold"]
+)
+attempts = attempts.join(verdicts[["passed"]], on=keys)
+attempts["counted"] = attempts["verdict"].isin(["verdict", "failed"])
+attempts["passed"] = attempts["verdict"].eq("verdict") & attempts["passed"].eq(True)
 
 rate = attempts[attempts["counted"]].groupby("run")["passed"].mean().rename("rate")
 by_time = runs.join(rate, on="run").sort_values("started")
@@ -168,3 +184,6 @@ the agent gave it.
 
 A new convy version may add columns. Renaming or removing one is a breaking change, and the
 changelog says so; see [why](decisions/0011-run-as-data.md).
+
+Removing ordered claim scales removes `grades` and `threshold` from `claims`, and `grade` from
+`decisions`. Update consumers of those columns; new exports contain yes/no decisions only.

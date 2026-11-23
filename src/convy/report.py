@@ -2,110 +2,44 @@
 
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable, Iterator, Sequence
 from importlib.resources import files
 from math import comb
 from pathlib import Path
 from statistics import mean, quantiles
 from typing import Literal
+from urllib.parse import quote
 
 import msgspec
 from msgspec import Struct
 
 from convy.agent import Call, NotReported, NoUsage, Reported, Thought, Usage
-from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
+from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoConfidence,
-    NoGrade,
     NoReason,
     NoVerdict,
     Reason,
     Turn,
     Verdict,
 )
-from convy.scenario import Outcome, Scenario, Stop
+from convy.scenario import Outcome, Requirement, Scenario, Stop
 
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
-class OlderLine(Struct, frozen=True):
-    """An attempt line of an older format, read as format 6: format 2 kept a claim's reason as a
-    string, formats before 5 kept the agent's thinking apart from the steps of its answer, and
-    formats 3 to 5 wrote 0 for a thinking count the agent did not give. Reading drops the old
-    `thinking` field, as fields an `Outcome` does not have."""
+class RunFormat(Struct, frozen=True):
+    """Check the format before decoding a specification with a different schema."""
 
-    line: bytes
+    format: int
 
-    def outcome(self) -> Outcome:
-        data = msgspec.json.decode(self.line)
-        match data:
-            case {"verdict": {"type": "verdict", "claims": list() as claims}}:
-                data["verdict"]["claims"] = [self.claim(claim) for claim in claims]
-        match data:
-            case {"transcript": {"turns": list() as turns}}:
-                data["transcript"]["turns"] = [self.turn(turn) for turn in turns]
-        return msgspec.convert(data, Outcome)
-
-    def turn(self, turn: object) -> object:
-        match turn:
-            case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
-                turn = {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
-        match turn:
-            case {"answer": dict() as answer}:
-                return {**turn, "answer": self.answer(answer)}
-            case _:
-                return turn
-
-    def answer(self, answer: dict) -> dict:
-        """The answer, with its usage and its calls' usage read as format 6."""
-        match answer:
-            case {"usage": usage}:
-                answer = {**answer, "usage": self.usage(usage)}
-        match answer:
-            case {"steps": list() as steps}:
-                answer = {**answer, "steps": [self.step(step) for step in steps]}
-        return answer
-
-    def step(self, step: object) -> object:
-        match step:
-            case {"type": "call", "usage": usage}:
-                return {**step, "usage": self.usage(usage)}
-            case _:
-                return step
-
-    def usage(self, usage: object) -> object:
-        """0 was the default thinking count, not one the agent gave."""
-        match usage:
-            case {"type": "usage", "thinking": 0}:
-                return {**usage, "thinking": {"type": "not_reported"}}
-            case _:
-                return usage
-
-    def claim(self, claim: object) -> object:
-        match claim:
-            case {"reason": str() as text}:
-                reason = {"type": "reason", "text": text} if text.strip() else {"type": "no_reason"}
-                return {**claim, "reason": reason}
-            case _:
-                return claim
-
-
-class OlderSpec(Struct, frozen=True):
-    """What the specification of a `run.json` of format 2 or 3 held instead of `limits`: one
-    `parallel`, which held all three participants."""
-
-    parallel: int
-
-
-class OlderRunFile(Struct, frozen=True):
-    """A `run.json` of format 2 or 3, as far as format 4 changed it."""
-
-    spec: OlderSpec
+    def __post_init__(self) -> None:
+        if self.format != 9:
+            raise ValueError(f"unsupported run format {self.format}; expected 9; start a new run")
 
 
 class Run(Struct, frozen=True):
@@ -118,7 +52,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4, 5, 6] = 6
+    format: Literal[9] = 9
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -150,6 +84,12 @@ class Runs(Struct, frozen=True):
         """The run whose id is `wanted`, or ends with `_<wanted>`: its random part."""
         found = [run for run in self if wanted in (run.spec.id, run.spec.short())]
         if not found:
+            for folder in self.folders():
+                if wanted in (folder.name, folder.name.rpartition("_")[2]):
+                    try:
+                        self.read(folder)
+                    except UNREADABLE as error:
+                        raise ValueError(f"{folder}: {error}") from error
             raise ValueError(f"no run {wanted!r} in {self.directory}")
         if len(found) > 1:
             names = ", ".join(run.path.as_posix() for run in found)
@@ -161,13 +101,8 @@ class Runs(Struct, frozen=True):
 
     def read(self, folder: Path) -> Run:
         raw = (folder / "run.json").read_bytes()
+        msgspec.json.decode(raw, type=RunFormat)
         file = msgspec.json.decode(raw, type=RunFile)
-        if file.format < 4:
-            shared = msgspec.json.decode(raw, type=OlderRunFile).spec.parallel
-            limits = Limits(agent=shared, user=shared, judge=shared)
-            file = msgspec.structs.replace(
-                file, spec=msgspec.structs.replace(file.spec, limits=limits)
-            )
         attempts = folder / "attempts.jsonl"
         lines = attempts.read_bytes().splitlines() if attempts.exists() else []
         claims = {scenario.id: len(scenario.claims) for scenario in file.spec.scenarios}
@@ -175,11 +110,7 @@ class Runs(Struct, frozen=True):
         unreadable = 0
         for line in lines:
             try:
-                outcome = (
-                    msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 6
-                    else OlderLine(line).outcome()
-                )
+                outcome = msgspec.json.decode(line, type=Outcome)
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
                 continue
@@ -206,16 +137,7 @@ class Runs(Struct, frozen=True):
 # The pages' data. It is JSON for the browser, so a number nobody reported is None (null).
 
 type Result = Literal["failing", "flaky", "passing", "none"]
-type Tone = Literal["good", "bad", "same", "noise", "none"]
-type Group = Literal["worse", "better", "same", "apart"]
-type Change = Literal["unchanged", "worse", "better"]
-type Stat = Literal["p50", "p90", "max", "mean"]  # what a chart shows of a spread
-
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
-GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
-SLIGHT = 5  # percent: a smaller change of a time or token statistic is drawn as the same
-TONES: dict[Group, Tone] = {"worse": "bad", "better": "good", "same": "same", "apart": "none"}
-STATS: tuple[Stat, ...] = ("p50", "p90", "max", "mean")  # the switch's order
 FAR = 3  # interquartile ranges past the upper quartile, on a log scale: Tukey's far-out fence
 
 
@@ -236,16 +158,6 @@ class Tally(Struct, frozen=True):
         return "failing" if self.held == 0 else "flaky"
 
 
-class Ranking(Struct, frozen=True):
-    """Ids by a number, the largest first and ties by id; ids without the number last, by id."""
-
-    numbers: tuple[tuple[str, float | None], ...]
-
-    def ids(self) -> tuple[str, ...]:
-        ranked = sorted(self.numbers, key=lambda pair: (pair[1] is None, -(pair[1] or 0), pair[0]))
-        return tuple(id for id, _ in ranked)
-
-
 class Spread(Struct, frozen=True):
     """How numbers spread: how many, the least, the 50th and 90th percentiles, the most and the
     mean."""
@@ -257,30 +169,16 @@ class Spread(Struct, frozen=True):
     max: float
     mean: float
 
-    def of(self, stat: Stat) -> float:
-        return getattr(self, stat)  # a Stat is a field's name
-
-
-class PerStat[T](Struct, frozen=True):
-    """One value per statistic the switch offers: an order, a change. Its fields are `STATS`."""
-
-    p50: T
-    p90: T
-    max: T
-    mean: T
-
-    def of(self, stat: Stat) -> T:
-        return getattr(self, stat)  # a Stat is a field's name
-
 
 class ClaimView(Struct, frozen=True):
     """The judge's decision on one claim in one attempt."""
 
     passed: bool | None  # None: the judge was not asked, or gave no verdict
     reason: str
+    held: bool | None  # effective decision after applying trust
+    required: bool
     confidence: float | None = None  # None: the judge did not say
     trusted: bool = True  # False: less sure than the run's trust
-    grade: str | None = None  # None: the claim is not graded
 
 
 class ThoughtView(Struct, frozen=True, tag="thought"):
@@ -289,6 +187,7 @@ class ThoughtView(Struct, frozen=True, tag="thought"):
 
 class CallView(Struct, frozen=True, tag="call", kw_only=True):
     name: str
+    kind: Literal["model", "tool"]
     seconds: float
     left: float  # where its bar starts on the answer's time line of calls, 0..1
     width: float  # how much of that line it takes, 0..1
@@ -312,12 +211,22 @@ class TurnView(Struct, frozen=True):
     thoughts: int  # how many of the steps are thoughts
     calls: int  # and how many are calls
     span: float  # seconds from the first call's start to the last call's end; 0 without calls
+    tool_calls: int | None  # None: the answer's trace is missing or partial
+
+
+class Completion(Struct, frozen=True):
+    """A valid verdict's effective claim completion and reasons the attempt failed."""
+
+    held: int
+    total: int
+    fraction: float
+    failures: tuple[str, ...]
 
 
 class AttemptView(Struct, frozen=True):
     attempt: int
     passed: bool | None  # None: no verdict, left out of pass rates
-    cut: bool  # the judge was not sure enough: left out of pass rates
+    completion: Completion | None  # None: no measured claim completion
     stop: Stop
     error: str  # the agent's error, or the failure of convy's model
     claims: tuple[ClaimView, ...]
@@ -329,6 +238,7 @@ class AttemptView(Struct, frozen=True):
     thinking_tokens: int | None
     cache_read: int | None
     cache_write: int | None
+    tool_calls: int | None  # None: no answers, or any answer's trace is incomplete
     turns: tuple[TurnView, ...]
 
 
@@ -339,13 +249,11 @@ class ClaimSummary(Struct, frozen=True):
     held: int
     judged: int
     result: Result
-    cut: int  # decisions less sure than the run's trust
-    grades: tuple[tuple[str, int], ...] = ()  # each grade, worst to best, and how many trusted
-    typical: str | None = None  # the median trusted grade, the worse of two; None: not graded
+    required: bool
 
 
 class Parts(Struct, frozen=True):
-    """A scenario's mean tokens per attempt by part, over its attempts that report tokens: the
+    """Mean tokens per answer by part, over the answers that report tokens: the
     parts add up to the mean. A part the agent does not report is None and stays in the whole:
     without cache reads `input` is all the input, without thinking `output` all the output."""
 
@@ -375,16 +283,10 @@ class ScenarioView(Struct, frozen=True):
     rate: float | None
     result: Result
     claims: tuple[ClaimSummary, ...]
-    seconds: Spread | None  # per answer
-    tokens: Spread | None  # per attempt that reports them
-    parts: Parts | None  # None: no attempt reports tokens
-    shares: Shares | None
     attempts: tuple[AttemptView, ...]
 
-    def parted(self, stat: Stat) -> float | None:
-        """A statistic of the tokens per attempt when the parts are known, which orders
-        `by_parts`."""
-        return None if self.parts is None or self.tokens is None else self.tokens.of(stat)
+    def order(self) -> tuple[int, str]:
+        return ORDER[self.result], self.id
 
 
 class Metrics(Struct, frozen=True):
@@ -392,37 +294,15 @@ class Metrics(Struct, frozen=True):
 
     passed: int  # judged attempts that passed
     judged: int
-    cut: int  # attempts left out because the judge was not sure enough
     open: int  # attempts without a verdict: convy's models failed, or the agent stayed busy
     rate: float | None
     stable: int  # scenarios whose k attempts all passed
     flaky: int  # scenarios with passed and failed attempts
-    seconds: Spread | None  # per answer
-    tokens: Spread | None  # per attempt that reports them
     cached: float | None  # share of input read from the cache, over the turns that report it
     agent_errors: int
     busy: int  # attempts whose agent's service stayed busy
     model_errors: int
     errors: int
-
-
-class TurnStats(Struct, frozen=True):
-    """The answers at one turn number of a run's dialogues, from 1, and their tokens."""
-
-    turn: int
-    answers: int  # every answer at this turn
-    scenarios: int  # how many scenarios they come from
-    input: Spread | None  # over the answers that report tokens
-    output: Spread | None
-    cached: Spread | None  # their cache reads, when every one of them reports its own
-    fresh: Spread | None  # and then their input not read from the cache
-    share: float | None  # the share of their input read from the cache, when every one reports it
-
-
-class TurnPair(Struct, frozen=True):
-    turn: int
-    before: TurnStats | None  # None: no answer of the run at this turn reports tokens
-    after: TurnStats | None
 
 
 class CallPlace(Struct, frozen=True):
@@ -434,18 +314,6 @@ class CallPlace(Struct, frozen=True):
     step: int
     seconds: float
     tokens: int | None
-
-
-class Delta(Struct, frozen=True):
-    """A change from before to after and how to read it: in the metric's own unit, or, for a
-    scenario's time and tokens on the comparison, a percent of the old value."""
-
-    value: float | None
-    tone: Tone
-
-
-NO_CHANGE = Delta(None, "none")
-NO_CHANGES = PerStat(NO_CHANGE, NO_CHANGE, NO_CHANGE, NO_CHANGE)
 
 
 class Answered(Struct, frozen=True):
@@ -472,25 +340,21 @@ class Category(Struct, frozen=True):
     share: float  # its part of every call name's seconds together, 0..1
 
 
-class Measure(Struct, frozen=True):
-    """One number per answer over the run, its time or its tokens, with or without outliers."""
-
-    spread: Spread | None  # over the answers kept
-    answers: int  # the answers kept with the number
-
-
-class ScenarioNumbers(Struct, frozen=True):
+class ResourceStats(Struct, frozen=True):
     seconds: Spread | None  # per answer kept
     tokens: Spread | None
+    attempt_seconds: Spread | None  # sum of recorded answer times per attempt with answers
+    attempt_tokens: Spread | None  # per attempt with every answer's usage reported
+    attempts: int  # recorded attempts kept, including those without measurements
+    tool_calls: Spread | None  # per attempt whose answers all report complete traces
 
 
 class View(Struct, frozen=True):
     """The run's time and token numbers with or without outliers: every tile, chart and table of
     them on the run's page."""
 
-    seconds: Measure
-    tokens: Measure
-    scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
+    numbers: ResourceStats
+    scenarios: tuple[ResourceStats, ...]  # in the page's order of the scenarios
     time: tuple[Category, ...]  # the most in total first, then by name
     parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
     shares: Shares | None
@@ -504,12 +368,12 @@ class Views(Struct, frozen=True):
     cut: View
 
 
-class Share(Struct, frozen=True):
+class ResultBucket(Struct, frozen=True):
     """The scenarios at one pass rate."""
 
     rate: float | None  # None: no verdict
     result: Result
-    scenarios: tuple[str, ...]
+    count: int
     part: float  # their share of the run's scenarios, 0..1
 
 
@@ -526,85 +390,86 @@ class RunHead(Struct, frozen=True):
     scenarios: int
     unreadable: int
     trust: float
+    claim_threshold: float
     confident: bool  # some decision of the run says how sure the judge was
-
-
-class Deltas(Struct, frozen=True):
-    rate: Delta  # percentage points
-    stable: Delta
-    seconds: PerStat[Delta]  # each statistic's change in seconds; Max's is noise
-    tokens: PerStat[Delta]  # and in tokens
-    cached: Delta  # percentage points
-    errors: Delta
 
 
 class RunPage(Struct, frozen=True):
     run: RunHead
     metrics: Metrics
     scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
-    results: tuple[Share, ...]  # by pass rate from 0, no verdict last
+    results: tuple[ResultBucket, ...]  # by pass rate from 0, no verdict last
     views: Views
 
 
-class ClaimChange(Struct, frozen=True):
-    text: str
-    before: Result
-    after: Result
-    change: Change  # by the pass rate; when that is equal, as `moved`
-    was: str | None = None  # the typical grade before; None: not graded
-    now: str | None = None
-    moved: Change = "unchanged"  # where the typical grade went, whatever the pass rate did
+class ScenarioCell(Struct, frozen=True):
+    """One run's recorded results for a numbered revision of a scenario."""
 
-
-class CompareRow(Struct, frozen=True):
     id: str
-    group: Group
-    why: str  # why a scenario is not compared, or ""
-    before: ScenarioView | None
-    after: ScenarioView | None
-    claims: tuple[ClaimChange, ...]
-    held: Delta  # the change in passed attempts, in the tone of the row's group
-    seconds: PerStat[Delta]  # the change of each statistic of the time per answer, a percent
-    tokens: PerStat[Delta]  # and of the tokens per attempt
+    revision: int
+    recorded: int
+    passed: int
+    judged: int
 
 
-class ComparePage(Struct, frozen=True):
-    before: RunHead
-    after: RunHead
-    was: Metrics
-    now: Metrics
-    deltas: Deltas
-    differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
-    rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
-    by_seconds: PerStat[tuple[str, ...]]  # compared ids with a change, the largest rise first
-    by_tokens: PerStat[tuple[str, ...]]
-    turns: tuple[TurnPair, ...]  # every turn number either run has tokens at
-    by_parts: PerStat[
-        tuple[str, ...]
-    ]  # compared ids with parts in both runs, the after's most first
+class CallMetrics(Struct, frozen=True):
+    """One named call's whole-run measurements, without individual call locations."""
+
+    name: str
+    answers: int
+    calls: int
+    total: float
+    spread: Spread
+    average: float
+    tokens: float | None
+    share: float
+    token_calls: int
+
+    @classmethod
+    def from_category(cls, category: Category) -> "CallMetrics":
+        return cls(
+            name=category.name,
+            answers=category.answers,
+            calls=category.calls,
+            total=category.total,
+            spread=category.spread,
+            average=category.average,
+            tokens=category.tokens,
+            share=category.share,
+            token_calls=sum(p.tokens is not None for p in category.places),
+        )
 
 
 class IndexRow(Struct, frozen=True):
     run: RunHead
-    rate: float | None
+    report: str
     passed: int
     judged: int
-    cut: int  # attempts not trusted
+    rate: float | None
+    open: int
+    stable: int
+    flaky: int
+    agent_errors: int
+    busy: int
+    model_errors: int
     errors: int
-    result: Result
-    changes: tuple[str, ...]  # the setup changed since the agent's run before: `judge: a → b`
-    order: int  # the run's place among every run of the index, 0 the newest
-    report: str  # the run's report, relative to the index
-
-
-class AgentRuns(Struct, frozen=True):
-    agent: str
-    rows: tuple[IndexRow, ...]  # newest first
+    results: tuple[ResultBucket, ...]
+    numbers: ResourceStats
+    cached: float | None
+    cache_answers: int
+    thinking_answers: int
+    traced_answers: int
+    parts: Parts | None
+    shares: Shares | None
+    time: tuple[CallMetrics, ...]
+    scenarios: tuple[ScenarioCell, ...]
+    setup: int  # position in the page's distinct evaluation setups
+    quality_note: str  # why a whole-run difference is unavailable, empty when comparable
 
 
 class IndexPage(Struct, frozen=True):
-    runs: int
-    agents: tuple[AgentRuns, ...]  # by name
+    rows: tuple[IndexRow, ...]  # newest first
+    setups: tuple[dict[str, str | float | int], ...]
 
 
 class Evidence(Struct, frozen=True):
@@ -708,6 +573,7 @@ class Summary(Struct, frozen=True):
             scenarios=len(spec.scenarios),
             unreadable=self.run.unreadable,
             trust=spec.trust,
+            claim_threshold=spec.claim_threshold,
             confident=self.confident(),
         )
 
@@ -725,7 +591,6 @@ class Summary(Struct, frozen=True):
         views = list(scenarios)
         attempts = [attempt for view in views for attempt in view.attempts]
         judged = [a.passed for a in attempts if a.passed is not None]
-        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
         k = self.run.spec.k
         agent_errors = sum(a.stop == "agent_failure" for a in attempts)
         busy = sum(a.stop == "agent_busy" for a in attempts)
@@ -733,15 +598,12 @@ class Summary(Struct, frozen=True):
         return Metrics(
             passed=sum(judged),
             judged=len(judged),
-            cut=sum(a.cut for a in attempts),
-            open=sum(a.passed is None and not a.cut for a in attempts),
+            open=sum(a.passed is None for a in attempts),
             rate=Tally(sum(judged), len(judged)).rate(),
             stable=sum(
                 len(v.attempts) == k and all(a.passed is True for a in v.attempts) for v in views
             ),
             flaky=sum(v.result == "flaky" for v in views),
-            seconds=self.spread(turns),
-            tokens=self.spread(a.tokens for a in attempts),
             cached=self.share(turn for attempt in attempts for turn in attempt.turns),
             agent_errors=agent_errors,
             busy=busy,
@@ -760,8 +622,6 @@ class Summary(Struct, frozen=True):
         attempts = tuple(self.attempt(scenario, outcome) for outcome in played)
         judged = [a.passed for a in attempts if a.passed is not None]
         tally = Tally(sum(judged), len(judged))
-        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
-        parts, shares = self.split(self.parts(attempts))
         return ScenarioView(
             id=scenario.id,
             user=scenario.instructions,
@@ -774,17 +634,13 @@ class Summary(Struct, frozen=True):
                 self.claim(claim, [a.claims[i] for a in attempts])
                 for i, claim in enumerate(scenario.claims)
             ),
-            seconds=self.spread(turns),
-            tokens=self.spread(a.tokens for a in attempts),
-            parts=parts,
-            shares=shares,
             attempts=attempts,
         )
 
-    def parts(self, attempts: Sequence[AttemptView | TurnView]) -> Parts | None:
-        """The mean tokens per attempt, or per answer, by part, from the sums over those that
+    def parts(self, turns: Iterable[TurnView]) -> Parts | None:
+        """The mean tokens per answer by part, from the sums over those that
         report tokens; cache reads and thinking over the answers that report them."""
-        counted = [a for a in attempts if a.tokens is not None]
+        counted = [a for a in turns if a.tokens is not None]
         if not counted:
             return None
         cached = self.total(a.cache_read for a in counted)
@@ -799,54 +655,25 @@ class Summary(Struct, frozen=True):
             thinking=None if thinking is None else thinking / n,
         )
 
-    def turns(self, scenarios: Iterable[ScenarioView]) -> tuple[TurnStats, ...]:
-        """Each turn number of the dialogues, from 1, with the tokens of its answers; a turn none
-        of whose answers reports tokens is left out."""
-        at: dict[int, list[tuple[str, TurnView]]] = {}
-        for view in scenarios:
-            for attempt in view.attempts:
-                for number, turn in enumerate(attempt.turns, 1):
-                    at.setdefault(number, []).append((view.id, turn))
-        stats = []
-        for number, answers in sorted(at.items()):
-            spent = [turn for _, turn in answers if turn.tokens is not None]
-            reads = [turn.cache_read for turn in spent]
-            if spent:
-                stats.append(
-                    TurnStats(
-                        turn=number,
-                        answers=len(answers),
-                        scenarios=len({id for id, _ in answers}),
-                        input=self.spread(turn.input for turn in spent),
-                        output=self.spread(turn.output for turn in spent),
-                        cached=None if None in reads else self.spread(reads),
-                        fresh=None
-                        if None in reads
-                        else self.spread((t.input or 0) - (t.cache_read or 0) for t in spent),
-                        share=None if None in reads else self.share(spent),
-                    )
-                )
-        return tuple(stats)
-
-    def results(self, scenarios: Iterable[ScenarioView]) -> tuple[Share, ...]:
+    def results(self, scenarios: Iterable[ScenarioView]) -> tuple[ResultBucket, ...]:
         """The scenarios by pass rate, from 0; those without a verdict last."""
-        at: dict[float | None, list[ScenarioView]] = {}
-        for view in scenarios:
-            at.setdefault(view.rate, []).append(view)
-        rates = sorted(at, key=lambda rate: (rate is None, rate or 0))
-        total = sum(len(views) for views in at.values())
+        counts = Counter((view.rate, view.result) for view in scenarios)
+        total = counts.total()
         return tuple(
-            Share(
-                rate,
-                at[rate][0].result,
-                tuple(sorted(v.id for v in at[rate])),
-                len(at[rate]) / total,
-            )
-            for rate in rates
+            ResultBucket(rate, result, counts[rate, result], counts[rate, result] / total)
+            for rate, result in sorted(counts, key=lambda key: (key[0] is None, key[0] or 0))
         )
 
     def views(self, scenarios: Sequence[ScenarioView]) -> Views:
         return Views(self.view(scenarios, cut=False), self.view(scenarios, cut=True))
+
+    def answers(self, scenarios: Iterable[ScenarioView]) -> list[Answered]:
+        return [
+            Answered(view.id, attempt.attempt, number, turn)
+            for view in scenarios
+            for attempt in view.attempts
+            for number, turn in enumerate(attempt.turns)
+        ]
 
     def view(self, scenarios: Sequence[ScenarioView], cut: bool) -> View:
         """The time and tokens of the answers of `scenarios`, with the outliers' scenarios left
@@ -854,12 +681,7 @@ class Summary(Struct, frozen=True):
         or of its tokens takes all of its scenario's answers out of every number, as an outlier
         is mostly a scenario where the agent works longer, not a stray answer. A cut that would
         leave no scenario cuts nothing."""
-        answers = [
-            Answered(view.id, attempt.attempt, number, turn)
-            for view in scenarios
-            for attempt in view.attempts
-            for number, turn in enumerate(attempt.turns)
-        ]
+        answers = self.answers(scenarios)
         late = self.fence([a.turn.seconds for a in answers]) if cut else None
         large = self.fence([a.turn.tokens for a in answers]) if cut else None
         out = {
@@ -870,19 +692,25 @@ class Summary(Struct, frozen=True):
         if out >= {view.id for view in scenarios}:
             out = set()
         kept = [a for a in answers if a.scenario not in out]
+        attempts = [a for view in scenarios if view.id not in out for a in view.attempts]
         return View(
-            self.measure([a.turn.seconds for a in kept]),
-            self.measure([a.turn.tokens for a in kept]),
-            tuple(
-                ScenarioNumbers(
-                    self.spread(a.turn.seconds for a in kept if a.scenario == view.id),
-                    self.spread(a.turn.tokens for a in kept if a.scenario == view.id),
-                )
-                for view in scenarios
-            ),
+            self.numbers(attempts),
+            tuple(self.numbers(view.attempts if view.id not in out else ()) for view in scenarios),
             self.time(kept),
-            *self.split(self.parts([a.turn for a in kept])),
+            *self.split(self.parts(a.turn for a in kept)),
             tuple(view.id for view in scenarios if view.id in out),
+        )
+
+    def numbers(self, attempts: Sequence[AttemptView]) -> ResourceStats:
+        """Answer and task distributions over the same recorded attempts."""
+        turns = [turn for attempt in attempts for turn in attempt.turns]
+        return ResourceStats(
+            self.spread(t.seconds for t in turns),
+            self.spread(t.tokens for t in turns),
+            self.spread(a.seconds for a in attempts if a.turns),
+            self.spread(a.tokens for a in attempts),
+            len(attempts),
+            self.spread(a.tool_calls for a in attempts),
         )
 
     def fence(self, values: list[float | None]) -> float | None:
@@ -901,10 +729,6 @@ class Summary(Struct, frozen=True):
 
     def beyond(self, value: float | None, fence: float | None) -> bool:
         return value is not None and fence is not None and value > fence
-
-    def measure(self, values: list[float | None]) -> Measure:
-        known = [value for value in values if value is not None]
-        return Measure(self.spread(known), len(known))
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' calls spent their time: each call name's seconds per answer it ran
@@ -991,72 +815,78 @@ class Summary(Struct, frozen=True):
             else cached / (cached + parts.input),
         )
 
-    def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:
-        """A claim over the attempts the judge decided, cut or not: its trusted decisions are
-        tallied, the rest counted as cut. A graded claim also counts each grade."""
-        trusted = [d for d in decisions if d.passed is not None and d.trusted]
-        tally = Tally(sum(d.passed is True for d in trusted), len(trusted))
-        cut = sum(d.passed is not None and not d.trusted for d in decisions)
-        match claim:
-            case str():
-                text, grades, typical = claim, (), None
-            case Graded(text=text, levels=levels):
-                ranks = sorted(levels.index(d.grade) for d in trusted if d.grade in levels)
-                grades = tuple((level, ranks.count(i)) for i, level in enumerate(levels))
-                typical = levels[ranks[(len(ranks) - 1) // 2]] if ranks else None
-        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut, grades, typical)
+    def claim(self, claim: Requirement, decisions: list[ClaimView]) -> ClaimSummary:
+        """Count every effective decision, including confidence failures."""
+        judged = [d.held for d in decisions if d.held is not None]
+        tally = Tally(sum(judged), len(judged))
+        return ClaimSummary(claim.text, tally.held, tally.judged, tally.result(), claim.required)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
-        trust = self.run.spec.trust
-        cut = False
+        spec = self.run.spec
+        completion = None
         match outcome.verdict:
             case Verdict(claims=decided) as verdict:
-                cut = not verdict.decided(trust)
-                judged: tuple[bool | None, str] = (None if cut else verdict.passed, "")
-                claims = tuple(self.decision(claim, trust) for claim in decided)
+                score = scenario.score(verdict, spec.trust, spec.claim_threshold)
+                failures = []
+                if score.required_failed:
+                    numbers = ", ".join(str(i) for i in score.required_failed)
+                    failures.append(f"Required claims failed: {numbers}.")
+                if score.fraction < score.threshold:
+                    failures.append(
+                        f"Claim completion is below the {score.threshold * 100:.6g}% threshold."
+                    )
+                completion = Completion(score.held, score.total, score.fraction, tuple(failures))
+                judged: tuple[bool | None, str] = (score.passed, "")
+                claims = tuple(
+                    self.decision(claim, requirement, spec.trust)
+                    for claim, requirement in zip(decided, scenario.claims, strict=True)
+                )
             case Failed(reason=reason):
                 judged = (False, reason)
-                claims = tuple(ClaimView(None, "") for _ in scenario.claims)
+                claims = tuple(ClaimView(None, "", None, c.required) for c in scenario.claims)
             case NoVerdict(error=error):
                 judged = (None, error)
-                claims = tuple(ClaimView(None, "") for _ in scenario.claims)
+                claims = tuple(ClaimView(None, "", None, c.required) for c in scenario.claims)
         passed, error = judged
         return AttemptView(
             attempt=outcome.attempt,
             passed=passed,
-            cut=cut,
+            completion=completion,
             stop=outcome.stop,
             error=error,
             claims=claims,
             seconds=sum(turn.seconds for turn in turns),
             slowest=max((turn.seconds for turn in turns), default=None),
-            input=self.total(turn.input for turn in turns),
-            output=self.total(turn.output for turn in turns),
-            tokens=self.total(turn.tokens for turn in turns),
+            input=self.complete_total(turn.input for turn in turns),
+            output=self.complete_total(turn.output for turn in turns),
+            tokens=self.complete_total(turn.tokens for turn in turns),
             thinking_tokens=self.total(turn.thinking_tokens for turn in turns),
             cache_read=self.total(turn.cache_read for turn in turns),
             cache_write=self.total(turn.cache_write for turn in turns),
+            tool_calls=self.complete_total(turn.tool_calls for turn in turns),
             turns=turns,
         )
 
-    def decision(self, claim: Claim, trust: float) -> ClaimView:
+    def decision(self, claim: Claim, requirement: Requirement, trust: float) -> ClaimView:
         match claim.confidence:
             case Confidence(value=value):
                 sure: float | None = value
             case NoConfidence():
                 sure = None
-        match claim.grade:
-            case Grade(value=value):
-                grade: str | None = value
-            case NoGrade():
-                grade = None
         match claim.reason:
             case Reason(text=text):
                 reason = text
             case NoReason():
                 reason = ""
-        return ClaimView(claim.passed, reason, sure, claim.trusted(trust), grade)
+        return ClaimView(
+            claim.passed,
+            reason,
+            claim.holds(trust),
+            requirement.required,
+            sure,
+            claim.trusted(trust),
+        )
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
@@ -1074,13 +904,14 @@ class Summary(Struct, frozen=True):
             case NoUsage():
                 tokens = (None, None, None, None, None, None)
         first, length = self.line(turn.answer.steps)
-        thoughts = calls = 0
+        thoughts = calls = tools = 0
         for step in turn.answer.steps:
             match step:
                 case Thought():
                     thoughts += 1
-                case Call():
+                case Call(kind=kind):
                     calls += 1
+                    tools += kind == "tool"
         steps = tuple(self.step(step, first, length) for step in turn.answer.steps)
         return TurnView(
             turn.message.text,
@@ -1091,6 +922,7 @@ class Summary(Struct, frozen=True):
             thoughts,
             calls,
             length,
+            tools if turn.answer.steps_complete else None,
         )
 
     def count(self, count: int | NotReported) -> int | None:
@@ -1127,6 +959,7 @@ class Summary(Struct, frozen=True):
                 offset = step.started.timestamp() - first
                 return CallView(
                     name=step.name,
+                    kind=step.kind,
                     seconds=step.seconds,
                     left=offset / length if length else 0.0,
                     width=step.seconds / length if length else 0.0,
@@ -1154,6 +987,13 @@ class Summary(Struct, frozen=True):
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]
         return sum(known) if known else None
+
+    def complete_total(self, counts: Iterable[int | None]) -> int | None:
+        """A task total needs every answer's measurement; no answers is not a measured zero."""
+        values = list(counts)
+        if not values or any(value is None for value in values):
+            return None
+        return sum(value for value in values if value is not None)
 
     def share(self, turns: Iterable[TurnView]) -> float | None:
         """The share of input read from the cache, over the turns that report it, so turns that
@@ -1188,7 +1028,7 @@ class Report(Struct, frozen=True):
     def page(self) -> RunPage:
         summary = Summary(self.run)
         views = summary.scenarios().values()
-        scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
+        scenarios = sorted(views, key=ScenarioView.order)
         return RunPage(
             summary.head(),
             summary.metrics(views),
@@ -1201,312 +1041,154 @@ class Report(Struct, frozen=True):
         return Template("run.html").html(self.page())
 
 
-class Setups(Struct, frozen=True):
-    """Two runs' setups, before and after."""
-
-    was: RunSpec
-    now: RunSpec
-
-    def differences(self, *more: tuple[str, str, str]) -> tuple[str, ...]:
-        """What differs, as `judge: a → b`: the models and the convy that played them, a run that
-        does not say which convy shown as `unknown`; then whatever else of `more` differs."""
-        pairs = (
-            ("user", self.was.user, self.now.user),
-            ("judge", self.was.judge, self.now.judge),
-            ("convy", self.was.convy or "unknown", self.now.convy or "unknown"),
-            *more,
-        )
-        return tuple(f"{name}: {a} → {b}" for name, a, b in pairs if a != b)
-
-
 class Comparison(Struct, frozen=True):
-    """Two runs side by side, `compare/<before>-vs-<after>.html`: what changed from `before` to
-    `after`, scenario by scenario."""
+    """The pass-rate regression check on two runs."""
 
     before: Run
     after: Run
 
-    def page(self) -> ComparePage:
-        was, now = Summary(self.before), Summary(self.after)
-        before, after = was.scenarios(), now.scenarios()
-        unchanged = self.unchanged()
-        rows = [self.row(id, before.get(id), after.get(id), unchanged) for id in {*before, *after}]
-        rows.sort(key=lambda row: (GROUPS[row.group], row.id))
-        compared = [row for row in rows if row.group != "apart"]
-        old, new = was.metrics(before.values()), now.metrics(after.values())
-        return ComparePage(
-            before=was.head(),
-            after=now.head(),
-            was=old,
-            now=new,
-            deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
-            differences=self.differences(),
-            rows=tuple(rows),
-            by_seconds=self.ranked((r.id, r.seconds) for r in compared),
-            by_tokens=self.ranked((r.id, r.tokens) for r in compared),
-            turns=self.pairs(was.turns(before.values()), now.turns(after.values())),
-            by_parts=self.parted(compared),
-        )
+    def check(self) -> tuple[str, bool]:
+        """The terminal summary and whether the CI check fails."""
+        was, now = self.before.spec, self.after.spec
+        if was.trust != now.trust or was.claim_threshold != now.claim_threshold:
+            return "Quality not compared: different trust or claim threshold.", True
+        if not isinstance(self.before.status, Finished) or not isinstance(
+            self.after.status, Finished
+        ):
+            return "both runs must be finished to check for regression", True
 
-    def pairs(
-        self, before: tuple[TurnStats, ...], after: tuple[TurnStats, ...]
-    ) -> tuple[TurnPair, ...]:
-        """Each turn number either run has tokens at, with both runs' answers at it."""
-        was, now = {t.turn: t for t in before}, {t.turn: t for t in after}
-        return tuple(TurnPair(turn, was.get(turn), now.get(turn)) for turn in sorted({*was, *now}))
+        before, after = self.tallies(self.before), self.tallies(self.after)
+        common = sorted(before.keys() & after.keys(), key=lambda scenario: scenario.id)
+        pairs = {
+            s.id: (before[s], after[s]) for s in common if before[s].judged and after[s].judged
+        }
+        if not pairs:
+            return "no scenario can be compared", True
 
-    def parted(self, rows: list[CompareRow]) -> PerStat[tuple[str, ...]]:
-        """The compared ids with parts in both runs, by each statistic of the after run's tokens,
-        the most first, then by id."""
-        return PerStat(
-            *(
-                Ranking(
-                    tuple(
-                        (r.id, tokens)
-                        for r in rows
-                        if r.before is not None
-                        and r.before.parted(stat) is not None
-                        and r.after is not None
-                        and (tokens := r.after.parted(stat)) is not None
+        # The displayed rates use all judged attempts. Only unchanged scenarios supply evidence.
+        old = sum(t.held for t in before.values()) / sum(t.judged for t in before.values())
+        new = sum(t.held for t in after.values()) / sum(t.judged for t in after.values())
+        points = round((new - old) * 100, 6)
+        verdict = "same"
+        if points:
+            direction = "better" if points > 0 else "worse"
+            verdict = (
+                direction
+                if Evidence(tuple(pairs.values())).shows() == direction
+                else "may be chance"
+            )
+        text = f"pass rate {old:.0%} → {new:.0%}: {verdict}"
+        lower = [id for id, (a, b) in pairs.items() if b.held / b.judged < a.held / a.judged]
+        if lower:
+            text += f"\nlower pass rate: {', '.join(lower)}"
+        return text, verdict == "worse"
+
+    def tallies(self, run: Run) -> dict[Scenario, Tally]:
+        """Judged attempts by the full scenario definition, so edits cannot supply evidence."""
+        spec = run.spec
+        scenarios = {s.id: s for s in spec.scenarios}
+        judged: dict[Scenario, list[bool]] = {s: [] for s in spec.scenarios}
+        for outcome in run.outcomes:
+            scenario = scenarios[outcome.scenario]
+            match outcome.verdict:
+                case Verdict() as verdict:
+                    judged[scenario].append(
+                        scenario.score(verdict, spec.trust, spec.claim_threshold).passed
                     )
-                ).ids()
-                for stat in STATS
-            )
-        )
-
-    def ranked(self, changes: Iterable[tuple[str, PerStat[Delta]]]) -> PerStat[tuple[str, ...]]:
-        """The ids with a change of each statistic, the largest rise first, then by id."""
-        pairs = tuple(changes)
-        return PerStat(
-            *(
-                Ranking(
-                    tuple(
-                        (id, change.of(stat).value)
-                        for id, change in pairs
-                        if change.of(stat).value is not None
-                    )
-                ).ids()
-                for stat in STATS
-            )
-        )
-
-    def html(self) -> str:
-        return Template("compare.html").html(self.page())
-
-    def differences(self) -> tuple[str, ...]:
-        """What differs between the runs besides the agent, as `judge: a → b`: the models, the
-        convy that made them, and the agent's limits, since its load can change its answer time; a
-        run that does not say which convy made it shows `unknown`."""
-        was, now = self.before.spec.limits, self.after.spec.limits
-        return Setups(self.before.spec, self.after.spec).differences(
-            ("agent limit", f"{was.agent}", f"{now.agent}"),
-            ("agent limit per minute", f"{was.agent_per_minute:g}", f"{now.agent_per_minute:g}"),
-        )
-
-    def unchanged(self) -> set[str]:
-        """The scenarios both runs have, not edited between them."""
-        before = {scenario.id: scenario for scenario in self.before.spec.scenarios}
-        return {s.id for s in self.after.spec.scenarios if before.get(s.id) == s}
-
-    def row(
-        self, id: str, was: ScenarioView | None, now: ScenarioView | None, unchanged: set[str]
-    ) -> CompareRow:
-        if was is None or now is None:
-            why = "only in the after run" if was is None else "only in the before run"
-            return self.apart(id, why, was, now)
-        if id not in unchanged:
-            return self.apart(id, "edited between the runs", was, now)
-        if was.rate is None or now.rate is None:
-            return self.apart(id, "no verdict in one of the runs", was, now)
-        group: Group = (
-            "worse" if now.rate < was.rate else "better" if now.rate > was.rate else "same"
-        )
-        return CompareRow(
-            id,
-            group,
-            "",
-            was,
-            now,
-            self.claims(was, now),
-            Delta(now.held - was.held, TONES[group]),
-            self.changes(was.seconds, now.seconds),
-            self.changes(was.tokens, now.tokens),
-        )
-
-    def apart(
-        self, id: str, why: str, was: ScenarioView | None, now: ScenarioView | None
-    ) -> CompareRow:
-        """A scenario not compared: why, and no change of any number."""
-        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, NO_CHANGES, NO_CHANGES)
-
-    def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
-        changes = []
-        for old, new in zip(was.claims, now.claims, strict=True):
-            before = Tally(old.held, old.judged).rate()
-            after = Tally(new.held, new.judged).rate()
-            moved = self.moved(old, new)
-            change = moved
-            if before is not None and after is not None and before != after:
-                change = "better" if after > before else "worse"
-            changes.append(
-                ClaimChange(
-                    new.text, old.result, new.result, change, old.typical, new.typical, moved
-                )
-            )
-        return tuple(changes)
-
-    def moved(self, old: ClaimSummary, new: ClaimSummary) -> Change:
-        """Where a claim's typical grade went. Its grades are the same in both runs: a scenario
-        edited between them is not compared."""
-        if not old.typical or not new.typical or old.typical == new.typical:
-            return "unchanged"
-        levels = [grade for grade, _ in new.grades]
-        return "better" if levels.index(new.typical) > levels.index(old.typical) else "worse"
-
-    def deltas(
-        self, was: Metrics, now: Metrics, shown: Literal["better", "worse"] | None
-    ) -> Deltas:
-        if was.rate is None or now.rate is None:
-            rate = NO_CHANGE
-        else:
-            points = round((now.rate - was.rate) * 100, 6)
-            agrees = shown == ("better" if points > 0 else "worse")
-            rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
-        return Deltas(
-            rate=rate,
-            stable=self.delta(was.stable, now.stable, more_is_better=True),
-            seconds=self.units(was.seconds, now.seconds),
-            tokens=self.units(was.tokens, now.tokens),
-            cached=self.points(was.cached, now.cached),
-            errors=self.delta(was.errors, now.errors, more_is_better=False),
-        )
-
-    def at(self, spread: Spread | None, stat: Stat) -> float | None:
-        """A statistic of a spread; None without one."""
-        return None if spread is None else spread.of(stat)
-
-    def delta(self, was: float | None, now: float | None, more_is_better: bool) -> Delta:
-        if was is None or now is None:
-            return NO_CHANGE
-        return Delta(now - was, self.tone(now - was, more_is_better=more_is_better, noisy=False))
-
-    def points(self, was: float | None, now: float | None) -> Delta:
-        """The change of a share in percentage points; a rise is better."""
-        if was is None or now is None:
-            return NO_CHANGE
-        change = round((now - was) * 100, 6)
-        shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
-        return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
-
-    def units(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
-        """A tile's change of each statistic in its own unit. Max's is noise, as one answer moves
-        it, unless it did not change."""
-        p50, p90, top, average = (self.unit(self.at(was, s), self.at(now, s)) for s in STATS)
-        return PerStat(p50, p90, Delta(top.value, "noise") if top.value else top, average)
-
-    def unit(self, was: float | None, now: float | None) -> Delta:
-        """A tile's change of a statistic in its own unit, toned as the scenarios' rows are; a
-        rise from 0 is worse."""
-        if was is None or now is None:
-            return NO_CHANGE
-        relative = self.relative(was, now)
-        return Delta(now - was, "bad" if relative.value is None else relative.tone)
-
-    def changes(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
-        """A row's change of each statistic, a percent of the old one."""
-        return PerStat(*(self.relative(self.at(was, s), self.at(now, s)) for s in STATS))
-
-    def relative(self, was: float | None, now: float | None) -> Delta:
-        """The change of a statistic as a percent of the old one; none when either is missing, or
-        the old one is 0 and the new one is not."""
-        if was is None or now is None or (was == 0 and now != 0):
-            return NO_CHANGE
-        if was == now == 0:
-            return Delta(0.0, "same")
-        change = round((now - was) / was * 100, 6)
-        return Delta(change, self.slight(change))
-
-    def slight(self, percent: float) -> Tone:
-        """A rise of time or tokens is worse; under 5% as the page rounds it, the same, so a
-        change shown as 5% is never grey."""
-        if math.floor(abs(percent) + 0.5) < SLIGHT:
-            return "same"
-        return "bad" if percent > 0 else "good"
-
-    def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
-        if change == 0:
-            return "same"
-        if noisy:
-            return "noise"
-        return "good" if (change > 0) == more_is_better else "bad"
-
-    def evidence(
-        self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
-    ) -> Evidence:
-        """The tallies of the scenarios both runs played unchanged and judged."""
-        return Evidence(
-            tuple(
-                (Tally(before[id].held, before[id].judged), Tally(after[id].held, after[id].judged))
-                for id in sorted(unchanged)  # in one order, so the float sums never differ
-                if before[id].judged and after[id].judged
-            )
-        )
+                case Failed():
+                    judged[scenario].append(False)
+        return {s: Tally(sum(passed), len(passed)) for s, passed in judged.items()}
 
 
 class Index(Struct, frozen=True):
-    """`index.html`: every run by agent, newest first, with what it was measured with and a link
-    to its report."""
+    """Every run on its original population. Revision and suite numbers belong to this page."""
 
     runs: Iterable[Run]
 
     def page(self) -> IndexPage:
-        played = sorted(self.runs, key=lambda run: run.spec.started, reverse=True)  # instants
-        groups: dict[str, list[tuple[int, Run]]] = {}
-        for order, run in enumerate(played):
-            groups.setdefault(run.spec.agent, []).append((order, run))
-        agents = []
-        for agent in sorted(groups):
-            runs = groups[agent]
-            older: list[Run | None] = [run for _, run in runs[1:]]
-            older.append(None)
-            rows = tuple(
-                self.row(order, run, previous)
-                for (order, run), previous in zip(runs, older, strict=True)
-            )
-            agents.append(AgentRuns(agent, rows))
-        return IndexPage(len(played), tuple(agents))
+        revisions: dict[Scenario, int] = {}
+        suites: dict[frozenset[int], int] = {}
+        setups: dict[tuple[tuple[str, str | float | int], ...], int] = {}
+        rows = []
+        for run in sorted(self.runs, key=lambda r: r.spec.started, reverse=True):
+            spec = run.spec
+            cells = {s.id: revisions.setdefault(s, len(revisions) + 1) for s in spec.scenarios}
+            suite = suites.setdefault(frozenset(cells.values()), len(suites) + 1)
+            settings = tuple(self.settings(spec, suite).items())
+            missing = ", ".join(name for name, value in settings if value == "")
+            rows.append(self.row(run, cells, setups.setdefault(settings, len(setups)), missing))
+        return IndexPage(tuple(rows), tuple(dict(items) for items in setups))
 
-    def row(self, order: int, run: Run, previous: Run | None) -> IndexRow:
+    def settings(self, spec: RunSpec, suite: int) -> dict[str, str | float | int]:
+        return {
+            "Scenario suite": suite,
+            "User": spec.user,
+            "Judge": spec.judge,
+            "Model fingerprint": spec.files.models,
+            "Convy": spec.convy,
+            "Trust": spec.trust,
+            "Claim threshold": spec.claim_threshold,
+            "Repetitions": spec.k,
+            "Turn timeout (s)": spec.turn_timeout,
+            "Agent concurrency": spec.limits.agent,
+            "User concurrency": spec.limits.user,
+            "Judge concurrency": spec.limits.judge,
+            "Agent requests/min": spec.limits.agent_per_minute,
+            "User requests/min": spec.limits.user_per_minute,
+            "Judge requests/min": spec.limits.judge_per_minute,
+        }
+
+    def row(self, run: Run, revisions: dict[str, int], setup: int, missing: str) -> IndexRow:
         summary = Summary(run)
-        metrics = summary.metrics(summary.scenarios().values())
+        scenarios = summary.scenarios().values()
+        metrics = summary.metrics(scenarios)
+        answers = summary.answers(sorted(scenarios, key=ScenarioView.order))
+        turns = [a.turn for a in answers]
+        parts, shares = summary.split(summary.parts(turns))
+        spec = run.spec
+        head = summary.head()
+        complete = (
+            head.status == "finished"
+            and not run.unreadable
+            and metrics.judged > 0
+            and all(
+                s.judged == len(s.attempts) == spec.k
+                and all(a.attempt == i for i, a in enumerate(s.attempts, 1))
+                for s in scenarios
+            )
+        )
+        quality_note = f"{missing} not recorded" if missing else ""
+        if not complete:
+            quality_note = "Incomplete evaluation"
         return IndexRow(
-            run=summary.head(),
-            rate=metrics.rate,
+            run=head,
+            report=f"./{quote(run.path.as_posix())}/report.html",
             passed=metrics.passed,
             judged=metrics.judged,
-            cut=metrics.cut,
+            rate=metrics.rate,
+            open=metrics.open,
+            stable=metrics.stable,
+            flaky=metrics.flaky,
+            agent_errors=metrics.agent_errors,
+            busy=metrics.busy,
+            model_errors=metrics.model_errors,
             errors=metrics.errors,
-            result=Tally(metrics.passed, metrics.judged).result(),
-            changes=() if previous is None else self.changes(previous.spec, run.spec),
-            order=order,
-            report=f"{run.path.as_posix()}/report.html",
+            results=summary.results(scenarios),
+            numbers=summary.numbers([a for s in scenarios for a in s.attempts]),
+            cached=metrics.cached,
+            cache_answers=sum(t.cache_read is not None for t in turns),
+            thinking_answers=sum(t.thinking_tokens is not None for t in turns),
+            traced_answers=sum(t.tool_calls is not None for t in turns),
+            parts=parts,
+            shares=shares,
+            time=tuple(CallMetrics.from_category(c) for c in summary.time(answers)),
+            scenarios=tuple(
+                ScenarioCell(s.id, revisions[s.id], len(s.attempts), s.held, s.judged)
+                for s in scenarios
+            ),
+            setup=setup,
+            quality_note=quality_note,
         )
-
-    def changes(self, was: RunSpec, now: RunSpec) -> tuple[str, ...]:
-        """What a run is measured with that differs from the agent's previous run, as
-        `judge: a → b`, and the scenarios as `scenarios: +1 -2`, with a minus sign. Neither the
-        agent's version (comparing versions is the point) nor the number of attempts counts; nor
-        a scenario edited under the same id, which the comparison tells apart."""
-        changes = list(Setups(was, now).differences(("trust", f"{was.trust:g}", f"{now.trust:g}")))
-        before, ids = {s.id for s in was.scenarios}, {s.id for s in now.scenarios}
-        moved = " ".join(
-            f"{sign}{len(found)}"
-            for sign, found in (("+", ids - before), ("\N{MINUS SIGN}", before - ids))
-            if found
-        )
-        if moved:
-            changes.append(f"scenarios: {moved}")
-        return tuple(changes)
 
     def html(self) -> str:
         return Template("index.html").html(self.page())
