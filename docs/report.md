@@ -117,7 +117,8 @@ input.
 its share of the calls' time together, large and as its bar, and under it what it adds to an
 answer on average: its total over every answer kept. Under each name: how many calls, and in how
 many answers; point at a row for its spread over the answers it is in. Calls that ran together
-each count their own time, so their shares are of more than the answers' time.
+each count their own time. For example, two calls lasting one second each contribute two call
+seconds even if they start together.
 
 - A call name whose calls report tokens shows them under its time, per answer on average. They
   are apart from the answer's tokens: convy does not know whether the answer's usage holds its
@@ -204,21 +205,53 @@ to rebuild it and the individual reports from the saved results.
   Revision numbers identify different snapshots under the same scenario ID. An absent scenario
   and one with no counted attempts have separate labels.
 
-Search by agent, version or run ID, or use **Choose runs** to include individual runs. The
-table, plot and matrix use that selection, even when you change the table's sort order.
-**Statistic** switches between median and mean. **Time and tokens per** switches between task
-and answer. Tool calls always use the task as their unit.
+Search by agent, version or run ID, or use **Choose runs** to include individual runs. All
+views use that selection. Sorting the runs table also orders the columns of the scenario matrix
+and the **Run metrics** table. **Statistic** and **Time and tokens per** select the statistic
+and unit for the runs table and scatter plot. Tool calls always use the task as their unit.
 
 Choose an optional reference to see how many percentage points a run's pass rate differs from the
 reference. A change from 60% to 75% is +15 points. Filtering out the reference hides differences
 until it is in scope again.
 
 A whole-run difference needs matching scenario snapshots and recorded evaluation settings. These
-include the simulated user and judge, the fingerprint of `models.py`, convy version, trust, claim
-threshold, attempts per scenario, turn timeout and initial participant limits. Both runs must be
-finished and readable with every planned attempt recorded and counted. Where those conditions
-differ, use each run's original rate, counts and linked report to inspect the results. Different
-agent builds can be compared with the same evaluation setup.
+include the simulated user and judge, convy version, trust, claim threshold, attempts per
+scenario, turn timeout and initial participant limits. Both runs must record the same nonempty
+fingerprint of `models.py`. A Python run that omits this fingerprint still shows its own pass
+rate. Both runs must be finished and readable with every planned attempt recorded and counted.
+Where those conditions differ, use each run's original rate, counts and linked report to inspect
+the results. Different agent builds can be compared with the same evaluation setup.
+
+### Run metrics
+
+Choose a **Metric group** to compare one quantity across the visible runs. Each column links to
+its individual report.
+
+- **Outcomes.** Read from planned to recorded to counted attempts, then see how many passed.
+  Error counts use recorded attempts as their denominator. Agent failures also count as failed
+  attempts. Busy-agent and model failures also count as attempts without a verdict. A stable
+  scenario passed every planned attempt. A flaky scenario had both a pass and a failure among
+  its counted attempts. With one repetition, there is no opportunity to observe flakiness.
+- **Scenario pass rates.** Each row groups scenarios by their observed pass rate. For example,
+  if 3 of 10 scenarios passed half their counted attempts, the 50% row shows 30% (3/10).
+  Each scenario contributes once, including unplayed scenarios in the no-verdict group.
+- **Resource distributions.** Choose time or tokens per answer or per task, or tool calls per
+  task. Read the median alongside P90 to see how much larger the upper end of the sample is.
+  Minimum, mean, maximum and measured/recorded counts are available for the same sample.
+  Task time sums the recorded answer durations. Token and tool totals require measurements
+  for every recorded answer in the task.
+- **Token composition.** Compare cache reads, other input, other output and thinking as both a
+  share of reported tokens and a mean per answer reporting usage. Unitemized cache reads stay
+  in other input and unitemized thinking stays in other output. Use the reporting counts to
+  interpret the two cache ratios. For example, if two answers each report 100 input tokens and
+  only one itemizes cache reads (80), cache reads are 40% of all input and 80% of input on
+  answers reporting cache reads.
+- **Named calls.** Choose a model or tool call name. The call count and timing describe the
+  occurrences visible in the traces, including partial traces. Check how many answers have
+  complete traces and how many of the selected calls reported tokens. The share uses total
+  recorded call seconds across all names. Seconds and reported tokens per answer use all
+  recorded answers. The distribution sums the selected calls' seconds within each answer
+  containing that name. Open the individual report to locate the slowest calls.
 
 ## Compare two runs
 

@@ -36,6 +36,7 @@ from convy.report import (
     Index,
     Parts,
     Report,
+    ResultBucket,
     Run,
     Runs,
     ScenarioNumbers,
@@ -678,6 +679,54 @@ def test_workspace_uses_each_runs_uncut_resource_samples(tmp_path):
     assert n.attempt_tokens and (n.attempt_tokens.n, n.attempt_tokens.mean) == (1, 10)
     assert n.tool_calls and (n.tool_calls.n, n.tool_calls.mean) == (1, 0)
     assert (row.passed, row.judged, row.errors) == (1, 3, 1)
+    assert row.traced_answers == 2
+
+
+def test_workspace_keeps_the_run_reports_quality_counts_and_exact_rate_buckets(tmp_path):
+    busy = msgspec.structs.replace(outcome("c", NoVerdict("busy")), stop="agent_busy")
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        5,
+        outcome("a", PASSED),
+        outcome("a", PASSED, attempt=2),
+        outcome("b", Failed("down")),
+        outcome("b", PASSED, attempt=2),
+        busy,
+        outcome("d", NoVerdict("judge down")),
+        outcome("e", FAILED),
+        k=2,
+    )
+    run = only(tmp_path)
+    (row,) = Index([run]).page().rows
+    page = Report(run).page()
+    assert (row.stable, row.flaky, row.open) == (1, 1, 2)
+    assert (row.agent_errors, row.busy, row.model_errors, row.errors) == (1, 1, 1, 3)
+    assert row.results == tuple(
+        ResultBucket(s.rate, len(s.scenarios), s.part) for s in page.results
+    )
+    assert row.results[-1] == ResultBucket(None, 2, 2 / 5)
+
+
+def test_workspace_preserves_partial_token_reporting_and_the_cache_denominators(tmp_path):
+    journal(tmp_path, "bot", "1", 1, talk("a", Usage(100, 20, 10, cache_read=60), Usage(50, 10, 0)))
+    run = only(tmp_path)
+    (row,) = Index([run]).page().rows
+    view = Report(run).page().views.all
+    assert row.parts == view.parts == Parts(30, 45, 10, 5)
+    assert row.shares == view.shares == Shares(30 / 90, 45 / 90, 10 / 90, 5 / 90, 0.4)
+    assert row.cached == 0.6
+    assert (row.cache_answers, row.thinking_answers) == (1, 2)
+
+
+def test_workspace_has_no_measurements_before_the_first_answer(tmp_path):
+    journal(tmp_path, "bot", "1", 2)
+    (row,) = Index(Runs(tmp_path)).page().rows
+    assert row.results == (ResultBucket(None, 2, 1),)
+    assert (row.parts, row.shares, row.cached, row.time) == (None, None, None, ())
+    assert (row.stable, row.flaky, row.open, row.errors) == (0, 0, 0, 0)
+    assert (row.cache_answers, row.thinking_answers, row.traced_answers) == (0, 0, 0)
 
 
 @pytest.mark.parametrize(
@@ -960,10 +1009,14 @@ def test_a_scenario_without_input_has_no_cache_share_of_it(tmp_path):
 
 
 def test_calls_of_no_time_have_no_share_of_it(tmp_path):
-    turn = Turn(Message("hi"), Answer("hello", steps=(call("ping", 0, 0),)), 1.0)
+    steps = (call("ping", 0, 0), call("ping", 0, 0, Usage(0, 0)))
+    turn = Turn(Message("hi"), Answer("hello", steps=steps), 1.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
     (ping,) = Report(only(tmp_path)).page().views.all.time
     assert (ping.total, ping.share) == (0, 0)
+    (row,) = Index(Runs(tmp_path)).page().rows
+    (observed,) = row.time
+    assert (observed.calls, observed.token_calls, observed.tokens) == (2, 1, 0)
 
 
 def test_a_scenario_gives_each_parts_share_and_the_caches_share_of_its_input(tmp_path):
@@ -1015,6 +1068,13 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
         4 / 13,  # of 5 + 4 + 4 s
     )
     assert view.parts is None
+    (row,) = Index(Runs(tmp_path)).page().rows
+    assert [c.token_calls for c in row.time] == [0, 0, 2]
+    for compact, category in zip(row.time, view.time, strict=True):
+        expected = msgspec.to_builtins(category)
+        del expected["places"]
+        expected["token_calls"] = compact.token_calls
+        assert msgspec.to_builtins(compact) == expected
 
 
 def test_calls_that_ran_together_each_count_their_own_time_and_nothing_else_is_timed(tmp_path):

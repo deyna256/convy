@@ -63,6 +63,17 @@ th[aria-sort] button { color: var(--ink); }
 .cell.failing { background: var(--fail-bg); color: var(--fail); }
 .cell.flaky { background: var(--flaky-bg); color: var(--flaky); }
 .cell.none { background: var(--none-bg); color: var(--none); }
+.metricpanel { margin-top: 14px; overflow: hidden; }
+.metricpanel .panelhead { justify-content: flex-start; }
+.metricpanel .panelhead h2 { margin-right: auto; }
+.metricpanel .panelhead [hidden] { display: none; }
+.metricpanel .hint { margin: 0; padding: 0 16px 10px; }
+.metricpanel .matrix tbody th { font-family: var(--sans); max-width: min(32vw, 260px); }
+.metricpanel .matrix td, .metricpanel .matrix thead th:not(:first-child) { text-align: right; padding: 5px 12px; }
+.metricpanel .matrix td { min-width: 105px; white-space: nowrap; }
+.metricpanel .matrix thead th:not(:first-child) { white-space: normal; overflow-wrap: anywhere; }
+.metricpanel meter { display: block; margin-left: auto; width: 68px; height: 9px; }
+#callname { max-width: min(36ch, 60vw); }
 .empty { margin: 0; }
 @media (max-width: 960px) { .panels { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 600px) {
@@ -106,6 +117,25 @@ th[aria-sort] button { color: var(--ink); }
         <div class="scroll" tabindex="0" role="region" aria-label="Scenario results"><table class="matrix" id="matrix" aria-label="Scenario results by run"></table></div>
       </section>
     </div>
+    <section class="panel metricpanel" aria-labelledby="metrichead">
+      <div class="panelhead"><h2 id="metrichead">Run metrics</h2>
+        <label>Metric group<select id="metricgroup">
+          <option value="outcomes">Outcomes</option><option value="rates">Scenario pass rates</option>
+          <option value="resources">Resource distributions</option><option value="parts">Token composition</option>
+          <option value="calls">Named calls</option>
+        </select></label>
+        <label hidden>Measure<select id="resourcefield">
+          <option value="attempt_seconds">Time / task (s)</option><option value="seconds">Time / answer (s)</option>
+          <option value="attempt_tokens">Tokens / task</option><option value="tokens">Tokens / answer</option>
+          <option value="tool_calls">Tool calls / task</option>
+        </select></label>
+        <label hidden>Call name<select id="callname"></select></label>
+      </div>
+      <p class="hint" id="metricnote"></p>
+      <div class="scroll" tabindex="0" role="region" aria-label="Run metrics">
+        <table class="matrix" id="metrics" aria-labelledby="metrichead" aria-describedby="metricnote"></table>
+      </div>
+    </section>
   </div>
 </main>
 <script>
@@ -113,7 +143,10 @@ const DATA = __DATA__;
 const $ = id => document.getElementById(id);
 const rows = DATA.rows;
 const excluded = new Set();
-const identity = row => [row.run.agent, row.run.version, row.run.short].filter(Boolean).join(" · ");
+const suffixCounts = new Map();
+for (const {run} of rows) suffixCounts.set(run.short, (suffixCounts.get(run.short) ?? 0) + 1);
+const runLabel = row => suffixCounts.get(row.run.short) === 1 ? row.run.short : row.run.id;
+const identity = row => [row.run.agent, row.run.version, runLabel(row)].filter(Boolean).join(" · ");
 const number = new Intl.NumberFormat("en", {maximumSignificantDigits: 8});
 const planned = row => row.run.scenarios * row.run.k;
 const unit = () => $("unit").value;
@@ -144,9 +177,11 @@ function difference(row, reference) {
   const changed = Object.keys(setup).filter(key => setup[key] !== base[key]);
   if (changed.length) return "Different " + changed.map(key => key.toLowerCase()).join(", ");
   if (!row.quality_ready || !reference.quality_ready) return "Incomplete evaluation";
-  if (row.rate == null || reference.rate == null) return "No verdict";
+  if (!setup["Models file"]) return "Model fingerprint not recorded";
   const points = (row.rate - reference.rate) * 100;
-  return (points > 0 ? "+" : "") + number.format(points) + " pp";
+  const magnitude = Math.abs(points);
+  const label = magnitude > 0 && magnitude < 0.01 ? "<0.01" : magnitude.toLocaleString("en", {maximumFractionDigits: 2});
+  return el("span", {title: points + " percentage points"}, (points > 0 ? "+" : points < 0 ? "−" : "") + label + " pp");
 }
 
 const order = {key: "started", direction: -1};
@@ -185,7 +220,7 @@ function table(list, reference) {
   $("columns").replaceChildren(el("tr", {}, columns));
   $("rows").replaceChildren(...list.map(row => el("tr", {className: row === reference ? "refrow" : ""},
     el("td", {className: "identity"}, el("a", {href: row.report, title: row.run.id, "aria-label": `Open report for ${identity(row)}`}, row.run.agent),
-      el("small", {}, [row.run.version, row.run.short].filter(Boolean).join(" · "))),
+      el("small", {}, [row.run.version, runLabel(row)].filter(Boolean).join(" · "))),
     el("td", {}, el("time", {dateTime: row.run.started, title: row.run.started}, when(row.run.started)),
       el("small", {}, row.run.status)),
     el("td", {className: "n"}, `${row.numbers.attempts}/${planned(row)}`, el("small", {}, "recorded"),
@@ -236,15 +271,20 @@ function scatter(list, reference) {
     link.append(svg("title", {}, description), svg("circle", {cx, cy, r: row === reference ? 8 : 5,
       class: row === reference ? "point refpoint" : "point"}));
     // Keep overlapping points at their measured coordinates. Every value also has a table row.
-    const span = row.run.short.length * 7 + 8;
+    const span = runLabel(row).length * 7 + 8;
     const lx = cx + span > right ? cx - span : cx + 8;
     if (labels.every(([a, b, h]) => Math.abs(h - cy) > 14 || a > lx + span || b < lx)) {
-      link.append(svg("text", {x: lx, y: cy - 6, class: "idlabel"}, row.run.short));
+      link.append(svg("text", {x: lx, y: cy - 6, class: "idlabel"}, runLabel(row)));
       labels.push([lx, lx + span, cy]);
     }
     graph.append(link);
   }
   $("plot").replaceChildren(graph);
+}
+function comparisonHead(list, label) {
+  return el("thead", {}, el("tr", {}, el("th", {scope: "col"}, label),
+    list.map(row => el("th", {scope: "col"}, el("a", {href: row.report, title: identity(row)}, runLabel(row)),
+      el("small", {}, [row.run.agent, row.run.version].filter(Boolean).join(" · "))))));
 }
 function matrix(list) {
   const scenarios = new Map();
@@ -254,9 +294,6 @@ function matrix(list) {
       scenarios.get(cell.id).set(row, cell);
     }
   }
-  const headings = list.map(row => el("th", {scope: "col"}, row.run.short,
-    el("small", {}, [row.run.agent, row.run.version].filter(Boolean).join(" · "))));
-  const head = el("thead", {}, el("tr", {}, el("th", {scope: "col"}, "Scenario"), headings));
   const body = el("tbody");
   for (const id of [...scenarios.keys()].sort()) {
     const cells = scenarios.get(id);
@@ -274,8 +311,10 @@ function matrix(list) {
       })));
   }
   if (!scenarios.size) body.append(el("tr", {}, el("td", {className: "empty", colSpan: list.length + 1}, "No scenarios in scope.")));
-  $("matrix").replaceChildren(head, body);
+  $("matrix").replaceChildren(comparisonHead(list, "Scenario"), body);
 }
+
+/*include metrics.js*/
 
 let shown = [], reference = null;
 function draw() {
@@ -288,6 +327,7 @@ function draw() {
   table(shown, reference);
   scatter(shown, reference);
   matrix(shown);
+  runMetrics(shown);
 }
 $("theme").append(themeButton());
 $("summary").textContent = rows.length
@@ -308,6 +348,7 @@ if (rows.length) {
   $("search").oninput = draw;
   for (const id of ["reference","stat","unit"]) $(id).onchange = draw;
   $("resource").onchange = () => scatter(shown, reference);
+  for (const id of ["metricgroup","resourcefield","callname"]) $(id).onchange = () => runMetrics(shown);
   draw();
   new ResizeObserver(() => scatter(shown, reference)).observe($("plot"));
 }

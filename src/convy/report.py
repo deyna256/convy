@@ -288,6 +288,9 @@ class ScenarioView(Struct, frozen=True):
     shares: Shares | None
     attempts: tuple[AttemptView, ...]
 
+    def order(self) -> tuple[int, str]:
+        return ORDER[self.result], self.id
+
 
 class Metrics(Struct, frozen=True):
     """The tiles of a run: the numbers behind them."""
@@ -426,14 +429,62 @@ class ScenarioCell(Struct, frozen=True):
     judged: int
 
 
+class ResultBucket(Struct, frozen=True):
+    rate: float | None
+    count: int
+    part: float
+
+
+class CallMetrics(Struct, frozen=True):
+    """One named call's whole-run measurements, without individual call locations."""
+
+    name: str
+    answers: int
+    calls: int
+    total: float
+    spread: Spread
+    average: float
+    tokens: float | None
+    share: float
+    token_calls: int
+
+    @classmethod
+    def from_category(cls, category: Category) -> "CallMetrics":
+        return cls(
+            name=category.name,
+            answers=category.answers,
+            calls=category.calls,
+            total=category.total,
+            spread=category.spread,
+            average=category.average,
+            tokens=category.tokens,
+            share=category.share,
+            token_calls=sum(p.tokens is not None for p in category.places),
+        )
+
+
 class IndexRow(Struct, frozen=True):
     run: RunHead
     report: str
     passed: int
     judged: int
     rate: float | None
+    open: int
+    stable: int
+    flaky: int
+    agent_errors: int
+    busy: int
+    model_errors: int
     errors: int
+    results: tuple[ResultBucket, ...]
     numbers: ScenarioNumbers
+    cached: float | None
+    cache_answers: int
+    thinking_answers: int
+    traced_answers: int
+    parts: Parts | None
+    shares: Shares | None
+    time: tuple[CallMetrics, ...]
     scenarios: tuple[ScenarioCell, ...]
     setup: int  # position in the page's distinct evaluation setups
     quality_ready: bool
@@ -656,18 +707,21 @@ class Summary(Struct, frozen=True):
     def views(self, scenarios: Sequence[ScenarioView]) -> Views:
         return Views(self.view(scenarios, cut=False), self.view(scenarios, cut=True))
 
+    def answers(self, scenarios: Iterable[ScenarioView]) -> list[Answered]:
+        return [
+            Answered(view.id, attempt.attempt, number, turn)
+            for view in scenarios
+            for attempt in view.attempts
+            for number, turn in enumerate(attempt.turns)
+        ]
+
     def view(self, scenarios: Sequence[ScenarioView], cut: bool) -> View:
         """The time and tokens of the answers of `scenarios`, with the outliers' scenarios left
         out when `cut` says so. The unit is the scenario: one answer past the fence of its time
         or of its tokens takes all of its scenario's answers out of every number, as an outlier
         is mostly a scenario where the agent works longer, not a stray answer. A cut that would
         leave no scenario cuts nothing."""
-        answers = [
-            Answered(view.id, attempt.attempt, number, turn)
-            for view in scenarios
-            for attempt in view.attempts
-            for number, turn in enumerate(attempt.turns)
-        ]
+        answers = self.answers(scenarios)
         late = self.fence([a.turn.seconds for a in answers]) if cut else None
         large = self.fence([a.turn.tokens for a in answers]) if cut else None
         out = {
@@ -1023,7 +1077,7 @@ class Report(Struct, frozen=True):
     def page(self) -> RunPage:
         summary = Summary(self.run)
         views = summary.scenarios().values()
-        scenarios = sorted(views, key=lambda s: (ORDER[s.result], s.id))
+        scenarios = sorted(views, key=ScenarioView.order)
         return RunPage(
             summary.head(),
             summary.metrics(views),
@@ -1134,8 +1188,11 @@ class Index(Struct, frozen=True):
 
     def row(self, run: Run, revisions: dict[str, int], setup: int) -> IndexRow:
         summary = Summary(run)
-        scenarios = summary.scenarios()
-        metrics = summary.metrics(scenarios.values())
+        scenarios = summary.scenarios().values()
+        metrics = summary.metrics(scenarios)
+        answers = summary.answers(sorted(scenarios, key=ScenarioView.order))
+        turns = [a.turn for a in answers]
+        parts, shares = summary.split(summary.parts(turns))
         spec = run.spec
         head = summary.head()
         return IndexRow(
@@ -1144,11 +1201,27 @@ class Index(Struct, frozen=True):
             passed=metrics.passed,
             judged=metrics.judged,
             rate=metrics.rate,
+            open=metrics.open,
+            stable=metrics.stable,
+            flaky=metrics.flaky,
+            agent_errors=metrics.agent_errors,
+            busy=metrics.busy,
+            model_errors=metrics.model_errors,
             errors=metrics.errors,
-            numbers=summary.numbers([a for s in scenarios.values() for a in s.attempts]),
+            results=tuple(
+                ResultBucket(s.rate, len(s.scenarios), s.part) for s in summary.results(scenarios)
+            ),
+            numbers=summary.numbers([a for s in scenarios for a in s.attempts]),
+            cached=metrics.cached,
+            cache_answers=sum(t.cache_read is not None for t in turns),
+            thinking_answers=sum(t.thinking_tokens is not None for t in turns),
+            traced_answers=sum(t.tool_calls is not None for t in turns),
+            parts=parts,
+            shares=shares,
+            time=tuple(CallMetrics.from_category(c) for c in summary.time(answers)),
             scenarios=tuple(
                 ScenarioCell(s.id, revisions[s.id], len(s.attempts), s.held, s.judged)
-                for s in scenarios.values()
+                for s in scenarios
             ),
             setup=setup,
             quality_ready=head.status == "finished"
@@ -1157,7 +1230,7 @@ class Index(Struct, frozen=True):
             and all(
                 s.judged == len(s.attempts) == spec.k
                 and all(a.attempt == i for i, a in enumerate(s.attempts, 1))
-                for s in scenarios.values()
+                for s in scenarios
             ),
         )
 
