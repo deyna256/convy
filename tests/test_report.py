@@ -885,10 +885,10 @@ def test_attempts_below_trust_fail_and_are_counted(tmp_path):
 
 
 def test_trust_zero_counts_even_low_confidence(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(False, 0.1)))
+    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0)))
     page = Report(only(tmp_path)).page()
-    assert (page.metrics.passed, page.metrics.judged) == (0, 1)
-    assert page.scenarios[0].result == "failing"
+    assert (page.metrics.passed, page.metrics.judged) == (1, 1)
+    assert page.scenarios[0].result == "passing"
 
 
 def test_a_decision_without_confidence_is_trusted_and_shown_as_such(tmp_path):

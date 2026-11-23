@@ -1,5 +1,7 @@
 """The promises every `Agent` keeps, checked on each implementation convy ships."""
 
+import json
+
 import httpx2
 import pytest
 
@@ -10,17 +12,21 @@ from convy.http import JsonAgent, JsonEndpoint
 
 
 def json_agent(status: int = 200) -> JsonAgent:
-    service = httpx2.MockTransport(lambda request: httpx2.Response(status, json={"reply": "hi"}))
+    def reply(request: httpx2.Request) -> httpx2.Response:
+        history = json.loads(request.content)["messages"]
+        return httpx2.Response(status, json={"reply": str(len(history))})
+
+    service = httpx2.MockTransport(reply)
     endpoint = JsonEndpoint("https://agent.test/chat", transport=service)
-    return JsonAgent(endpoint, body={"message": "{text}"}, reply="reply")
+    return JsonAgent(endpoint, body={"messages": "{history}"}, reply="reply")
 
 
 AGENTS = {
     "JsonAgent": json_agent,
-    "FakeAgent": lambda: FakeAgent("hi"),
+    "FakeAgent": lambda: FakeAgent("first", "next"),
     "Echo": lambda: Echo(),
-    "TimeLimited": lambda: TimeLimited(Echo(), 5),
-    "QueuedAgent": lambda: QueuedAgent(Echo(), Places(2, Patience())),  # two places: two at once
+    "TimeLimited": lambda: TimeLimited(FakeAgent("first", "next"), 5),
+    "QueuedAgent": lambda: QueuedAgent(FakeAgent("first", "next"), Places(2, Patience())),
 }
 
 
@@ -37,8 +43,8 @@ async def test_answer_is_an_answer(agent: Agent):
 async def test_conversations_are_independent(agent: Agent):
     async with agent.conversation() as first, agent.conversation() as second:
         one = await first.answer(Message("hello"))
-        two = await second.answer(Message("hello"))
-    assert one == two
+        await first.answer(Message("again"))
+        assert await second.answer(Message("hello")) == one
 
 
 async def test_a_busy_service_is_busy():

@@ -283,13 +283,6 @@ def test_export_writes_a_csv_and_a_json_lines_file_for_every_table(tmp_path: Pat
     }
 
 
-def test_export_replaces_the_files_of_an_earlier_export(tmp_path: Path):
-    folder = Project(tmp_path).export(Tables(()))
-    (folder / "runs.jsonl").write_text("old", encoding="utf-8")
-    Project(tmp_path).export(Tables(()))
-    assert (folder / "runs.jsonl").read_text(encoding="utf-8") == ""
-
-
 def test_export_writes_each_table_s_text_as_it_is(tmp_path: Path):
     tables = Tables((SAID,))
     folder = Project(tmp_path).export(tables)

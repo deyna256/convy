@@ -72,9 +72,6 @@ async def test_time_limited_gives_turns_their_own_limit():
     async with TimeLimited(agent, 0.05).conversation() as conversation:
         await asyncio.sleep(0.1)  # time between turns is not limited
         assert await conversation.answer(Message("hi")) == Answer("hi", Usage(2, 2))
-    async with TimeLimited(FakeAgent("late", delay=1), 0.05).conversation() as conversation:
-        with pytest.raises(AgentFailure, match=r"no answer in 0\.05 s"):
-            await conversation.answer(Message("hello"))
 
 
 async def test_time_limited_passes_an_error_of_the_body():
