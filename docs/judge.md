@@ -22,21 +22,21 @@ steps of an answer; see [why](decisions/0010-answer-steps.md).
 ## How sure the judge is
 
 A judge may say, for each decision, how sure it is: a number from 0 to 1. Run with `--trust` to
-leave out what it is less sure of:
+set the minimum confidence needed for a claim to hold:
 
 ```sh
 uv run convy run support_bot --trust 0.8
 ```
 
-A decision below 0.8 is not trusted. An attempt that is not decided is neither a pass nor a fail:
-it is left out of the pass rate, and the report says how many were left out;
-[the pass rate](report.md#tiles) gives the rule.
+A decision below 0.8 fails the claim and remains in the attempt's claim count. Confidence equal
+to 0.8 is accepted, and a decision without confidence is trusted. The original yes/no decision,
+reason and confidence are kept, so the report can distinguish a negative judgment from insufficient
+confidence. See [Passing an attempt](scenarios.md#passing-an-attempt) for the complete scoring rule.
 
-`trust` is saved with the run, so its report and `convy resume` use it. Without `--trust` every
-decision counts.
+`trust` defaults to 0 and is saved with the run, so its report and `convy resume` use it.
 
-convy does not check the numbers. Before you rely on a level, compare the judge's decisions with
-your own on some dialogues.
+convy checks the range, not whether the confidence is calibrated. Before you rely on a level,
+compare the judge's decisions with your own on some dialogues.
 
 ## Your own judge
 
@@ -69,7 +69,8 @@ class Classifier:
 
 Put it in `models.py`, or in a module `models.py` imports, and set `judge=Classifier()`.
 
-- Each input claim is a `str`. Return `Claim(True)` or `Claim(False)`, with an optional reason
+- Each input claim is a `str`; required flags and the run's threshold are not sent to the judge.
+  Return `Claim(True)` or `Claim(False)`, with an optional reason
   and confidence. Ordered grades are not supported; `Graded`, `Grade` and `NoGrade` are removed
   from the Python API.
 - A reason is `Reason(text)`. When there is none, leave it out or give `NoReason()`; an empty

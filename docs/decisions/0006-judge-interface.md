@@ -30,9 +30,9 @@ How sure a judge is cannot be measured well in one way that fits everyone:
   `ChatJudge`, a chat model with a prompt, which does not say how sure it is.
 - **A decision may carry a `Confidence` from 0 to 1, or `NoConfidence`.** convy does not check that
   the number is calibrated; that is the judge's owner's job.
-- **A run has a `trust` level,** recorded in `run.json` like `k`. A verdict the judge is less sure
-  of is cut out of the sample: it counts as neither pass nor fail, and the report shows how many
-  were cut next to every pass rate. A decision with no confidence is trusted.
+- **A run has a `trust` level,** recorded in `run.json` like `k`. Confidence is part of claim
+  acceptance, as described in [decision 12](0012-claim-scoring.md), rather than a filter that
+  removes uncertain decisions from the sample. A decision with no confidence is trusted.
 - **Raw decisions and confidence are kept;** `trust` only reads them.
 
 ## Alternatives
@@ -46,12 +46,15 @@ How sure a judge is cannot be measured well in one way that fits everyone:
   a run measured, it belongs to the run.
 - **A slider on the page.** Every number would have to be computed in the browser, a second copy of
   `report.py` without tests.
-- **Count an unsure verdict as a fail.** The agent would pay for the judge's doubt.
+- **Exclude unsure decisions.** This changes the denominator and can reward a run for uncertain
+  judgments. Keeping them as failed claims makes insufficient evidence visible; its cost is that
+  a strict or poorly calibrated judge can reduce the result.
 
 ## Consequences
 
 - `models.py` says `judge=ChatJudge(model)`.
 - A judge is user code: any error, or an answer that is not one `Claim` per claim, is a failure of
   convy's model, and the attempt has no verdict.
-- Fewer attempts may count at a high `trust`, so the report always says how many were cut.
-- Two runs with different `trust` can be compared; each is read with its own.
+- A high `trust` can reduce claim completion without removing attempts from the pass rate.
+- Two runs with different `trust` retain their own results, but cannot establish a statistically
+  supported quality improvement or regression; resource measurements remain available.

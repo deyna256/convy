@@ -33,7 +33,7 @@ All code is in `src/convy/`.
 | `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
 | `env.py` | `Env`, the base class for settings read from `.env` and the environment |
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; its yes/no decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence`, and the attempts without them, `Failed` and `NoVerdict` |
-| `scenario.py` | `Scenario` (read from YAML) and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
+| `scenario.py` | `Scenario` (read from YAML), its `Requirement` definitions and computed `Score`, and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
 | `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, each time and token number a `Spread` of its values, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
 | `tables.py` | a consumer of runs: `Tables`, a run's seven tables, and `Table`, one of them with its rows as records, CSV and JSON Lines; the row types |
@@ -85,7 +85,8 @@ in all of `src/convy/`.
    `Project.export` writes them. Domain objects still have no such methods.
 7. **Outside data becomes the domain's types where it enters; only those types travel inside.**
    Each entry turns what comes in into convy's own types at once. Scenarios: `yamlrocks`, then
-   `msgspec.convert` into `Scenario`. The run's folder: `msgspec.json.decode` into `RunFile` and
+   `msgspec.convert` into `ScenarioInput`, whose strings and requirement records become a `Scenario`.
+   The run's folder: `msgspec.json.decode` into `RunFile` and
    `Outcome`, with unsupported formats rejected before decoding their contents. An agent's answer:
    encoded and decoded with `msgspec.json` as the run's folder will, so a wrong one fails its turn
    instead of the run. A model's reply: read into the shape of an OpenAI chat completion. The judge
@@ -131,8 +132,11 @@ in all of `src/convy/`.
 
 ## The report
 
-`report.py` makes every number and decision on the pages: the tiles, a scenario's result, a claim's
-count, the change between two runs and its colour, whether a change of pass rate is real, the
+`Scenario.score` owns [attempt scoring](docs/scenarios.md#passing-an-attempt), using
+`Claim.holds(trust)` for effective decisions. The CLI and report use this same calculation; raw
+judge decisions remain unchanged in the journal and exports. `report.py` builds the page values:
+the tiles, a scenario's result, a claim's count, the change between two runs and its colour,
+whether a change of pass rate is real, the
 groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
 the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
 through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the

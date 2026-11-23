@@ -10,18 +10,21 @@ import msgspec
 import pytest
 from pydantic_settings import SettingsConfigDict
 
+from convy import Requirement
 from convy.agent import AgentFailure, Answer, Usage
 from convy.bench import RunJournal, RunSpec
 from convy.busy import Busy, Patience, Places
 from convy.dialog import ChatJudge, Claim, Failed, NoVerdict, Reason, Verdict
 from convy.env import Env
-from convy.fakes import EchoConversation, FakeAgent, FakeModel
+from convy.fakes import EchoConversation, FakeAgent, FakeJudge, FakeModel
 from convy.http import JsonEndpoint, Tls
 from convy.model import ModelFailure, Models, OpenAiModel
 from convy.report import Runs
 from convy.scenario import Matching, Outcome, Scenario, Scenarios
 
-SCENARIO = Scenario(id="greet", max_turns=2, instructions="Say hi.", claims=("greets",))
+SCENARIO = Scenario(
+    id="greet", max_turns=2, instructions="Say hi.", claims=(Requirement("greets"),)
+)
 PASS = '{"claims": [{"pass": true, "reason": "fine"}]}'
 PATIENCE = Patience()  # frozen, so one serves every test
 
@@ -275,7 +278,7 @@ def write(directory, name: str, text: str) -> None:
 
 def test_scenarios_are_read_from_yaml(tmp_path):
     write(tmp_path, "a.yaml", "id: a\nmax_turns: 3\nuser: |\n  Say no.\njudge:\n  - no\n")
-    assert list(Scenarios(tmp_path)) == [Scenario("a", 3, "Say no.\n", ("no",))]
+    assert list(Scenarios(tmp_path)) == [Scenario("a", 3, "Say no.\n", (Requirement("no"),))]
 
 
 @pytest.mark.parametrize(
@@ -289,7 +292,7 @@ def test_scenarios_are_read_from_yaml(tmp_path):
         (
             "id: a\nmax_turns: 3\nuser: x\njudge:\n"
             "  - claim: y\n    grades: [no, yes]\n    pass: maybe\n",
-            "Expected `str`, got `object`",
+            "unknown field `grades`",
         ),
     ],
 )
@@ -301,7 +304,10 @@ def test_a_wrong_scenario_names_the_file_and_the_problem(tmp_path, text: str, er
 
 @pytest.mark.parametrize(
     ("max_turns", "claims", "error"),
-    [(0, ("y",), "max_turns must be at least 1"), (1, (), "judge must list at least one claim")],
+    [
+        (0, (Requirement("y"),), "max_turns must be at least 1"),
+        (1, (), "judge must list at least one claim"),
+    ],
 )
 def test_a_scenario_rejects_values_it_cannot_play(max_turns: int, claims: tuple, error: str):
     with pytest.raises(ValueError, match=error):
@@ -335,7 +341,89 @@ def test_an_id_repeated_in_another_folder_names_the_file(tmp_path):
 
 
 def test_matching_keeps_scenarios_by_mask():
-    scenarios = [SCENARIO, Scenario("refund-late", 1, "x", ("y",))]
+    scenarios = [SCENARIO, Scenario("refund-late", 1, "x", (Requirement("y"),))]
     assert [s.id for s in Matching(scenarios, "refund-*")] == ["refund-late"]
     with pytest.raises(ValueError, match="no scenario matches 'nope'"):
         list(Matching(scenarios, "nope"))
+
+
+def test_yaml_normalizes_plain_and_required_claims(tmp_path):
+    write(
+        tmp_path,
+        "a.yaml",
+        "id: a\nmax_turns: 1\nuser: Ask.\njudge:\n"
+        "  - greets\n  - claim: asks\n    required: true\n"
+        "  - claim: explains\n  - claim: polite\n    required: false\n",
+    )
+    (scenario,) = Scenarios(tmp_path)
+    assert scenario.claims == (
+        Requirement("greets"),
+        Requirement("asks", required=True),
+        Requirement("explains"),
+        Requirement("polite"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("claim", "error"),
+    [
+        ('{claim: asks, required: "true"}', "Expected `bool`, got `str`"),
+        ("{claim: asks, required: 1}", "Expected `bool`, got `int`"),
+        ("{claim: asks, required: null}", "Expected `bool`, got `null`"),
+        ("{claim: asks, pass: yes}", "unknown field `pass`"),
+        ("{required: true}", "missing required field `claim`"),
+        ("{claim: 4}", "Expected `str`, got `int`"),
+    ],
+)
+def test_yaml_rejects_invalid_requirement_mappings(tmp_path, claim, error):
+    write(tmp_path, "a.yaml", f"id: a\nmax_turns: 1\nuser: Ask.\njudge: [{claim}]\n")
+    with pytest.raises(ValueError, match=error):
+        list(Scenarios(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("required", "passed", "threshold", "held", "failed", "accepted"),
+    [
+        ((False, False, False), (True, True, True), 1, 3, (), True),
+        ((False, False, False), (True, True, False), 1, 2, (), False),
+        ((True, False, False), (True, False, False), 1 / 3, 1, (), True),
+        ((True, False, False), (True, True, False), 0.5, 2, (), True),
+        ((True, False, False), (False, True, True), 0.5, 2, (1,), False),
+        ((False, False, False), (True, True, False), 2 / 3, 2, (), True),
+        ((False, False, False), (True, True, False), 0.667, 2, (), False),
+        ((False, False, False), (False, False, False), 0, 0, (), True),
+        ((True, True, True), (True, False, True), 0, 2, (2,), False),
+        ((True, True, True), (False, False, False), 0, 0, (1, 2, 3), False),
+    ],
+)
+def test_scoring_requires_mandatory_claims_and_the_unrounded_share_of_all_claims(
+    required, passed, threshold, held, failed, accepted
+):
+    scenario = Scenario(
+        "s", 1, "Ask.", tuple(Requirement(str(i), flag) for i, flag in enumerate(required))
+    )
+    score = scenario.score(Verdict(tuple(Claim(value) for value in passed)), threshold=threshold)
+    assert (score.held, score.total, score.required_failed) == (held, 3, failed)
+    assert score.fraction == held / 3
+    assert score.threshold == threshold
+    assert score.passed is accepted
+
+
+def test_scoring_defaults_to_all_claims_and_accepts_missing_confidence():
+    assert SCENARIO.score(Verdict((Claim(True),)), trust=1).passed
+    assert not SCENARIO.score(Verdict((Claim(False),))).passed
+    assert SCENARIO.score(Verdict((Claim(True),))).threshold == 1
+
+
+async def test_the_judge_sees_only_requirement_texts_in_order():
+    judge = FakeJudge((Claim(True), Claim(False)))
+    scenario = Scenario("s", 1, "Ask.", (Requirement("one", True), Requirement("two")))
+    result = await scenario.outcome(FakeAgent("hello"), Models(FakeModel("hi"), judge), 1, alone())
+    assert judge.calls == [(result.transcript, ("one", "two"))]
+
+
+@pytest.mark.parametrize("setting", ["trust", "threshold"])
+@pytest.mark.parametrize("value", [-0.1, 1.1, float("nan"), float("inf"), -float("inf")])
+def test_direct_scoring_rejects_invalid_acceptance_settings(setting, value):
+    with pytest.raises(ValueError, match="must be from 0 to 1"):
+        SCENARIO.score(Verdict((Claim(True),)), **{setting: value})

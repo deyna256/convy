@@ -28,7 +28,7 @@ def test_running_from_python_is_public_api():
     names = {"Bench", "Scenario", "Scenarios", "Matching", "Outcome", "Verdict", "NoVerdict"}
     names |= {"Claim", "Failed", "Transcript", "Turn", "Journal", "RunJournal", "RunSpec"}
     names |= {"Files", "Running", "Finished", "Interrupted", "Run", "Runs", "Report"}
-    names |= {"Comparison", "Index"}
+    names |= {"Comparison", "Index", "Requirement", "Score"}
     names |= {"Judge", "ChatJudge"}
     names |= {"Confidence", "NoConfidence"}
     names |= {"Thought", "Call", "Reported", "NotReported"}

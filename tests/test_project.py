@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from convy import Tables
+from convy import Requirement, Tables
 from convy.bench import Limits, Running, RunSpec
 from convy.fakes import Echo
 from convy.model import Models
@@ -267,7 +267,7 @@ SAID = Run(
         judge="j",
         k=1,
         turn_timeout=1,
-        scenarios=(Scenario("s", 1, 'Say\nhi, "café".', ("greets",)),),
+        scenarios=(Scenario("s", 1, 'Say\nhi, "café".', (Requirement("greets"),)),),
         started=datetime(2026, 10, 6, tzinfo=UTC),
     ),
     Running(),

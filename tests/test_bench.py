@@ -10,6 +10,7 @@ from itertools import pairwise
 import msgspec
 import pytest
 
+from convy import Requirement
 from convy.agent import AgentFailure, Answer, Message, TimeLimited
 from convy.bench import (
     CONVY,
@@ -31,7 +32,7 @@ from convy.model import Models
 from convy.scenario import Outcome, Scenario
 
 MODELS = Models(user=FakeModel("hi"), judge=ChatJudge(FakeModel('{"claims": [{"pass": true}]}')))
-SCENARIOS = tuple(Scenario(name, 1, "Say hi.", ("greets",)) for name in ("a", "b"))
+SCENARIOS = tuple(Scenario(name, 1, "Say hi.", (Requirement("greets"),)) for name in ("a", "b"))
 STARTED = datetime(2026, 10, 6, 14, 5, tzinfo=UTC)
 SPEC = RunSpec(
     id="2026-10-06T14-05-00_a3f9",
@@ -259,7 +260,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(7, SPEC, Running())
+    assert file == RunFile(8, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()
@@ -433,3 +434,21 @@ def test_a_changed_label_is_a_reason_not_to_resume(now: tuple[str, str, str], re
 def test_a_run_spec_rejects_a_trust_outside_0_to_1(trust: float):
     with pytest.raises(ValueError, match="trust must be from 0 to 1"):
         msgspec.structs.replace(SPEC, trust=trust)
+
+
+@pytest.mark.parametrize("threshold", [-0.01, 1.01, float("nan"), float("inf"), -float("inf")])
+def test_a_run_rejects_a_nonfinite_or_out_of_range_claim_threshold(threshold):
+    with pytest.raises(ValueError, match="claim_threshold must be from 0 to 1"):
+        msgspec.structs.replace(SPEC, claim_threshold=threshold)
+
+
+@pytest.mark.parametrize("threshold", [0, 0.5, 1])
+def test_a_run_preserves_its_claim_threshold_and_requirements_in_its_snapshot(tmp_path, threshold):
+    scenario = msgspec.structs.replace(SCENARIOS[0], claims=(Requirement("greets", True),))
+    spec = msgspec.structs.replace(SPEC, scenarios=(scenario,), claim_threshold=threshold)
+    run = RunJournal(tmp_path, spec)
+    run.create()
+    stored = msgspec.json.decode((run.folder() / "run.json").read_bytes(), type=RunFile)
+    assert stored.spec == spec
+    assert stored.format == 8
+    assert SPEC.claim_threshold == 1

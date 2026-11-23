@@ -8,14 +8,26 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
-from convy import Bench, Claim, Limits, Models, Reason, Report, RunJournal, Runs, RunSpec, Scenario
+from convy import (
+    Bench,
+    Claim,
+    Limits,
+    Models,
+    Reason,
+    Report,
+    Requirement,
+    RunJournal,
+    Runs,
+    RunSpec,
+    Scenario,
+)
 from convy.fakes import Echo, FakeJudge, FakeModel
 
 scenario = Scenario(
     id="greet",
     max_turns=3,
     instructions="Say hello to the assistant, then thank it.",
-    claims=("The agent answered the greeting",),
+    claims=(Requirement("The agent answered the greeting", required=True),),
 )
 models = Models(  # fakes: nothing is called; use OpenAiModel and ChatJudge for real ones
     user=FakeModel("Hello!", "Thank you!", "###STOP###"),
@@ -33,7 +45,8 @@ spec = RunSpec(
     turn_timeout=600,
     scenarios=bench.scenarios,
     started=datetime.now().astimezone(),
-    trust=0.0,  # leave out the judge's decisions less sure than this
+    trust=0.0,  # minimum confidence for a claim to hold
+    claim_threshold=1.0,  # fraction of all claims needed, with every required claim holding
     limits=bench.limits,
 )
 results = Path("results")
@@ -51,3 +64,17 @@ service, 120 seconds by default. The run records the installed convy version, as
 `play` raises `RunInUse` when another process is playing the run's folder. Put your own agent in
 place of `Echo()`. The fakes in `convy.fakes` are public too: use them to test your agent classes
 without a model.
+
+## Score a verdict
+
+Python scenarios take `tuple[Requirement, ...]`; strings are shorthand only in YAML. This is a
+breaking API change. `Requirement(text, required=False)` separates what the scenario asks for from
+the judge's `Claim`, which records its raw decision, reason and confidence.
+
+For a valid `Verdict`, call `scenario.score(verdict, trust=0.8, threshold=0.8)`. It returns a
+`Score` with `held`, `total`, `required_failed` (a tuple of claim numbers starting at 1) and
+`threshold`. Its `fraction` and `passed` properties follow the
+[scoring rule](scenarios.md#passing-an-attempt). Defaults are `trust=0` and `threshold=1`.
+`Claim.holds(trust)` gives the effective result of one decision; `Claim.passed` remains the raw
+judge decision. `Verdict.passed` and `Verdict.decided` are removed: the scenario and run settings
+are needed to determine an attempt's result. Agent failures and missing verdicts have no `Score`.

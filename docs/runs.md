@@ -19,14 +19,14 @@ results/
 Each attempt is written as soon as it ends, so a stopped run loses nothing.
 
 `run.json` keeps a copy of every scenario as it was played. It also keeps the agent's `version`, the
-convy version, the model names, the settings (`k`, `trust` and the rest), and fingerprints of
+convy version, the model names, the settings (`k`, `trust`, `claim_threshold` and the rest), and fingerprints of
 `agents/<agent>.py` and `models.py`. So a run describes itself: editing a scenario later does not
 change what an old run means.
 
 ## Run format compatibility
 
-The current run format is 7. Earlier formats are unsupported after the removal of ordered claim
-scales: they cannot be resumed, exported or rebuilt with this version of convy. There are no
+The current run format is 8. Earlier formats are unsupported after the scoring changes and removal
+of ordered claim scales: they cannot be resumed, exported or rebuilt with this version of convy. There are no
 converters or migration commands. Start new runs after updating any graded scenarios to
 [plain claims](scenarios.md).
 
@@ -45,7 +45,8 @@ resume with: convy resume a3f9
 ```
 
 `convy resume` takes the run's id or its random part. It plays the missing attempts with the run's
-settings: the same scenarios, `k`, `--turn-timeout` and `--trust`. The
+settings: the same scenarios and required flags, `k`, `--turn-timeout`, `--trust` and
+`--claim-threshold`. Scoring settings cannot be overridden on resume. The
 [limits](#how-much-runs-at-once) are the project's current ones, so a run that hit rate limits can
 go on slower. When the agent's limit changed, convy says so: the run's answer times then mix two
 loads.
@@ -152,7 +153,8 @@ Delete its folder and run `convy report`.
 - `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
   resumed, also when another process is playing it.
 - `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged. With
-  `--fail-on-regression`, the pass rate tile is red, or no scenario can be compared.
+  `--fail-on-regression`, the pass rate tile is red, no scenario can be compared, or the runs
+  have different `trust` or `claim_threshold` settings.
 - `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
 
 Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
@@ -180,5 +182,7 @@ uv run convy compare <before> <after> --fail-on-regression
 
 The page is written first. The command prints the pass rate verdict and lists scenarios with lower
 rates, as explained in [Compare two runs](report.md#compare-two-runs). Both runs must be finished;
-an unfinished run or no comparable scenarios exits with 3.
+an unfinished run, no comparable scenarios, or different `trust` or `claim_threshold` settings
+exits with 3. Different scoring settings prevent a quality verdict; resource measurements remain
+available on the page.
 Use enough attempts and the same models and settings for a meaningful baseline.

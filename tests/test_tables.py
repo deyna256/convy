@@ -13,6 +13,7 @@ from convy import (
     ClaimRow,
     DecisionRow,
     Report,
+    Requirement,
     RunRow,
     ScenarioRow,
     StepRow,
@@ -35,8 +36,13 @@ from convy.report import Run
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
-REFUND = Scenario("refund", 4, "Ask for a refund.", ("asks for the order", "solved"))
-HELLO = Scenario("hello", 2, "Say hi.", ("greets",))
+REFUND = Scenario(
+    "refund",
+    4,
+    "Ask for a refund.",
+    (Requirement("asks for the order", required=True), Requirement("solved")),
+)
+HELLO = Scenario("hello", 2, "Say hi.", (Requirement("greets"),))
 SPEC = RunSpec(
     id="2026-10-06T00-00-00_ab12",
     agent="bot",
@@ -50,6 +56,7 @@ SPEC = RunSpec(
     convy="0.6.0",
     files=Files(agent="aa", models="bb"),
     trust=0.5,
+    claim_threshold=0.5,
     limits=Limits(agent=2, user=3, judge=1, agent_per_minute=60, judge_per_minute=30),
 )
 CALL = Call(
@@ -101,6 +108,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         k=2,
         turn_timeout=600,
         trust=0.5,
+        claim_threshold=0.5,
         convy="0.6.0",
         started=DAY,
         status="finished",
@@ -113,7 +121,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         judge_per_minute=30,
         agent_file="aa",
         models_file="bb",
-        format=7,
+        format=8,
         path="bot/2026-10-06T00-00-00_ab12",
         unreadable=0,
     )
@@ -155,14 +163,16 @@ def test_claims_come_in_the_order_of_their_scenario():
             scenario="refund",
             claim=1,
             text="asks for the order",
+            required=True,
         ),
         ClaimRow(
             run=RUN_ID,
             scenario="refund",
             claim=2,
             text="solved",
+            required=False,
         ),
-        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets"),
+        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets", required=False),
     )
 
 
@@ -363,6 +373,7 @@ def test_tables_come_in_order_with_their_rows_and_columns():
                 "k",
                 "turn_timeout",
                 "trust",
+                "claim_threshold",
                 "convy",
                 "started",
                 "status",
@@ -381,7 +392,7 @@ def test_tables_come_in_order_with_their_rows_and_columns():
             ],
         ),
         ("scenarios", ScenarioRow, ["run", "scenario", "instructions", "max_turns"]),
-        ("claims", ClaimRow, ["run", "scenario", "claim", "text"]),
+        ("claims", ClaimRow, ["run", "scenario", "claim", "text", "required"]),
         ("attempts", AttemptRow, [*keys, "verdict", "error", "stop"]),
         ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence"]),
         ("answers", AnswerRow, [*keys, "turn", "message", "answer", "seconds", *tokens]),
@@ -424,6 +435,7 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("RunSpec", "convy"): ("runs.convy",),
     ("RunSpec", "files"): (),
     ("RunSpec", "trust"): ("runs.trust",),
+    ("RunSpec", "claim_threshold"): ("runs.claim_threshold",),
     ("RunSpec", "limits"): (),
     ("Files", "agent"): ("runs.agent_file",),
     ("Files", "models"): ("runs.models_file",),
@@ -438,7 +450,9 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Scenario", "id"): ("scenarios.scenario",),
     ("Scenario", "max_turns"): ("scenarios.max_turns",),
     ("Scenario", "instructions"): ("scenarios.instructions",),
-    ("Scenario", "claims"): ("claims.text",),  # a plain claim is its text
+    ("Scenario", "claims"): (),
+    ("Requirement", "text"): ("claims.text",),
+    ("Requirement", "required"): ("claims.required",),
     ("Outcome", "scenario"): ("attempts.scenario",),
     ("Outcome", "attempt"): ("attempts.attempt",),
     ("Outcome", "transcript"): (),
@@ -565,20 +579,24 @@ def trusted(decision: DecisionRow, trust: float) -> bool:
 
 
 def counted(tables: Tables, trust: float) -> dict[tuple[str, int], bool]:
-    """Pass rate: the counted attempts and whether each passed. One counts when the agent failed,
-    or when every decision is trusted or a trusted decision failed."""
+    """Pass rate: every verdict and agent failure counts; scoring uses recorded requirements."""
     decisions: defaultdict[tuple[str, int], list[DecisionRow]] = defaultdict(list)
-    for d in tables.decisions().rows:
-        decisions[d.scenario, d.attempt].append(d)
-    found: dict[tuple[str, int], bool] = {}
-    for a in tables.attempts().rows:
-        made = decisions[a.scenario, a.attempt]
-        sure = [d for d in made if trusted(d, trust)]
-        match a.verdict:
+    for decision in tables.decisions().rows:
+        decisions[decision.scenario, decision.attempt].append(decision)
+    (run,) = tables.runs().rows
+    required = {(c.scenario, c.claim) for c in tables.claims().rows if c.required}
+    found = {}
+    for attempt in tables.attempts().rows:
+        made = decisions[attempt.scenario, attempt.attempt]
+        held = {d.claim for d in made if d.passed and trusted(d, trust)}
+        match attempt.verdict:
             case "failed":
-                found[a.scenario, a.attempt] = False
-            case "verdict" if len(sure) == len(made) or any(not d.passed for d in sure):
-                found[a.scenario, a.attempt] = all(d.passed for d in made)
+                found[attempt.scenario, attempt.attempt] = False
+            case "verdict":
+                mandatory = {claim for scenario, claim in required if scenario == attempt.scenario}
+                found[attempt.scenario, attempt.attempt] = (
+                    mandatory <= held and len(held) / len(made) >= run.claim_threshold
+                )
     return found
 
 
@@ -615,13 +633,13 @@ def cache_share(tables: Tables) -> float:
 
 
 def claim_counts(tables: Tables, trust: float) -> list[tuple[int, int]]:
-    """Scenarios: a claim's count, held of judged, is over its trusted decisions."""
+    """Scenarios: every decision counts, with low confidence treated as failure."""
     counts = []
     for c in tables.claims().rows:
         made = [
-            d.passed
+            d.passed and trusted(d, trust)
             for d in tables.decisions().rows
-            if (d.scenario, d.claim) == (c.scenario, c.claim) and trusted(d, trust)
+            if (d.scenario, d.claim) == (c.scenario, c.claim)
         ]
         counts.append((sum(made), len(made)))
     return counts
@@ -644,10 +662,14 @@ def sure(passed: bool, value: float) -> Claim:
 NUMBERS = Run(
     Path("bot/numbers"),
     msgspec.structs.replace(
-        SPEC, k=6, trust=0.8, scenarios=(Scenario("s", 2, "Ask.", ("one", "two")),)
+        SPEC,
+        k=6,
+        trust=0.8,
+        claim_threshold=1,
+        scenarios=(Scenario("s", 2, "Ask.", (Requirement("one"), Requirement("two"))),),
     ),
     Finished(DAY),
-    (  # 0.8 is the trust: trusted at >=, so attempt 1 counts and claim one holds 3 of 3
+    (  # 0.8 is the trust: trusted at >=, so attempt 1 counts and claim one holds 3 of 4
         played(
             "s",
             1,
@@ -675,11 +697,11 @@ CONSISTENCY = Run(
         k=2,
         trust=0.5,
         scenarios=(
-            Scenario("a", 2, "Ask.", ("one",)),
-            Scenario("b", 2, "Ask.", ("solved",)),
-            Scenario("c", 2, "Ask.", ("one",)),
-            Scenario("d", 2, "Ask.", ("one",)),
-            Scenario("e", 2, "Ask.", ("one",)),
+            Scenario("a", 2, "Ask.", (Requirement("one"),)),
+            Scenario("b", 2, "Ask.", (Requirement("solved"),)),
+            Scenario("c", 2, "Ask.", (Requirement("one"),)),
+            Scenario("d", 2, "Ask.", (Requirement("one"),)),
+            Scenario("e", 2, "Ask.", (Requirement("one"),)),
         ),
     ),
     Finished(DAY),
@@ -694,7 +716,7 @@ CONSISTENCY = Run(
         played("e", 1, Verdict((Claim(True),))),
         played("e", 2, Verdict((sure(True, 0.1),))),
     ),
-)  # stable: a only; c has an attempt not played, d one that failed, e one not counted
+)  # stable: a only; c has an attempt not played, d one that failed, e one below trust
 CONSISTENCY_PAGE = Report(CONSISTENCY).page()
 CONSISTENCY_TABLES = Tables((CONSISTENCY,))
 
@@ -702,7 +724,7 @@ CONSISTENCY_TABLES = Tables((CONSISTENCY,))
 def test_the_pass_rate_is_the_share_of_counted_attempts_that_passed():
     passed = list(counted(NUMBERS_TABLES, 0.8).values())
     metrics = NUMBERS_PAGE.metrics
-    assert (sum(passed), len(passed)) == (metrics.passed, metrics.judged) == (2, 4)
+    assert (sum(passed), len(passed)) == (metrics.passed, metrics.judged) == (2, 5)
 
 
 def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
@@ -725,10 +747,27 @@ def test_the_cache_share_is_over_the_answers_that_report_a_cache_read():
     assert cache_share(NUMBERS_TABLES) == NUMBERS_PAGE.metrics.cached == 100 / 300
 
 
-def test_a_claim_s_count_is_over_its_trusted_decisions():
+def test_a_claim_s_count_includes_low_confidence_as_failures():
     (scenario,) = NUMBERS_PAGE.scenarios
     assert (
         claim_counts(NUMBERS_TABLES, 0.8)
         == [(c.held, c.judged) for c in scenario.claims]
-        == [(3, 3), (2, 3)]
+        == [(3, 4), (2, 4)]
     )
+
+
+@pytest.mark.parametrize(
+    ("trust", "threshold", "passed"), [(0.5, 0.5, True), (0.5, 1, False), (1, 0, False)]
+)
+def test_exported_requirements_reproduce_scoring_without_rewriting_judge_decisions(
+    trust, threshold, passed
+):
+    run = msgspec.structs.replace(
+        RUN, spec=msgspec.structs.replace(SPEC, trust=trust, claim_threshold=threshold)
+    )
+    tables = Tables((run,))
+    first, second = tables.decisions().rows
+    assert (first.passed, first.confidence, second.passed) == (True, 0.9, False)
+    assert counted(tables, trust)["refund", 1] is passed
+    metrics = Report(run).page().metrics
+    assert (metrics.passed, metrics.judged) == (int(passed), 2)
