@@ -216,8 +216,8 @@ until it is in scope again.
 
 A whole-run difference needs matching scenario snapshots and recorded evaluation settings. These
 include the simulated user and judge, convy version, trust, claim threshold, attempts per
-scenario, turn timeout and initial participant limits. Both runs must record the same nonempty
-fingerprint of `models.py`. A Python run that omits this fingerprint still shows its own pass
+scenario, turn timeout and initial participant limits. Both runs must record the user and judge names, convy version and
+`models.py` fingerprint. A Python run that omits this fingerprint still shows its own pass
 rate. Both runs must be finished and readable with every planned attempt recorded and counted.
 Where those conditions differ, use each run's original rate, counts and linked report to inspect
 the results. Different agent builds can be compared with the same evaluation setup.

@@ -24,6 +24,13 @@ verdict.
 
 ### How to compare the measurements
 
+The UK Government Analysis Function recommends tables for looking up and comparing values.
+NIST describes scatter plots as a way to examine the relationship between two measurements.
+We use one column per run for reading a metric across builds, and one point per run for
+exploring the tradeoff between quality and resource use.
+[Table guidance](https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-tables/),
+[scatter plot guidance](https://www.itl.nist.gov/div898/handbook/eda/section3/scatterp.htm).
+
 | Metric | What the sources establish | What convy shows and why |
 | --- | --- | --- |
 | Attempt quality | One successful trial and consistent success across trials answer different evaluation questions. [Anthropic's guide to agent evals](https://www.anthropic.com/research/demystifying-evals-for-ai-agents) | Show the observed pass rate with passed and counted attempts. Use the scatter plot to see how much time or how many tokens each run used at that rate. |

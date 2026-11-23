@@ -487,7 +487,7 @@ class IndexRow(Struct, frozen=True):
     time: tuple[CallMetrics, ...]
     scenarios: tuple[ScenarioCell, ...]
     setup: int  # position in the page's distinct evaluation setups
-    quality_ready: bool
+    quality_note: str  # why a whole-run difference is unavailable, empty when comparable
 
 
 class IndexPage(Struct, frozen=True):
@@ -1164,7 +1164,8 @@ class Index(Struct, frozen=True):
             cells = {s.id: revisions.setdefault(s, len(revisions) + 1) for s in spec.scenarios}
             suite = suites.setdefault(frozenset(cells.values()), len(suites) + 1)
             settings = tuple(self.settings(spec, suite).items())
-            rows.append(self.row(run, cells, setups.setdefault(settings, len(setups))))
+            missing = ", ".join(name for name, value in settings if value == "")
+            rows.append(self.row(run, cells, setups.setdefault(settings, len(setups)), missing))
         return IndexPage(tuple(rows), tuple(dict(items) for items in setups))
 
     def settings(self, spec: RunSpec, suite: int) -> dict[str, str | float | int]:
@@ -1172,7 +1173,7 @@ class Index(Struct, frozen=True):
             "Scenario suite": suite,
             "User": spec.user,
             "Judge": spec.judge,
-            "Models file": spec.files.models,
+            "Model fingerprint": spec.files.models,
             "Convy": spec.convy,
             "Trust": spec.trust,
             "Claim threshold": spec.claim_threshold,
@@ -1186,7 +1187,7 @@ class Index(Struct, frozen=True):
             "Judge requests/min": spec.limits.judge_per_minute,
         }
 
-    def row(self, run: Run, revisions: dict[str, int], setup: int) -> IndexRow:
+    def row(self, run: Run, revisions: dict[str, int], setup: int, missing: str) -> IndexRow:
         summary = Summary(run)
         scenarios = summary.scenarios().values()
         metrics = summary.metrics(scenarios)
@@ -1195,6 +1196,19 @@ class Index(Struct, frozen=True):
         parts, shares = summary.split(summary.parts(turns))
         spec = run.spec
         head = summary.head()
+        complete = (
+            head.status == "finished"
+            and not run.unreadable
+            and metrics.judged > 0
+            and all(
+                s.judged == len(s.attempts) == spec.k
+                and all(a.attempt == i for i, a in enumerate(s.attempts, 1))
+                for s in scenarios
+            )
+        )
+        quality_note = f"{missing} not recorded" if missing else ""
+        if not complete:
+            quality_note = "Incomplete evaluation"
         return IndexRow(
             run=head,
             report=f"./{quote(run.path.as_posix())}/report.html",
@@ -1224,14 +1238,7 @@ class Index(Struct, frozen=True):
                 for s in scenarios
             ),
             setup=setup,
-            quality_ready=head.status == "finished"
-            and not run.unreadable
-            and metrics.judged > 0
-            and all(
-                s.judged == len(s.attempts) == spec.k
-                and all(a.attempt == i for i, a in enumerate(s.attempts, 1))
-                for s in scenarios
-            ),
+            quality_note=quality_note,
         )
 
     def html(self) -> str:

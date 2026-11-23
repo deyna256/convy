@@ -13,7 +13,7 @@ import pytest
 
 from convy import Requirement
 from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
-from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
+from convy.bench import CONVY, Files, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.busy import Patience, Places
 from convy.dialog import (
     Claim,
@@ -653,8 +653,8 @@ def test_index_puts_every_run_on_one_time_axis_with_full_run_results(tmp_path):
     assert (newest.passed, newest.judged, newest.numbers.attempts) == (1, 2, 2)
     assert newest.scenarios[0].passed == 1
     assert oldest.report == f"./bot/{first.spec.id}/report.html"
-    assert oldest.quality_ready
-    assert not newest.quality_ready
+    assert oldest.quality_note == "Model fingerprint not recorded"
+    assert newest.quality_note == "Incomplete evaluation"
 
 
 def test_no_runs_make_an_empty_workspace(tmp_path):
@@ -753,6 +753,29 @@ def test_workspace_identifies_the_setting_that_prevents_a_quality_delta(tmp_path
     assert (old.scenarios[0].revision != new.scenarios[0].revision) == (field == "Scenario suite")
 
 
+@pytest.mark.parametrize(
+    ("missing", "note"),
+    [
+        ("convy", "Convy not recorded"),
+        ("user", "User not recorded"),
+        ("judge", "Judge not recorded"),
+        ("", ""),
+    ],
+)
+def test_reference_requires_a_recorded_evaluator_even_for_matching_setups(tmp_path, missing, note):
+    journal(tmp_path, "bot", "v1", 1, outcome("a", PASSED))
+    run = only(tmp_path)
+    spec = msgspec.structs.replace(run.spec, files=Files(models="known"))
+    if missing:
+        spec = msgspec.structs.replace(spec, **{missing: ""})
+    run = msgspec.structs.replace(run, spec=spec, status=Finished(at(6)))
+    other = msgspec.structs.replace(run, outcomes=(outcome("a", FAILED),))
+    first, second = Index((run, other)).page().rows
+    assert (first.rate, second.rate) == (1, 0)
+    assert first.setup == second.setup
+    assert first.quality_note == second.quality_note == note
+
+
 def test_workspace_matches_suites_across_order_and_distinguishes_added_scenarios(tmp_path):
     original = journal(tmp_path, "a", "v1", 2)
     run = Runs(tmp_path).read(original.folder())
@@ -787,7 +810,7 @@ def test_workspace_keeps_partial_results_visible_without_a_quality_delta(tmp_pat
             attempts.write(b"broken\n")
     (row,) = Index(Runs(tmp_path)).page().rows
     assert row.rate == (1 if partial in ("unplayed", "unjudged") else 0.5)
-    assert not row.quality_ready
+    assert row.quality_note == "Incomplete evaluation"
     assert len(row.scenarios) == 2
 
 

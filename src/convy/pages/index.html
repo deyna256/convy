@@ -176,8 +176,7 @@ function difference(row, reference) {
   const setup = DATA.setups[row.setup], base = DATA.setups[reference.setup];
   const changed = Object.keys(setup).filter(key => setup[key] !== base[key]);
   if (changed.length) return "Different " + changed.map(key => key.toLowerCase()).join(", ");
-  if (!row.quality_ready || !reference.quality_ready) return "Incomplete evaluation";
-  if (!setup["Models file"]) return "Model fingerprint not recorded";
+  if (row.quality_note || reference.quality_note) return row.quality_note || reference.quality_note;
   const points = (row.rate - reference.rate) * 100;
   const magnitude = Math.abs(points);
   const label = magnitude > 0 && magnitude < 0.01 ? "<0.01" : magnitude.toLocaleString("en", {maximumFractionDigits: 2});
