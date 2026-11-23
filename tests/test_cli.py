@@ -89,6 +89,7 @@ def test_init_creates_the_template_and_keeps_existing_files(tmp_path: Path, caps
 
 
 def test_smoke_on_echo_works(project: Path, capsys):
+    (project / "models.py").unlink()
     assert convy("run", "echo", "--smoke") == 0
     out = capsys.readouterr().out
     assert "agent (" in out and "Hello! What can you help me with?" in out

@@ -187,7 +187,9 @@ class RunCommand(BaseModel):
         try:
             agents = [project.agent(name) for name in self.agents]
             benches = [self.bench(project, loaded.name) for loaded in agents]
-            fingerprints = [project.files(loaded.name) for loaded in agents]
+            fingerprints = {
+                loaded.name: project.files(loaded.name) for loaded in agents if not self.smoke
+            }
         except ValidationError as error:  # settings in the project's files
             Invalid(error).show()
             raise SystemExit(2) from None
@@ -196,12 +198,12 @@ class RunCommand(BaseModel):
             raise SystemExit(2) from None
         failed = False
         played = []
-        for loaded, bench, files in zip(agents, benches, fingerprints, strict=True):
+        for loaded, bench in zip(agents, benches, strict=True):
             agent = TimeLimited(loaded.agent, self.turn_timeout)
             if self.smoke:
                 outcomes = asyncio.run(self.smoked(bench, agent, loaded.name))
             else:
-                journal = self.journal(project, bench, loaded, files)
+                journal = self.journal(project, bench, loaded, fingerprints[loaded.name])
                 outcomes = Recorded(project, journal).outcomes(bench, agent)
                 played.append(journal)
             failed |= any(outcome.failed() for outcome in outcomes)
