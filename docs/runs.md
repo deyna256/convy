@@ -25,10 +25,10 @@ change what an old run means.
 
 ## Run format compatibility
 
-The current run format is 8. Earlier formats are unsupported after the scoring changes and removal
-of ordered claim scales: they cannot be resumed, exported or rebuilt with this version of convy. There are no
-converters or migration commands. Start new runs after updating any graded scenarios to
-[plain claims](scenarios.md).
+The current run format is 9, which records explicit call kinds and answer trace completeness.
+Earlier formats cannot be resumed, exported or rebuilt with this version of convy. There are no
+converters or migration commands. Start new runs after updating Python `Call` constructors with
+a [call kind](agents.md#steps) and any graded scenarios to [plain claims](scenarios.md).
 
 Reading or rejecting an unsupported run leaves its files untouched. Its existing standalone HTML
 report still opens; to rebuild or resume it, use the convy version that wrote it.

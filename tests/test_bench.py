@@ -260,7 +260,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(8, SPEC, Running())
+    assert file == RunFile(9, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()
@@ -450,5 +450,5 @@ def test_a_run_preserves_its_claim_threshold_and_requirements_in_its_snapshot(tm
     run.create()
     stored = msgspec.json.decode((run.folder() / "run.json").read_bytes(), type=RunFile)
     assert stored.spec == spec
-    assert stored.format == 8
+    assert stored.format == 9
     assert SPEC.claim_threshold == 1

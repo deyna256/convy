@@ -3,9 +3,10 @@ import re
 import secrets
 import shutil
 import subprocess
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, Literal, get_args
 
 import msgspec
 import pytest
@@ -13,6 +14,7 @@ import pytest
 from convy import Requirement
 from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
+from convy.busy import Patience, Places
 from convy.dialog import (
     Claim,
     Confidence,
@@ -23,6 +25,8 @@ from convy.dialog import (
     Turn,
     Verdict,
 )
+from convy.fakes import FakeAgent, FakeJudge, FakeModel
+from convy.model import Models
 from convy.report import (
     NO_CHANGE,
     STATS,
@@ -122,7 +126,7 @@ def journal(
     return written
 
 
-@pytest.mark.parametrize("format", [1, 2, 3, 4, 5, 6, 7, 9])
+@pytest.mark.parametrize("format", [1, 2, 3, 4, 5, 6, 7, 8, 10])
 def test_unsupported_runs_are_rejected_without_changing_their_files(tmp_path, format):
     written = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
     folder = written.folder()
@@ -138,8 +142,13 @@ def test_unsupported_runs_are_rejected_without_changing_their_files(tmp_path, fo
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
-    steps = (Thought("plan"), Call(name="search", started=DAY, seconds=1.5, received=Reported("")))
-    turn = Turn(Message("hi"), Answer("hello", Usage(10, 5, cache_read=4), steps), 2.0)
+    steps = (
+        Thought("plan"),
+        Call(kind="tool", name="search", started=DAY, seconds=1.5, received=Reported("")),
+    )
+    turn = Turn(
+        Message("hi"), Answer("hello", Usage(10, 5, cache_read=4), steps, steps_complete=True), 2.0
+    )
     written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     run_journal = journal(tmp_path, "bot", "1", 1, written)
     run_journal.write(Finished(datetime.now(UTC)))
@@ -411,10 +420,21 @@ AGENT_CLOCK = datetime(2001, 1, 1, tzinfo=UTC)  # far from the time convy measur
 NO_USAGE = NoUsage()
 
 
-def call(name: str, at: float, seconds: float, usage: Usage | NoUsage = NO_USAGE) -> Call:
+def call(
+    name: str,
+    at: float,
+    seconds: float,
+    usage: Usage | NoUsage = NO_USAGE,
+    *,
+    kind: Literal["model", "tool"] = "tool",
+) -> Call:
     """A call `at` seconds after the agent's first, by the agent's clock."""
     return Call(
-        name=name, started=AGENT_CLOCK + timedelta(seconds=at), seconds=seconds, usage=usage
+        kind=kind,
+        name=name,
+        started=AGENT_CLOCK + timedelta(seconds=at),
+        seconds=seconds,
+        usage=usage,
     )
 
 
@@ -434,8 +454,10 @@ def bar(
     sent: str | None = None,
     received: str | None = None,
     start: float = 0.0,
+    kind: Literal["model", "tool"] = "tool",
 ) -> CallView:
     return CallView(
+        kind=kind,
         name=name,
         seconds=seconds,
         left=left,
@@ -448,14 +470,17 @@ def bar(
 
 
 def test_calls_sit_on_their_own_time_line(tmp_path):
-    turn = shown(tmp_path, call("search", 0, 1), call("gpt", 2, 2))
-    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5, start=2))
+    turn = shown(tmp_path, call("search", 0, 1), call("gpt", 2, 2, kind="model"))
+    assert turn.steps == (bar("search", 1, 0, 0.25), bar("gpt", 2, 0.5, 0.5, start=2, kind="model"))
     assert turn.span == 4
 
 
 def test_overlapping_calls_share_the_time_line(tmp_path):
-    turn = shown(tmp_path, call("search", 0, 4), call("embed", 1, 1))
-    assert turn.steps == (bar("search", 4, 0, 1), bar("embed", 1, 0.25, 0.25, start=1))
+    turn = shown(tmp_path, call("search", 0, 4), call("embed", 1, 1, kind="model"))
+    assert turn.steps == (
+        bar("search", 4, 0, 1),
+        bar("embed", 1, 0.25, 0.25, start=1, kind="model"),
+    )
     assert turn.span == 4
 
 
@@ -470,16 +495,17 @@ def test_a_huge_call_does_not_break_the_report(tmp_path):
 
 def test_a_call_shows_what_it_reported_and_what_it_did_not(tmp_path):
     searched = Call(
+        kind="tool",
         name="search",
         started=AGENT_CLOCK,
         seconds=1,
         sent=Reported("refund rules"),
         received=Reported(""),
     )
-    turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2)))
+    turn = shown(tmp_path, searched, call("gpt", 1, 1, Usage(3, 4, 2), kind="model"))
     assert turn.steps == (
         bar("search", 1, 0, 0.5, sent="refund rules", received=""),
-        bar("gpt", 1, 0.5, 0.5, tokens=7, start=1),
+        bar("gpt", 1, 0.5, 0.5, tokens=7, start=1, kind="model"),
     )
 
 
@@ -502,8 +528,10 @@ def test_an_answer_without_calls_has_no_time_line(tmp_path):
 
 def test_calls_in_other_time_zones_share_the_time_line(tmp_path):
     moment = datetime(2026, 10, 20, 12, 0, tzinfo=UTC)
-    utc = Call(name="a", started=moment, seconds=1)
-    plus3 = Call(name="b", started=moment.astimezone(timezone(timedelta(hours=3))), seconds=1)
+    utc = Call(kind="tool", name="a", started=moment, seconds=1)
+    plus3 = Call(
+        kind="tool", name="b", started=moment.astimezone(timezone(timedelta(hours=3))), seconds=1
+    )
     assert shown(tmp_path, utc, plus3).steps == (bar("a", 1, 0, 1), bar("b", 1, 0, 1))
 
 
@@ -1292,10 +1320,10 @@ def test_a_scenario_gives_each_parts_share_and_the_caches_share_of_its_input(tmp
 def test_the_agents_calls_are_summed_up_by_name(tmp_path):
     first = Answer(
         "hello",
-        steps=(Thought("plan"), call("search", 0, 1, Usage(3, 4)), call("gpt", 1, 2)),
+        steps=(Thought("plan"), call("search", 0, 1, Usage(3, 4)), call("gpt", 1, 2, kind="model")),
     )
     second = Answer("hello", steps=(call("search", 0, 3, Usage(5, 6)),))
-    other = Answer("hello", steps=(call("gpt", 0, 2), call("lookup", 0, 5)))
+    other = Answer("hello", steps=(call("gpt", 0, 2, kind="model"), call("lookup", 0, 5)))
     played = (
         Outcome(
             "a",
@@ -1334,7 +1362,7 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
 
 
 def test_calls_that_ran_together_each_count_their_own_time_and_nothing_else_is_timed(tmp_path):
-    steps = (call("search", 0, 1), call("gpt", 0.5, 1), call("lookup", 2.5, 0.5))
+    steps = (call("search", 0, 1), call("gpt", 0.5, 1, kind="model"), call("lookup", 2.5, 0.5))
     turn = Turn(Message("hi"), Answer("hello", Usage(10, 20), steps=steps), 4.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
     view = Report(only(tmp_path)).page().views.all
@@ -1365,7 +1393,7 @@ def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_pa
     assert views.cut.out == ("c",)
     assert views.cut.seconds.answers == 20
     assert views.cut.seconds.spread is not None and views.cut.seconds.spread.max == 2
-    assert views.cut.scenarios[2] == ScenarioNumbers(None, None, None, None, 0)
+    assert views.cut.scenarios[2] == ScenarioNumbers(None, None, None, None, 0, None)
     assert (views.all.attempts, views.cut.attempts) == (3, 2)
     assert views.cut.attempt_seconds == Spread(2, 10, 15, 19, 20, 15)
     assert views.cut.attempt_tokens == Spread(2, 200, 200, 200, 200, 200)
@@ -1727,3 +1755,145 @@ def test_resource_samples_include_recorded_errors_without_inventing_empty_task_m
     assert (by_id["a"].attempt_seconds, by_id["a"].attempt_tokens) == (single(4), None)
     assert by_id["b"].attempts == 2
     assert (by_id["b"].attempt_seconds, by_id["b"].attempt_tokens) == (single(2), single(15))
+
+
+def test_tool_calls_count_each_invocation_across_the_task(tmp_path):
+    tool = call("same-name", 0, 0)
+    model = call("same-name", 0, 1, Usage(3, 4), kind="model")
+    failed = msgspec.structs.replace(tool, received=Reported("error: unavailable"))
+    first = Answer("retrying", steps=(Thought("plan"), model, failed, tool), steps_complete=True)
+    second = Answer("done", steps=(tool, model), steps_complete=True)
+    played = Outcome(
+        "a",
+        1,
+        Transcript((Turn(Message("hi"), first, 1), Turn(Message("next"), second, 1))),
+        PASSED,
+        "max_turns",
+    )
+    journal(tmp_path, "bot", "1", 1, played)
+    page = Report(only(tmp_path)).page()
+    (attempt,) = page.scenarios[0].attempts
+    assert [turn.tool_calls for turn in attempt.turns] == [2, 1]
+    assert (attempt.turns[0].thoughts, attempt.turns[0].calls) == (1, 3)
+    assert [step.kind for step in attempt.turns[0].steps if isinstance(step, CallView)] == [
+        "model",
+        "tool",
+        "tool",
+    ]
+    assert attempt.tool_calls == 3
+    assert page.views.all.tool_calls == page.views.all.scenarios[0].tool_calls == single(3)
+
+
+@pytest.mark.parametrize(
+    ("answers", "counts", "total"),
+    [
+        ((Answer("zero", steps_complete=True),), [0], 0),
+        (
+            (
+                Answer(
+                    "model only",
+                    steps=(Thought("plan"), call("search", 0, 1, kind="model")),
+                    steps_complete=True,
+                ),
+            ),
+            [0],
+            0,
+        ),
+        ((Answer("missing"),), [None], None),
+        ((Answer("partial", steps=(call("search", 0, 1),)),), [None], None),
+        (
+            (
+                Answer("complete", steps=(call("search", 0, 1),), steps_complete=True),
+                Answer("missing"),
+            ),
+            [1, None],
+            None,
+        ),
+        ((), [], None),
+    ],
+    ids=["known-zero", "model-and-thought", "missing", "partial", "mixed", "no-answers"],
+)
+def test_tool_calls_require_every_answers_complete_trace(tmp_path, answers, counts, total):
+    turns = tuple(Turn(Message("hi"), answer, 1) for answer in answers)
+    journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript(turns), PASSED, "max_turns"))
+    page = Report(only(tmp_path)).page()
+    (attempt,) = page.scenarios[0].attempts
+    assert [turn.tool_calls for turn in attempt.turns] == counts
+    assert attempt.tool_calls == total
+    spread = None if total is None else single(total)
+    assert page.views.all.tool_calls == page.views.all.scenarios[0].tool_calls == spread
+
+
+def test_tool_call_samples_include_failed_and_unjudged_recorded_tasks(tmp_path):
+    played = []
+    for attempt, (count, verdict) in enumerate(
+        [(0, PASSED), (1, FAILED), (3, Failed("close failed")), (8, NoVerdict("judge down"))], 1
+    ):
+        answer = Answer("done", steps=(call("search", 0, 1),) * count, steps_complete=True)
+        base = outcome("a", verdict, attempt=attempt)
+        played.append(
+            msgspec.structs.replace(base, transcript=Transcript((Turn(Message("hi"), answer, 1),)))
+        )
+    played.extend(
+        (
+            outcome("a", PASSED, attempt=5),
+            Outcome("a", 6, Transcript(), NoVerdict("busy"), "agent_busy"),
+        )
+    )
+    written = journal(tmp_path, "bot", "1", 1, *played, k=8)
+    written.write(Interrupted(at(5)))
+    page = Report(only(tmp_path)).page()
+    view = page.views.all
+    assert view.attempts == view.scenarios[0].attempts == 6
+    assert view.tool_calls == view.scenarios[0].tool_calls == Spread(4, 0, 2, 6.5, 8, 3)
+    assert [a.tool_calls for a in page.scenarios[0].attempts] == [0, 1, 3, 8, None, None]
+
+
+def test_tool_call_statistics_follow_the_same_scenario_outlier_cut(tmp_path):
+    tool = call("search", 0, 1)
+    played = []
+    for scenario, seconds, count in [("a", 1, 1), ("b", 2, 2), ("c", 100, 9)]:
+        turns = tuple(
+            Turn(Message("hi"), Answer("done", steps=(tool,) * count, steps_complete=True), seconds)
+            for _ in range(1 if scenario == "c" else 10)
+        )
+        played.append(Outcome(scenario, 1, Transcript(turns), PASSED, "max_turns"))
+    journal(tmp_path, "bot", "1", 3, *played)
+    page = Report(only(tmp_path)).page()
+    views = page.views
+    assert (views.all.attempts, views.cut.attempts, views.cut.out) == (3, 2, ("c",))
+    assert views.all.tool_calls == Spread(3, 9, 10, 18, 20, 13)
+    assert views.cut.tool_calls == Spread(2, 10, 15, 19, 20, 15)
+    by_id = dict(zip((s.id for s in page.scenarios), views.cut.scenarios, strict=True))
+    assert by_id["a"].tool_calls == single(10)
+    assert by_id["b"].tool_calls == single(20)
+    assert (by_id["c"].tool_calls, by_id["c"].attempts) == (None, 0)
+
+
+@pytest.mark.parametrize(("failure", "count"), [("open", None), ("turn", None), ("close", 1)])
+async def test_tool_call_measurement_preserves_agent_failure_semantics(tmp_path, failure, count):
+    complete = Answer("hello", steps=(call("search", 0, 1),), steps_complete=True)
+
+    class Broken:
+        @asynccontextmanager
+        async def conversation(self):
+            if failure == "open":
+                raise RuntimeError("open failed")
+            async with FakeAgent(complete, RuntimeError("turn failed")).conversation() as talk:
+                yield talk
+            if failure == "close":
+                raise RuntimeError("close failed")
+
+    scenario = Scenario("a", 2 if failure == "turn" else 1, "Say hi.", (Requirement("greets"),))
+    judge = FakeJudge((Claim(True),))
+    played = await scenario.outcome(
+        Broken(), Models(FakeModel("hi"), judge), 1, Places(1, Patience())
+    )
+    assert played.stop == "agent_failure"
+    assert judge.calls == []
+    journal(tmp_path, "bot", "1", 1, played)
+    page = Report(only(tmp_path)).page()
+    (attempt,) = page.scenarios[0].attempts
+    assert attempt.tool_calls == count
+    assert page.views.all.attempts == 1
+    assert page.views.all.tool_calls == (None if count is None else single(count))

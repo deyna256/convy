@@ -6,8 +6,8 @@ offline, with system, light and dark themes.
 
 ## Tiles
 
-The page reads from the top down: five tiles, the pass rate beside the other four, the tokens by
-part and the time by call, then the **Scenarios**, the failing first.
+The page reads from the top down: quality and resource tiles, the tokens by part and the time
+by call, then the **Scenarios**, the failing first.
 
 Each tile has its label, its number and what the number counts. The run's page shows the run
 alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
@@ -28,6 +28,8 @@ at the foot of the page.
   the number kept. Only recorded answer time counts, not the simulated user's or the judge's.
 - **Tokens**: the same for input and output tokens together. Each unit has its own coverage:
   an answer can report tokens even when another answer of its task does not.
+- **Tool calls**: mean and median per task attempt, with the number of tasks whose counts
+  are known out of the recorded tasks kept; see [the counting rule](#tool-invocations).
 
 ## Measured population
 
@@ -55,17 +57,37 @@ has no measured task time or token use. Coverage counts include such attempts in
 and unavailable statistics display as a dash. The same token rule applies to the attempt detail
 and comparison pages; the individual answers keep their available measurements.
 
-Both units use the same [outlier selection](#cutting-outliers). The run tiles and scenario rows
-show measured counts against the answers or attempts kept; excluded scenarios are identified
-separately. The population for resource metrics is independent of the pass-rate population.
+All resource metrics use the same [outlier selection](#cutting-outliers). The run tiles and
+scenario rows show measured counts against the answers or attempts kept; excluded scenarios are
+identified separately. The population for resource metrics is independent of the pass-rate population.
+
+### Tool invocations
+
+Each `Call(kind="tool")` in an answer's [steps](agents.md#steps) counts once, including repeated
+calls to the same tool, retries and failed invocations. Search is a tool invocation. Model calls
+and thoughts do not count. The count is known only when `steps_complete=True` asserts that every
+call for the answer is recorded. Empty steps with that flag mean zero; empty or partial steps
+without it mean unknown, even when some tool calls are visible.
+
+An attempt's count is the sum over its recorded answers, known only when there is at least one
+answer and all those answers have complete traces. Run and scenario means and medians use these
+known task counts, including zero. Coverage is known tasks out of all recorded tasks kept; an
+attempt with no answers or an incomplete trace stays in the denominator but supplies no value.
+
+The population includes passed, failed and unjudged attempts. An answer failure adds a synthetic
+answer without a complete trace, leaving the task's count unknown. A failure while closing the
+conversation can leave complete answers and a known count. These are counts of observed answer
+calls, not a promise that the whole task finished; opening and closing work is excluded. An
+attempt still running or never recorded is absent.
 
 ## Cutting outliers
 
 One slow answer, a retry or a cold start, can move a mean a long way. **Outliers** in the page's
 header, beside the theme, is **Keep**, the default, or **Cut**: Cut leaves out every scenario with
-an answer far slower or far larger than the run's others. Every time and token number on the page
-follows it: the tiles, the charts and the table, which leaves the cut scenarios out and names them
-under it. The pass rate does not change.
+an answer far slower or far larger than the run's others. Every time, token and tool-invocation
+metric on the page follows it: the tiles, the charts and the table, which leaves the cut scenarios
+out and names them under it. The pass rate does not change. Tool counts use this same selection;
+they do not define another outlier fence.
 
 - The unit is the scenario, not the answer. A slow or large answer mostly comes from what the
   scenario asks: more calls, a longer dialogue, an agent going round in circles. Cutting only that
@@ -134,8 +156,9 @@ Each scenario gets a row and a status:
 - **Passing**: every counted attempt passed.
 - **No verdict**: no attempt was counted: none was played yet, or each had no verdict.
 
-The row's Time and Tokens columns each show mean and median per answer and per task attempt,
-with coverage counts, over the [measured population](#measured-population) the cut keeps.
+The row's Time and Tokens columns each show mean and median per answer and per task attempt;
+Tool calls shows both per task. Each has coverage counts over the
+[measured population](#measured-population) the cut keeps.
 **Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict. Click one
 to open that attempt. A filter such as `refund-*` narrows the list.
 
@@ -157,8 +180,9 @@ By default the steps are folded into one node, such as `2 thoughts · 4 calls ·
 **Show steps** at the end of the answer's head, or a click on the node, unfolds them, and **Hide
 steps** in the same place folds them. A thought shows its text. A call shows its bar on the line of the answer's calls,
 from the first call's start to the last call's end: bars that overlap ran at the same time. It
-shows when it started (`from +0.6 s`), how long it took and its tokens; open it to see what it
-sent and received, JSON indented, or "not reported" and "empty".
+shows its model or tool kind, when it started (`from +0.6 s`), how long it took and its tokens;
+open it to see what it sent and received, JSON indented, or "not reported" and "empty". Partial steps remain visible
+when the [tool count](#tool-invocations) is unknown.
 
 If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
 did not say. The address keeps the open scenario, so you can send a link to it.

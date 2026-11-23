@@ -99,6 +99,7 @@ class AnswerRow(Struct, frozen=True, kw_only=True):
     turn: int
     message: str
     answer: str
+    steps_complete: bool
     seconds: float
     input: int | None
     output: int | None
@@ -114,6 +115,7 @@ class StepRow(Struct, frozen=True, kw_only=True):
     turn: int
     step: int
     kind: Literal["thought", "call"]
+    call_kind: Literal["model", "tool"] | None
     text: str | None
     name: str | None
     started: datetime | None
@@ -369,6 +371,7 @@ class Tables(Struct, frozen=True):
             turn=number,
             message=turn.message.text,
             answer=turn.answer.text,
+            steps_complete=turn.answer.steps_complete,
             seconds=turn.seconds,
             input=input,
             output=output,
@@ -384,8 +387,10 @@ class Tables(Struct, frozen=True):
             case Thought(text=said):
                 kind, text, name, started, seconds = "thought", said, None, None, None
                 usage, sent, received = NoUsage(), None, None
+                call_kind = None
             case Call(name=name, started=started, seconds=seconds, usage=usage):
                 kind, text = "call", None
+                call_kind = step.kind
                 sent, received = self.text(step.sent), self.text(step.received)
         input, output, thinking, cache_read, cache_write = self.tokens(usage)
         return StepRow(
@@ -395,6 +400,7 @@ class Tables(Struct, frozen=True):
             turn=turn,
             step=number,
             kind=kind,
+            call_kind=call_kind,
             text=text,
             name=name,
             started=started,

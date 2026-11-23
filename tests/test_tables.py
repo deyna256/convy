@@ -60,6 +60,7 @@ SPEC = RunSpec(
     limits=Limits(agent=2, user=3, judge=1, agent_per_minute=60, judge_per_minute=30),
 )
 CALL = Call(
+    kind="tool",
     name="search",
     started=DAY,
     seconds=0.5,
@@ -67,9 +68,14 @@ CALL = Call(
     sent=Reported("order 7"),
     received=Reported(""),
 )
-SILENT = Call(name="lookup", started=DAY, seconds=0.1)  # no tokens, no text: not reported
+SILENT = Call(
+    kind="model", name="gpt", started=DAY, seconds=0.1
+)  # no tokens, no text: not reported
 FULL = Answer(
-    "Your order?", Usage(100, 20, 5, cache_read=60, cache_write=0), (Thought("ask"), CALL, SILENT)
+    "Your order?",
+    Usage(100, 20, 5, cache_read=60, cache_write=0),
+    (Thought("ask"), CALL, SILENT),
+    steps_complete=True,
 )
 VERDICT = Verdict(
     (
@@ -121,7 +127,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         judge_per_minute=30,
         agent_file="aa",
         models_file="bb",
-        format=8,
+        format=9,
         path="bot/2026-10-06T00-00-00_ab12",
         unreadable=0,
     )
@@ -249,6 +255,7 @@ def test_answers_hold_the_dialogue_and_each_token_count_or_none():
             turn=1,
             message="Refund,\nplease",
             answer="Your order?",
+            steps_complete=True,
             seconds=1.5,
             input=100,
             output=20,
@@ -263,6 +270,7 @@ def test_answers_hold_the_dialogue_and_each_token_count_or_none():
             turn=2,
             message="7",
             answer="Done",
+            steps_complete=False,
             seconds=0.5,
             input=None,
             output=None,
@@ -282,6 +290,7 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=1,
             kind="thought",
+            call_kind=None,
             text="ask",
             name=None,
             started=None,
@@ -301,6 +310,7 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=2,
             kind="call",
+            call_kind="tool",
             text=None,
             name="search",
             started=DAY,
@@ -320,8 +330,9 @@ def test_steps_hold_thoughts_and_calls_with_reported_empty_and_missing_values():
             turn=1,
             step=3,
             kind="call",
+            call_kind="model",
             text=None,
-            name="lookup",
+            name="gpt",
             started=DAY,
             seconds=0.1,
             input=None,
@@ -395,7 +406,11 @@ def test_tables_come_in_order_with_their_rows_and_columns():
         ("claims", ClaimRow, ["run", "scenario", "claim", "text", "required"]),
         ("attempts", AttemptRow, [*keys, "verdict", "error", "stop"]),
         ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence"]),
-        ("answers", AnswerRow, [*keys, "turn", "message", "answer", "seconds", *tokens]),
+        (
+            "answers",
+            AnswerRow,
+            [*keys, "turn", "message", "answer", "steps_complete", "seconds", *tokens],
+        ),
         (
             "steps",
             StepRow,
@@ -404,6 +419,7 @@ def test_tables_come_in_order_with_their_rows_and_columns():
                 "turn",
                 "step",
                 "kind",
+                "call_kind",
                 "text",
                 "name",
                 "started",
@@ -473,6 +489,7 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Message", "text"): ("answers.message",),
     ("Answer", "text"): ("answers.answer",),
     ("Answer", "usage"): (),
+    ("Answer", "steps_complete"): ("answers.steps_complete",),
     ("Answer", "steps"): ("steps.kind",),  # which kind of step
     ("Usage", "input"): ("answers.input", "steps.input"),
     ("Usage", "output"): ("answers.output", "steps.output"),
@@ -480,6 +497,7 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Usage", "cache_read"): ("answers.cache_read", "steps.cache_read"),
     ("Usage", "cache_write"): ("answers.cache_write", "steps.cache_write"),
     ("Thought", "text"): ("steps.text",),
+    ("Call", "kind"): ("steps.call_kind",),
     ("Call", "name"): ("steps.name",),
     ("Call", "started"): ("steps.started",),
     ("Call", "seconds"): ("steps.seconds",),

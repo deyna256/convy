@@ -17,7 +17,8 @@ models = Models(
 `ChatJudge` asks a chat model, with a prompt of convy's. It does not say how sure it is.
 
 The judge reads only what the user and the agent said, never the agent's thinking or the other
-steps of an answer; see [why](decisions/0010-answer-steps.md).
+steps of an answer; see [why](decisions/0010-answer-steps.md). A Python judge also receives
+`steps=()` and `steps_complete=False` on every answer, so trace completeness is not exposed.
 
 ## How sure the judge is
 
