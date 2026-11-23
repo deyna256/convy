@@ -137,12 +137,12 @@ function tiles() {
   const top = (label, value) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value)];
   const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), el("div", {className: "foot"}, rest));
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
-  const V = view(), answers = V.seconds.answers;
+  const V = view(), n = V.numbers, answers = n.seconds?.n ?? 0;
   const cut = V.out.length ? `${plural(V.out.length, "scenario")} cut` : "";
   const measured = (label, answer, attempt, unit) => el("div", {className: "tile resource"},
     el("span", {className: "l"}, label),
-    measurement("Per answer", answer.spread, answers, "answer", unit),
-    measurement("Per task attempt", attempt, V.attempts, "attempt", unit),
+    measurement("Per answer", answer, answers, "answer", unit),
+    measurement("Per task attempt", attempt, n.attempts, "attempt", unit),
     cut && el("span", {className: "s"}, cut));
   return el("div", {className: "tiles run"},
     el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
@@ -150,10 +150,10 @@ function tiles() {
     tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
-    measured("Time", V.seconds, V.attempt_seconds, secs),
-    measured("Tokens", V.tokens, V.attempt_tokens, count),
+    measured("Time", n.seconds, n.attempt_seconds, secs),
+    measured("Tokens", n.tokens, n.attempt_tokens, count),
     el("div", {className: "tile resource"}, el("span", {className: "l"}, "Tool calls"),
-      measurement("Per task attempt", V.tool_calls, V.attempts, "attempt", toolCount),
+      measurement("Per task attempt", n.tool_calls, n.attempts, "attempt", toolCount),
       el("span", {className: "s"}, "Only attempts with complete answer traces"),
       cut && el("span", {className: "s"}, cut)));
 }
@@ -163,9 +163,9 @@ function tiles() {
 // at a part only lights it up.
 function rates() {
   const name = r => r.rate == null ? "no verdict" : pct(r.rate);
-  return [el("span", {className: "s cap"}, "Scenarios by pass rate"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
-      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.part}`}, r.part >= .04 ? String(r.scenarios.length) : ""))),
-    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
+  return [el("span", {className: "s cap"}, "Scenarios by pass rate"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.count, "scenario")}`).join(", ")},
+      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.part}`}, r.part >= .04 ? String(r.count) : ""))),
+    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.count)))))];
 }
 
 // Where the answers' calls spent their time, a row per call name: its share of the calls' time
@@ -279,7 +279,7 @@ function draw() {
   document.getElementById("hint").textContent = out ? `Cut as outliers: ${V.out.join(", ")}.` : "";
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
-    byPart(V.parts, V.shares, V.tokens.spread?.mean),
+    byPart(V.parts, V.shares, V.numbers.tokens?.mean),
     byCall());
   document.getElementById("table").replaceChildren(table());
 }

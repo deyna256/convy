@@ -36,11 +36,10 @@ from convy.report import (
     Index,
     Parts,
     Report,
+    ResourceStats,
     ResultBucket,
     Run,
     Runs,
-    ScenarioNumbers,
-    Share,
     Shares,
     Spread,
     Summary,
@@ -299,10 +298,10 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     metrics = page.metrics
     assert (metrics.passed, metrics.judged, metrics.rate) == (3, 4, 0.75)
     assert (metrics.stable, metrics.flaky) == (1, 1)  # a passed both, b one of two
-    assert metrics.seconds == Spread(5, 2, 2, 2, 2, 2)  # five answers of 2 s
+    assert page.views.all.numbers.seconds == Spread(5, 2, 2, 2, 2, 2)  # five answers of 2 s
     # tokens 20, 40, 60, 80, 100: p50 the
     # third, 60; p90 at 3.6, 0.6 of the way from 80 to 100, 92
-    assert metrics.tokens == Spread(5, 20, 60, 92, 100, 60)
+    assert page.views.all.numbers.attempt_tokens == Spread(5, 20, 60, 92, 100, 60)
     assert metrics.open == 1  # c's judge was down
     assert (metrics.agent_errors, metrics.busy, metrics.model_errors, metrics.errors) == (
         1,
@@ -319,7 +318,10 @@ def test_tiles_count_attempts_stable_scenarios_time_tokens_and_errors(tmp_path):
     )
     a = next(s for s in page.scenarios if s.id == "a")
     # 20 then 40 tokens: p50 halfway, 30; p90 0.9 of the way, 38
-    assert (a.rate, a.tokens) == (1, Spread(2, 20, 30, 38, 40, 30))
+    assert a.rate == 1
+    assert page.views.all.scenarios[page.scenarios.index(a)].attempt_tokens == Spread(
+        2, 20, 30, 38, 40, 30
+    )
     first = a.attempts[0]
     assert (first.tokens, first.slowest, first.turns[0].tokens) == (20, 2.0, 20)
 
@@ -344,7 +346,7 @@ def test_a_run_without_verdicts_or_usage_reports_none(tmp_path):
     written = Outcome("a", 1, Transcript((turn,)), NoVerdict("judge down"), "model_failure")
     journal(tmp_path, "bot", "1", 1, written)
     page = Report(only(tmp_path)).page()
-    assert (page.metrics.rate, page.metrics.tokens) == (None, None)
+    assert (page.metrics.rate, page.views.all.numbers.attempt_tokens) == (None, None)
     (scenario,) = page.scenarios
     (attempt,) = scenario.attempts
     assert (attempt.input, attempt.output, attempt.tokens) == (None, None, None)
@@ -703,10 +705,8 @@ def test_workspace_keeps_the_run_reports_quality_counts_and_exact_rate_buckets(t
     page = Report(run).page()
     assert (row.stable, row.flaky, row.open) == (1, 1, 2)
     assert (row.agent_errors, row.busy, row.model_errors, row.errors) == (1, 1, 1, 3)
-    assert row.results == tuple(
-        ResultBucket(s.rate, len(s.scenarios), s.part) for s in page.results
-    )
-    assert row.results[-1] == ResultBucket(None, 2, 2 / 5)
+    assert row.results == page.results
+    assert row.results[-1] == ResultBucket(None, "none", 2, 2 / 5)
 
 
 def test_workspace_preserves_partial_token_reporting_and_the_cache_denominators(tmp_path):
@@ -723,7 +723,7 @@ def test_workspace_preserves_partial_token_reporting_and_the_cache_denominators(
 def test_workspace_has_no_measurements_before_the_first_answer(tmp_path):
     journal(tmp_path, "bot", "1", 2)
     (row,) = Index(Runs(tmp_path)).page().rows
-    assert row.results == (ResultBucket(None, 2, 1),)
+    assert row.results == (ResultBucket(None, "none", 2, 1),)
     assert (row.parts, row.shares, row.cached, row.time) == (None, None, None, ())
     assert (row.stable, row.flaky, row.open, row.errors) == (0, 0, 0, 0)
     assert (row.cache_answers, row.thinking_answers, row.traced_answers) == (0, 0, 0)
@@ -914,8 +914,8 @@ def test_multi_turn_report_keeps_mean_and_total_time_distinct(tmp_path):
     page = Report(only(tmp_path)).page()
     # 1, 2, 3, 6: p50 halfway from 2 to 3, 2.5; p90 at
     # 2.7, 0.7 of the way from 3 to 6, 5.1; mean 12 / 4 = 3
-    assert page.metrics.seconds == Spread(4, 1, 2.5, 5.1, 6, 3)
-    assert page.scenarios[0].seconds == page.metrics.seconds
+    assert page.views.all.numbers.seconds == Spread(4, 1, 2.5, 5.1, 6, 3)
+    assert page.views.all.scenarios[0].seconds == page.views.all.numbers.seconds
     assert page.scenarios[0].attempts[0].seconds == 12.0
 
 
@@ -965,11 +965,11 @@ def test_a_spread_of_ints_is_of_floats(tmp_path):
 def test_a_scenario_spreads_its_answers_time_and_its_attempts_tokens(tmp_path):
     played = (answers("a", 3.0, 1.0, tokens=5), answers("a", 2.0, attempt=2, tokens=50))
     journal(tmp_path, "bot", "1", 1, *played, k=2)
-    (view,) = Report(only(tmp_path)).page().scenarios
+    (numbers,) = Report(only(tmp_path)).page().views.all.scenarios
     # answers 1, 2, 3: p90 at 1.8, 0.8 from 2 to 3, 2.8
-    assert view.seconds == Spread(3, 1, 2, 2.8, 3, 2)
+    assert numbers.seconds == Spread(3, 1, 2, 2.8, 3, 2)
     # attempts of 2 * 2 * 5 = 20 and 2 * 50 = 100 tokens: p90 at 0.9, 92
-    assert view.tokens == Spread(2, 20, 60, 92, 100, 60)
+    assert numbers.attempt_tokens == Spread(2, 20, 60, 92, 100, 60)
 
 
 def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
@@ -977,11 +977,11 @@ def test_a_scenario_without_reported_tokens_has_a_time_spread_only(tmp_path):
     unreported = Outcome("a", 1, Transcript((silent,)), PASSED, "max_turns")
     journal(tmp_path, "bot", "1", 2, unreported, answers("b", 1.0))
     page = Report(only(tmp_path)).page()
-    assert [(v.id, v.seconds, v.tokens) for v in page.scenarios] == [
-        ("a", single(2.0), None),
-        ("b", single(1.0), single(20)),
+    assert [(v.seconds, v.attempt_tokens) for v in page.views.all.scenarios] == [
+        (single(2.0), None),
+        (single(1.0), single(20)),
     ]
-    assert page.metrics.tokens == single(20)
+    assert page.views.all.numbers.attempt_tokens == single(20)
 
 
 def test_counts_not_reported_stay_none_at_every_level(tmp_path):
@@ -1006,28 +1006,25 @@ def talk(scenario: str, *usages: Usage | NoUsage, attempt: int = 1) -> Outcome:
                 [Usage(100, 40, 10, cache_read=60, cache_write=5), Usage(50, 20, 0, cache_read=30)],
                 [Usage(30, 10, 4, cache_read=0)],
             ],
-            # over 2 attempts: 90 from the cache; 180 - 90 new input, the 5 written included;
-            # 70 - 14 output besides the 14 thinking
-            Parts(45, 45, 28, 7),
+            # Across three answers: 90 cached, 90 other input, 56 other output, 14 thinking.
+            Parts(30, 30, 56 / 3, 14 / 3),
         ),
         ([[NoUsage()]], None),
-        ([[Usage(100, 40, 10)], [NoUsage()]], Parts(None, 100, 30, 10)),  # one attempt counts
+        ([[Usage(100, 40, 10)], [NoUsage()]], Parts(None, 100, 30, 10)),  # one answer reports usage
         ([[Usage(0, 0)]], Parts(None, 0, 0, None)),
     ],
     ids=["every part", "none reported", "thinking without cache", "no tokens at all"],
 )
-def test_a_scenario_splits_its_mean_tokens_per_attempt_into_the_parts_reported(
-    tmp_path, attempts, parts
-):
+def test_the_run_splits_its_mean_tokens_per_measured_answer_into_parts(tmp_path, attempts, parts):
     played = (talk("a", *usages, attempt=n) for n, usages in enumerate(attempts, 1))
     journal(tmp_path, "bot", "1", 1, *played, k=len(attempts))
     page = Report(only(tmp_path)).page()
-    assert page.scenarios[0].parts == parts
+    assert page.views.all.parts == parts
 
 
-def test_a_scenario_without_input_has_no_cache_share_of_it(tmp_path):
+def test_a_run_without_input_has_no_cache_share_of_it(tmp_path):
     journal(tmp_path, "bot", "1", 1, talk("a", Usage(0, 10, cache_read=0)))
-    (view,) = Report(only(tmp_path)).page().scenarios
+    view = Report(only(tmp_path)).page().views.all
     assert view.shares == Shares(0, 0, 1, None, None)
 
 
@@ -1042,9 +1039,9 @@ def test_calls_of_no_time_have_no_share_of_it(tmp_path):
     assert (observed.calls, observed.token_calls, observed.tokens) == (2, 1, 0)
 
 
-def test_a_scenario_gives_each_parts_share_and_the_caches_share_of_its_input(tmp_path):
+def test_a_run_gives_each_parts_share_and_the_caches_share_of_its_input(tmp_path):
     journal(tmp_path, "bot", "1", 1, talk("a", Usage(100, 10, cache_read=60)))
-    (view,) = Report(only(tmp_path)).page().scenarios
+    view = Report(only(tmp_path)).page().views.all
     # 60 from the cache, 40 new input, 10 output: 110 in all; the cache is 60 of the 100 input
     assert view.shares == Shares(60 / 110, 40 / 110, 10 / 110, None, 0.6)
 
@@ -1130,12 +1127,12 @@ def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_pa
     # logs of the times: 11 at 0, 10 at ln 2; quartiles 0 and ln 2, so the fence is
     # e^(4 ln 2) = 16 s: c's 100 s is past it, and c leaves with its 1 s answer too
     assert views.cut.out == ("c",)
-    assert views.cut.seconds.answers == 20
-    assert views.cut.seconds.spread is not None and views.cut.seconds.spread.max == 2
-    assert views.cut.scenarios[2] == ScenarioNumbers(None, None, None, None, 0, None)
-    assert (views.all.attempts, views.cut.attempts) == (3, 2)
-    assert views.cut.attempt_seconds == Spread(2, 10, 15, 19, 20, 15)
-    assert views.cut.attempt_tokens == Spread(2, 200, 200, 200, 200, 200)
+    assert views.cut.numbers.seconds is not None and views.cut.numbers.seconds.n == 20
+    assert views.cut.numbers.seconds.max == 2
+    assert views.cut.scenarios[2] == ResourceStats(None, None, None, None, 0, None)
+    assert (views.all.numbers.attempts, views.cut.numbers.attempts) == (3, 2)
+    assert views.cut.numbers.attempt_seconds == Spread(2, 10, 15, 19, 20, 15)
+    assert views.cut.numbers.attempt_tokens == Spread(2, 200, 200, 200, 200, 200)
     # c leaves every other number too: its call and its larger answers
     assert [c.name for c in views.all.time] == ["slow"]
     assert views.cut.time == ()
@@ -1157,7 +1154,7 @@ def test_a_scenario_is_cut_by_its_tokens_out_of_its_time_too(tmp_path):
     journal(tmp_path, "bot", "1", 3, *played)
     views = Report(only(tmp_path)).page().views
     assert views.cut.out == ("c",)
-    assert views.cut.seconds.answers == 20
+    assert views.cut.numbers.seconds is not None and views.cut.numbers.seconds.n == 20
 
 
 @pytest.mark.parametrize(
@@ -1188,10 +1185,10 @@ def test_the_scenarios_are_grouped_by_pass_rate_without_a_verdict_last(tmp_path)
         k=2,
     )
     assert Report(only(tmp_path)).page().results == (
-        Share(0, "failing", ("b",), 1 / 4),
-        Share(0.5, "flaky", ("a",), 1 / 4),
-        Share(1, "passing", ("c",), 1 / 4),
-        Share(None, "none", ("d",), 1 / 4),
+        ResultBucket(0, "failing", 1, 1 / 4),
+        ResultBucket(0.5, "flaky", 1, 1 / 4),
+        ResultBucket(1, "passing", 1, 1 / 4),
+        ResultBucket(None, "none", 1, 1 / 4),
     )
 
 
@@ -1201,7 +1198,7 @@ def test_the_views_and_parts_reach_the_pages(tmp_path):
     page = data(Report(run).html())
     assert isinstance(page, dict)
     assert set(page["views"]) == {"all", "cut"}
-    assert page["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"], "part": 1.0}]
+    assert page["results"] == [{"rate": 1.0, "result": "passing", "count": 1, "part": 1.0}]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
     assert page["views"]["all"]["parts"] == parts
 
@@ -1332,22 +1329,31 @@ def test_run_and_scenario_medians_use_answers_and_task_totals_as_distinct_sample
     )
     journal(tmp_path, "bot", "1", 2, *played, k=3)
     view = Report(only(tmp_path)).page().views.all
+    numbers = view.numbers
     first, second = view.scenarios
-    assert view.attempts == 4  # the two unrecorded attempts do not enter the sample
-    assert view.seconds.spread is not None and view.tokens.spread is not None
-    assert (view.seconds.spread.n, view.seconds.spread.mean, view.seconds.spread.p50) == (
+    assert numbers.attempts == 4  # the two unrecorded attempts do not enter the sample
+    assert numbers.seconds is not None and numbers.tokens is not None
+    assert (numbers.seconds.n, numbers.seconds.mean, numbers.seconds.p50) == (
         6,
         17 / 6,
         1.5,
     )
-    assert (view.tokens.spread.n, view.tokens.spread.mean, view.tokens.spread.p50) == (6, 21, 6)
-    assert view.attempt_seconds is not None and view.attempt_tokens is not None
-    assert (view.attempt_seconds.n, view.attempt_seconds.mean, view.attempt_seconds.p50) == (
+    assert (numbers.tokens.n, numbers.tokens.mean, numbers.tokens.p50) == (6, 21, 6)
+    assert numbers.attempt_seconds is not None and numbers.attempt_tokens is not None
+    assert (
+        numbers.attempt_seconds.n,
+        numbers.attempt_seconds.mean,
+        numbers.attempt_seconds.p50,
+    ) == (
         4,
         17 / 4,
         3,
     )
-    assert (view.attempt_tokens.n, view.attempt_tokens.mean, view.attempt_tokens.p50) == (
+    assert (
+        numbers.attempt_tokens.n,
+        numbers.attempt_tokens.mean,
+        numbers.attempt_tokens.p50,
+    ) == (
         4,
         31.5,
         12,
@@ -1380,11 +1386,10 @@ def test_partial_token_tasks_are_unknown_but_known_answers_and_zero_tasks_still_
     assert (partial.input, partial.output, partial.tokens) == (None, None, None)
     assert (zero.input, zero.output, zero.tokens) == (0, 0, 0)
     view = page.views.all
-    assert (view.attempts, view.seconds.answers, view.tokens.answers) == (2, 3, 2)
-    assert view.tokens.spread == Spread(2, 0, 15, 27, 30, 15)
-    assert view.attempt_tokens == single(0)
-    assert page.scenarios[0].tokens == page.metrics.tokens == single(0)
-    assert page.scenarios[0].parts == Parts(None, 0, 0, None)
+    assert view.numbers.seconds is not None and view.numbers.tokens is not None
+    assert (view.numbers.attempts, view.numbers.seconds.n, view.numbers.tokens.n) == (2, 3, 2)
+    assert view.numbers.tokens == Spread(2, 0, 15, 27, 30, 15)
+    assert view.numbers.attempt_tokens == single(0)
     assert view.scenarios[0].attempt_tokens == single(0)
 
 
@@ -1410,9 +1415,10 @@ def test_resource_samples_include_recorded_errors_without_inventing_empty_task_m
     written.write(Interrupted(at(5)))
     page = Report(only(tmp_path)).page()
     view = page.views.all
-    assert (view.attempts, view.seconds.answers, view.tokens.answers) == (3, 2, 1)
-    assert view.attempt_seconds == Spread(2, 2, 3, 3.8, 4, 3)
-    assert view.attempt_tokens == single(15)
+    assert view.numbers.seconds is not None and view.numbers.tokens is not None
+    assert (view.numbers.attempts, view.numbers.seconds.n, view.numbers.tokens.n) == (3, 2, 1)
+    assert view.numbers.attempt_seconds == Spread(2, 2, 3, 3.8, 4, 3)
+    assert view.numbers.attempt_tokens == single(15)
     by_id = dict(zip((s.id for s in page.scenarios), view.scenarios, strict=True))
     assert by_id["a"].attempts == 1
     assert (by_id["a"].attempt_seconds, by_id["a"].attempt_tokens) == (single(4), None)
@@ -1444,7 +1450,7 @@ def test_tool_calls_count_each_invocation_across_the_task(tmp_path):
         "tool",
     ]
     assert attempt.tool_calls == 3
-    assert page.views.all.tool_calls == page.views.all.scenarios[0].tool_calls == single(3)
+    assert page.views.all.numbers.tool_calls == page.views.all.scenarios[0].tool_calls == single(3)
 
 
 @pytest.mark.parametrize(
@@ -1484,7 +1490,7 @@ def test_tool_calls_require_every_answers_complete_trace(tmp_path, answers, coun
     assert [turn.tool_calls for turn in attempt.turns] == counts
     assert attempt.tool_calls == total
     spread = None if total is None else single(total)
-    assert page.views.all.tool_calls == page.views.all.scenarios[0].tool_calls == spread
+    assert page.views.all.numbers.tool_calls == page.views.all.scenarios[0].tool_calls == spread
 
 
 def test_tool_call_samples_include_failed_and_unjudged_recorded_tasks(tmp_path):
@@ -1507,8 +1513,8 @@ def test_tool_call_samples_include_failed_and_unjudged_recorded_tasks(tmp_path):
     written.write(Interrupted(at(5)))
     page = Report(only(tmp_path)).page()
     view = page.views.all
-    assert view.attempts == view.scenarios[0].attempts == 6
-    assert view.tool_calls == view.scenarios[0].tool_calls == Spread(4, 0, 2, 6.5, 8, 3)
+    assert view.numbers.attempts == view.scenarios[0].attempts == 6
+    assert view.numbers.tool_calls == view.scenarios[0].tool_calls == Spread(4, 0, 2, 6.5, 8, 3)
     assert [a.tool_calls for a in page.scenarios[0].attempts] == [0, 1, 3, 8, None, None]
 
 
@@ -1524,9 +1530,9 @@ def test_tool_call_statistics_follow_the_same_scenario_outlier_cut(tmp_path):
     journal(tmp_path, "bot", "1", 3, *played)
     page = Report(only(tmp_path)).page()
     views = page.views
-    assert (views.all.attempts, views.cut.attempts, views.cut.out) == (3, 2, ("c",))
-    assert views.all.tool_calls == Spread(3, 9, 10, 18, 20, 13)
-    assert views.cut.tool_calls == Spread(2, 10, 15, 19, 20, 15)
+    assert (views.all.numbers.attempts, views.cut.numbers.attempts, views.cut.out) == (3, 2, ("c",))
+    assert views.all.numbers.tool_calls == Spread(3, 9, 10, 18, 20, 13)
+    assert views.cut.numbers.tool_calls == Spread(2, 10, 15, 19, 20, 15)
     by_id = dict(zip((s.id for s in page.scenarios), views.cut.scenarios, strict=True))
     assert by_id["a"].tool_calls == single(10)
     assert by_id["b"].tool_calls == single(20)
@@ -1558,5 +1564,5 @@ async def test_tool_call_measurement_preserves_agent_failure_semantics(tmp_path,
     page = Report(only(tmp_path)).page()
     (attempt,) = page.scenarios[0].attempts
     assert attempt.tool_calls == count
-    assert page.views.all.attempts == 1
-    assert page.views.all.tool_calls == (None if count is None else single(count))
+    assert page.views.all.numbers.attempts == 1
+    assert page.views.all.numbers.tool_calls == (None if count is None else single(count))

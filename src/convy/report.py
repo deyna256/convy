@@ -2,6 +2,7 @@
 
 import math
 import re
+from collections import Counter
 from collections.abc import Iterable, Iterator, Sequence
 from importlib.resources import files
 from math import comb
@@ -252,7 +253,7 @@ class ClaimSummary(Struct, frozen=True):
 
 
 class Parts(Struct, frozen=True):
-    """A scenario's mean tokens per attempt by part, over its attempts that report tokens: the
+    """Mean tokens per answer by part, over the answers that report tokens: the
     parts add up to the mean. A part the agent does not report is None and stays in the whole:
     without cache reads `input` is all the input, without thinking `output` all the output."""
 
@@ -282,10 +283,6 @@ class ScenarioView(Struct, frozen=True):
     rate: float | None
     result: Result
     claims: tuple[ClaimSummary, ...]
-    seconds: Spread | None  # per answer
-    tokens: Spread | None  # per attempt that reports them
-    parts: Parts | None  # None: no attempt reports tokens
-    shares: Shares | None
     attempts: tuple[AttemptView, ...]
 
     def order(self) -> tuple[int, str]:
@@ -301,8 +298,6 @@ class Metrics(Struct, frozen=True):
     rate: float | None
     stable: int  # scenarios whose k attempts all passed
     flaky: int  # scenarios with passed and failed attempts
-    seconds: Spread | None  # per answer
-    tokens: Spread | None  # per attempt that reports them
     cached: float | None  # share of input read from the cache, over the turns that report it
     agent_errors: int
     busy: int  # attempts whose agent's service stayed busy
@@ -345,14 +340,7 @@ class Category(Struct, frozen=True):
     share: float  # its part of every call name's seconds together, 0..1
 
 
-class Measure(Struct, frozen=True):
-    """One number per answer over the run, its time or its tokens, with or without outliers."""
-
-    spread: Spread | None  # over the answers kept
-    answers: int  # the answers kept with the number
-
-
-class ScenarioNumbers(Struct, frozen=True):
+class ResourceStats(Struct, frozen=True):
     seconds: Spread | None  # per answer kept
     tokens: Spread | None
     attempt_seconds: Spread | None  # sum of recorded answer times per attempt with answers
@@ -365,16 +353,11 @@ class View(Struct, frozen=True):
     """The run's time and token numbers with or without outliers: every tile, chart and table of
     them on the run's page."""
 
-    seconds: Measure
-    tokens: Measure
-    scenarios: tuple[ScenarioNumbers, ...]  # in the page's order of the scenarios
+    numbers: ResourceStats
+    scenarios: tuple[ResourceStats, ...]  # in the page's order of the scenarios
     time: tuple[Category, ...]  # the most in total first, then by name
     parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
     shares: Shares | None
-    attempt_seconds: Spread | None
-    attempt_tokens: Spread | None
-    attempts: int
-    tool_calls: Spread | None
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
@@ -385,12 +368,12 @@ class Views(Struct, frozen=True):
     cut: View
 
 
-class Share(Struct, frozen=True):
+class ResultBucket(Struct, frozen=True):
     """The scenarios at one pass rate."""
 
     rate: float | None  # None: no verdict
     result: Result
-    scenarios: tuple[str, ...]
+    count: int
     part: float  # their share of the run's scenarios, 0..1
 
 
@@ -415,7 +398,7 @@ class RunPage(Struct, frozen=True):
     run: RunHead
     metrics: Metrics
     scenarios: tuple[ScenarioView, ...]  # failing, flaky, no verdict, passing; each by id
-    results: tuple[Share, ...]  # by pass rate from 0, no verdict last
+    results: tuple[ResultBucket, ...]  # by pass rate from 0, no verdict last
     views: Views
 
 
@@ -427,12 +410,6 @@ class ScenarioCell(Struct, frozen=True):
     recorded: int
     passed: int
     judged: int
-
-
-class ResultBucket(Struct, frozen=True):
-    rate: float | None
-    count: int
-    part: float
 
 
 class CallMetrics(Struct, frozen=True):
@@ -477,7 +454,7 @@ class IndexRow(Struct, frozen=True):
     model_errors: int
     errors: int
     results: tuple[ResultBucket, ...]
-    numbers: ScenarioNumbers
+    numbers: ResourceStats
     cached: float | None
     cache_answers: int
     thinking_answers: int
@@ -614,7 +591,6 @@ class Summary(Struct, frozen=True):
         views = list(scenarios)
         attempts = [attempt for view in views for attempt in view.attempts]
         judged = [a.passed for a in attempts if a.passed is not None]
-        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
         k = self.run.spec.k
         agent_errors = sum(a.stop == "agent_failure" for a in attempts)
         busy = sum(a.stop == "agent_busy" for a in attempts)
@@ -628,8 +604,6 @@ class Summary(Struct, frozen=True):
                 len(v.attempts) == k and all(a.passed is True for a in v.attempts) for v in views
             ),
             flaky=sum(v.result == "flaky" for v in views),
-            seconds=self.spread(turns),
-            tokens=self.spread(a.tokens for a in attempts),
             cached=self.share(turn for attempt in attempts for turn in attempt.turns),
             agent_errors=agent_errors,
             busy=busy,
@@ -648,8 +622,6 @@ class Summary(Struct, frozen=True):
         attempts = tuple(self.attempt(scenario, outcome) for outcome in played)
         judged = [a.passed for a in attempts if a.passed is not None]
         tally = Tally(sum(judged), len(judged))
-        turns = [turn.seconds for attempt in attempts for turn in attempt.turns]
-        parts, shares = self.split(self.parts(attempts))
         return ScenarioView(
             id=scenario.id,
             user=scenario.instructions,
@@ -662,17 +634,13 @@ class Summary(Struct, frozen=True):
                 self.claim(claim, [a.claims[i] for a in attempts])
                 for i, claim in enumerate(scenario.claims)
             ),
-            seconds=self.spread(turns),
-            tokens=self.spread(a.tokens for a in attempts),
-            parts=parts,
-            shares=shares,
             attempts=attempts,
         )
 
-    def parts(self, attempts: Sequence[AttemptView | TurnView]) -> Parts | None:
-        """The mean tokens per attempt, or per answer, by part, from the sums over those that
+    def parts(self, turns: Iterable[TurnView]) -> Parts | None:
+        """The mean tokens per answer by part, from the sums over those that
         report tokens; cache reads and thinking over the answers that report them."""
-        counted = [a for a in attempts if a.tokens is not None]
+        counted = [a for a in turns if a.tokens is not None]
         if not counted:
             return None
         cached = self.total(a.cache_read for a in counted)
@@ -687,21 +655,13 @@ class Summary(Struct, frozen=True):
             thinking=None if thinking is None else thinking / n,
         )
 
-    def results(self, scenarios: Iterable[ScenarioView]) -> tuple[Share, ...]:
+    def results(self, scenarios: Iterable[ScenarioView]) -> tuple[ResultBucket, ...]:
         """The scenarios by pass rate, from 0; those without a verdict last."""
-        at: dict[float | None, list[ScenarioView]] = {}
-        for view in scenarios:
-            at.setdefault(view.rate, []).append(view)
-        rates = sorted(at, key=lambda rate: (rate is None, rate or 0))
-        total = sum(len(views) for views in at.values())
+        counts = Counter((view.rate, view.result) for view in scenarios)
+        total = counts.total()
         return tuple(
-            Share(
-                rate,
-                at[rate][0].result,
-                tuple(sorted(v.id for v in at[rate])),
-                len(at[rate]) / total,
-            )
-            for rate in rates
+            ResultBucket(rate, result, counts[rate, result], counts[rate, result] / total)
+            for rate, result in sorted(counts, key=lambda key: (key[0] is None, key[0] or 0))
         )
 
     def views(self, scenarios: Sequence[ScenarioView]) -> Views:
@@ -734,22 +694,17 @@ class Summary(Struct, frozen=True):
         kept = [a for a in answers if a.scenario not in out]
         attempts = [a for view in scenarios if view.id not in out for a in view.attempts]
         return View(
-            self.measure([a.turn.seconds for a in kept]),
-            self.measure([a.turn.tokens for a in kept]),
+            self.numbers(attempts),
             tuple(self.numbers(view.attempts if view.id not in out else ()) for view in scenarios),
             self.time(kept),
-            *self.split(self.parts([a.turn for a in kept])),
-            self.spread(a.seconds for a in attempts if a.turns),
-            self.spread(a.tokens for a in attempts),
-            len(attempts),
-            self.spread(a.tool_calls for a in attempts),
+            *self.split(self.parts(a.turn for a in kept)),
             tuple(view.id for view in scenarios if view.id in out),
         )
 
-    def numbers(self, attempts: Sequence[AttemptView]) -> ScenarioNumbers:
+    def numbers(self, attempts: Sequence[AttemptView]) -> ResourceStats:
         """Answer and task distributions over the same recorded attempts."""
         turns = [turn for attempt in attempts for turn in attempt.turns]
-        return ScenarioNumbers(
+        return ResourceStats(
             self.spread(t.seconds for t in turns),
             self.spread(t.tokens for t in turns),
             self.spread(a.seconds for a in attempts if a.turns),
@@ -774,10 +729,6 @@ class Summary(Struct, frozen=True):
 
     def beyond(self, value: float | None, fence: float | None) -> bool:
         return value is not None and fence is not None and value > fence
-
-    def measure(self, values: list[float | None]) -> Measure:
-        known = [value for value in values if value is not None]
-        return Measure(self.spread(known), len(known))
 
     def time(self, answers: list[Answered]) -> tuple[Category, ...]:
         """Where the answers' calls spent their time: each call name's seconds per answer it ran
@@ -1222,9 +1173,7 @@ class Index(Struct, frozen=True):
             busy=metrics.busy,
             model_errors=metrics.model_errors,
             errors=metrics.errors,
-            results=tuple(
-                ResultBucket(s.rate, len(s.scenarios), s.part) for s in summary.results(scenarios)
-            ),
+            results=summary.results(scenarios),
             numbers=summary.numbers([a for s in scenarios for a in s.attempts]),
             cached=metrics.cached,
             cache_answers=sum(t.cache_read is not None for t in turns),

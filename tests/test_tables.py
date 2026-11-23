@@ -752,7 +752,7 @@ def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
 
 
 def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
-    seconds = NUMBERS_PAGE.metrics.seconds
+    seconds = NUMBERS_PAGE.views.all.numbers.seconds
     assert seconds is not None
     assert seconds_per_answer(NUMBERS_TABLES) == seconds.mean == 1.75
 
@@ -765,7 +765,7 @@ def test_exported_tokens_reproduce_the_mean_of_complete_tasks(partial):
             first, transcript=first.transcript.with_turn(answered(NoUsage(), 1.0))
         )
     run = msgspec.structs.replace(NUMBERS, outcomes=(first, *rest))
-    tokens = Report(run).page().metrics.tokens
+    tokens = Report(run).page().views.all.numbers.attempt_tokens
     assert tokens is not None
     assert tokens_per_attempt(Tables((run,))) == tokens.mean == (160 if partial else 430 / 3)
 
