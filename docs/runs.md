@@ -23,6 +23,16 @@ convy version, the model names, the settings (`k`, `trust` and the rest), and fi
 `agents/<agent>.py` and `models.py`. So a run describes itself: editing a scenario later does not
 change what an old run means.
 
+## Run format compatibility
+
+The current run format is 7. Earlier formats are unsupported after the removal of ordered claim
+scales: they cannot be resumed, exported or rebuilt with this version of convy. There are no
+converters or migration commands. Start new runs after updating any graded scenarios to
+[plain claims](scenarios.md).
+
+Reading or rejecting an unsupported run leaves its files untouched. Its existing standalone HTML
+report still opens; to rebuild or resume it, use the convy version that wrote it.
+
 ## Stop and resume
 
 Ctrl+C stops a run. convy says how to go on:

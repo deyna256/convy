@@ -31,7 +31,6 @@ def test_running_from_python_is_public_api():
     names |= {"Comparison", "Index"}
     names |= {"Judge", "ChatJudge"}
     names |= {"Confidence", "NoConfidence"}
-    names |= {"Graded", "Grade", "NoGrade"}
     names |= {"Thought", "Call", "Reported", "NotReported"}
     names |= {"Reason", "NoReason"}
     names |= {"TokenPaths"}

@@ -47,20 +47,16 @@ that scores how likely a statement is true of a text:
 ```python
 import httpx2
 
-from convy import Claim, Confidence, Graded, ModelFailure, Reason, Transcript
+from convy import Claim, Confidence, ModelFailure, Reason, Transcript
 
 
 class Classifier:
     name = "claim-classifier"
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         async with httpx2.AsyncClient(base_url="https://classifier.example.com") as http:
             decided = []
             for claim in claims:
-                if not isinstance(claim, str):
-                    raise ModelFailure("the classifier cannot grade a claim")
                 response = await http.post(
                     "/score", json={"text": transcript.as_text(), "statement": claim}
                 )
@@ -73,16 +69,16 @@ class Classifier:
 
 Put it in `models.py`, or in a module `models.py` imports, and set `judge=Classifier()`.
 
-- A claim is a `str`, or a `Graded` claim with its own grades. A graded claim needs a grade too:
-  `Claim(claim.passes(grade), Reason(why), grade=Grade(grade))`, where `grade` is one of
-  `claim.levels`, its grades as text from worst to best.
+- Each input claim is a `str`. Return `Claim(True)` or `Claim(False)`, with an optional reason
+  and confidence. Ordered grades are not supported; `Graded`, `Grade` and `NoGrade` are removed
+  from the Python API.
 - A reason is `Reason(text)`. When there is none, leave it out or give `NoReason()`; an empty
   `Reason("")` is refused.
 - Raise `ModelFailure` when the judge cannot decide. Any other error counts the same way: the
   attempt gets no verdict, and the agent is not blamed. The text of the error goes into the run's
   folder and the report, so keep keys out of it.
-- An answer with the wrong number of claims, a confidence outside 0 to 1, a grade the claim does not
-  have, or a `pass` that does not match the grade also leaves the attempt without a verdict.
+- An answer with the wrong number of claims, a confidence outside 0 to 1, or a `pass` that is not
+  `true` or `false` also leaves the attempt without a verdict.
 - `name` is saved with the run. `convy resume` refuses to go on if it changes. If a setting of
   your judge can change its verdicts, change `name` with it.
 - Test a judge that calls a service with `httpx2.MockTransport`. Test a judge built on a model

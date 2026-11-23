@@ -18,10 +18,7 @@ from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoConfidence,
-    NoGrade,
     NoReason,
     NoVerdict,
     Reason,
@@ -72,8 +69,6 @@ class ClaimRow(Struct, frozen=True, kw_only=True):
     scenario: str
     claim: int
     text: str
-    grades: tuple[str | int, ...] | None
-    threshold: str | int | None
 
 
 class AttemptRow(Struct, frozen=True, kw_only=True):
@@ -93,7 +88,6 @@ class DecisionRow(Struct, frozen=True, kw_only=True):
     passed: bool
     reason: str | None
     confidence: float | None
-    grade: str | None
 
 
 class AnswerRow(Struct, frozen=True, kw_only=True):
@@ -309,20 +303,8 @@ class Tables(Struct, frozen=True):
             unreadable=run.unreadable,
         )
 
-    def claim(self, run: Run, scenario: str, number: int, claim: str | Graded) -> ClaimRow:
-        match claim:
-            case str():
-                text, grades, threshold = claim, None, None
-            case Graded(text=text, grades=grades, threshold=threshold):
-                pass
-        return ClaimRow(
-            run=run.spec.id,
-            scenario=scenario,
-            claim=number,
-            text=text,
-            grades=grades,
-            threshold=threshold,
-        )
+    def claim(self, run: Run, scenario: str, number: int, claim: str) -> ClaimRow:
+        return ClaimRow(run=run.spec.id, scenario=scenario, claim=number, text=claim)
 
     def attempt(self, run: Run, outcome: Outcome) -> AttemptRow:
         match outcome.verdict:
@@ -359,11 +341,6 @@ class Tables(Struct, frozen=True):
                 confidence = value
             case NoConfidence():
                 confidence = None
-        match claim.grade:
-            case Grade(value=value):
-                grade = value
-            case NoGrade():
-                grade = None
         return DecisionRow(
             run=run.spec.id,
             scenario=outcome.scenario,
@@ -372,7 +349,6 @@ class Tables(Struct, frozen=True):
             passed=claim.passed,
             reason=reason,
             confidence=confidence,
-            grade=grade,
         )
 
     def answer(self, run: Run, outcome: Outcome, number: int, turn: Turn) -> AnswerRow:

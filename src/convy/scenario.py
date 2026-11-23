@@ -16,7 +16,6 @@ from convy.dialog import (
     Checked,
     Failed,
     Finished,
-    Graded,
     NoVerdict,
     SimulatedUser,
     Transcript,
@@ -45,12 +44,12 @@ class Outcome(Struct, frozen=True):
 
 class Scenario(Struct, frozen=True, forbid_unknown_fields=True):
     """A scenario, as written in `scenarios/<id>.yaml`: `user` holds the simulated user's
-    instructions and `judge` the claims that must all hold, each a text or graded."""
+    instructions and `judge` the claims that must all hold, each a text."""
 
     id: str
     max_turns: int
     instructions: str = field(name="user")
-    claims: tuple[str | Graded, ...] = field(name="judge")
+    claims: tuple[str, ...] = field(name="judge")
 
     def __post_init__(self) -> None:
         if self.max_turns < 1:

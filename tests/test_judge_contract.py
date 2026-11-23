@@ -6,8 +6,6 @@ from convy.busy import Busy, Patience, Places
 from convy.dialog import (
     ChatJudge,
     Claim,
-    Grade,
-    Graded,
     Judge,
     PatientJudge,
     Reason,
@@ -16,9 +14,9 @@ from convy.dialog import (
 from convy.fakes import FakeJudge, FakeModel
 from convy.model import ModelFailure
 
-DECIDED = '{"claims": [{"pass": true, "reason": "ok"}, {"grade": "most", "reason": "no"}]}'
-CLAIMS = ("greets", Graded("is brief", ("long", "most", "brief"), "brief"))
-CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no"), grade=Grade("most")))
+DECIDED = '{"claims": [{"pass": true, "reason": "ok"}, {"pass": false, "reason": "no"}]}'
+CLAIMS = ("greets", "is brief")
+CLAIMED = (Claim(True, Reason("ok")), Claim(False, Reason("no")))
 
 JUDGES = {
     "ChatJudge": lambda: ChatJudge(FakeModel(DECIDED)),

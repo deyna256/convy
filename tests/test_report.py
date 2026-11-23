@@ -10,15 +10,12 @@ from typing import Any, get_args
 import msgspec
 import pytest
 
-from convy.agent import Answer, Call, Message, NotReported, NoUsage, Reported, Thought, Usage
+from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
 from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
-    NoReason,
     NoVerdict,
     Reason,
     Transcript,
@@ -92,7 +89,7 @@ def journal(
     id: str = "",
     k: int = 1,
     asks: str = "Say hi.",
-    claims: tuple[str | Graded, ...] = ("greets",),
+    claims: tuple[str, ...] = ("greets",),
     trust: float = 0.0,
     convy: str = CONVY,
     limits: Limits = DEFAULT_LIMITS,
@@ -122,124 +119,19 @@ def journal(
     return written
 
 
-def test_a_run_of_format_2_reads_its_reasons(tmp_path):
-    """Format 2 kept a claim's reason as a string; it is read as a reason, or none if empty."""
-    written = journal(tmp_path, "bot", "1", 2)
+@pytest.mark.parametrize("format", [1, 2, 3, 4, 5, 6, 8])
+def test_unsupported_runs_are_rejected_without_changing_their_files(tmp_path, format):
+    written = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
     folder = written.folder()
-    data = json.loads((folder / "run.json").read_text())
-    assert data["format"] == 6
-    older = {**data, "format": 2, "spec": {**data["spec"], "parallel": 4}}
-    (folder / "run.json").write_text(json.dumps(older))
-    line = {
-        "scenario": "a",
-        "attempt": 1,
-        "transcript": {"turns": []},
-        "verdict": {"type": "verdict", "claims": [{"pass": True, "reason": "said hi"}]},
-        "stop": "max_turns",
-    }
-    empty = {
-        **line,
-        "scenario": "b",
-        "verdict": {"type": "verdict", "claims": [{"pass": True, "reason": ""}]},
-    }
-    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n" + json.dumps(empty) + "\n")
-    (run,) = Runs(tmp_path)
-    assert [outcome.verdict for outcome in run.outcomes] == [
-        Verdict((Claim(True, Reason("said hi")),)),
-        Verdict((Claim(True, NoReason()),)),
-    ]
-    assert run.unreadable == 0
-
-
-@pytest.mark.parametrize(
-    ("answer", "steps"),
-    [
-        ({"text": "hi", "thinking": {"type": "thinking", "text": "plan"}}, (Thought("plan"),)),
-        ({"text": "hi", "thinking": {"type": "no_thinking"}}, ()),
-        ({"text": "hi"}, ()),
-    ],
-    ids=["thinking", "no thinking", "before thinking"],
-)
-def test_an_older_line_reads_its_thinking_as_a_step(
-    tmp_path, answer: dict, steps: tuple[Thought, ...]
-):
-    folder = journal(tmp_path, "bot", "1", 1).folder()
-    data = json.loads((folder / "run.json").read_text())
-    (folder / "run.json").write_text(json.dumps({**data, "format": 4}))
-    turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
-    line = {
-        "scenario": "a",
-        "attempt": 1,
-        "transcript": {"turns": [turn]},
-        "verdict": {"type": "verdict", "claims": [{"pass": True}]},
-        "stop": "max_turns",
-    }
-    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n")
-    (run,) = Runs(tmp_path)
-    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", steps=steps)
-    assert run.unreadable == 0
-
-
-@pytest.mark.parametrize("format", [3, 5])
-@pytest.mark.parametrize(("thinking", "read"), [(0, NotReported()), (20, 20)])
-def test_an_older_line_reads_a_thinking_count_of_0_as_not_reported_and_keeps_others(
-    tmp_path, format: int, thinking: int, read: int | NotReported
-):
-    """Formats 3 to 5 wrote 0 for a thinking count the agent did not give."""
-    usage = {"type": "usage", "input": 10, "output": 30, "thinking": thinking}
-    call = {"type": "call", "name": "search", "started": "2026-10-06T00:00:00Z", "seconds": 1.0}
-    answer = {"text": "hi", "usage": usage, "steps": [{**call, "usage": usage}]}
-    run = older_run(tmp_path, format, answer, {"parallel": 4} if format < 4 else None)
-    spent = Usage(10, 30, read)
-    steps = (Call(name="search", started=DAY, seconds=1.0, usage=spent),)
-    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", spent, steps)
-    assert run.unreadable == 0
-
-
-def test_an_older_line_with_thinking_text_reads_its_thinking_count_of_0_as_not_reported(tmp_path):
-    """Before format 5 the thinking was a field of its own; its count still needs converting."""
-    usage = {"type": "usage", "input": 10, "output": 30, "thinking": 0}
-    thinking = {"type": "thinking", "text": "plan"}
-    run = older_run(tmp_path, 4, {"text": "hi", "usage": usage, "thinking": thinking})
-    answer = Answer("hi", Usage(10, 30), (Thought("plan"),))
-    assert run.outcomes[0].transcript.turns[0].answer == answer
-
-
-def test_a_format_2_line_reads_its_thinking_count_as_not_reported(tmp_path):
-    usage = {"type": "usage", "input": 10, "output": 30}  # format 2 had no thinking count
-    run = older_run(tmp_path, 2, {"text": "hi", "usage": usage}, {"parallel": 4})
-    assert run.outcomes[0].transcript.turns[0].answer == Answer("hi", Usage(10, 30))
-
-
-def older_run(directory: Path, format: int, answer: dict, spec: dict | None = None) -> Run:
-    """A run of `format` whose one line holds one turn with `answer`, read back."""
-    folder = journal(directory, "bot", "1", 1).folder()
-    data = json.loads((folder / "run.json").read_text())
-    older = {**data, "format": format, "spec": {**data["spec"], **(spec or {})}}
-    (folder / "run.json").write_text(json.dumps(older))
-    turn = {"message": {"text": "hi"}, "answer": answer, "seconds": 1.0}
-    line = {
-        "scenario": "a",
-        "attempt": 1,
-        "transcript": {"turns": [turn]},
-        "verdict": {"type": "verdict", "claims": [{"pass": True}]},
-        "stop": "max_turns",
-    }
-    (folder / "attempts.jsonl").write_text(json.dumps(line) + "\n")
-    (run,) = Runs(directory)
-    return run
-
-
-@pytest.mark.parametrize("format", [2, 3])
-def test_an_older_run_reads_its_one_limit_as_each_participant_limit(tmp_path, format: int):
-    folder = journal(tmp_path, "bot", "1", 1).folder()
-    data = json.loads((folder / "run.json").read_text())
-    del data["spec"]["limits"]
-    older = {**data, "format": format, "spec": {**data["spec"], "parallel": 2}}
-    (folder / "run.json").write_text(json.dumps(older))
-    (run,) = Runs(tmp_path)
-    assert run.spec.limits == Limits(agent=2, user=2, judge=2)
-    assert run.format == format
+    path = folder / "run.json"
+    data = json.loads(path.read_text())
+    path.write_text(json.dumps({**data, "format": format}))
+    before = {p.name: p.read_bytes() for p in folder.iterdir() if p.is_file()}
+    with pytest.raises(ValueError, match="start a new run"):
+        Runs(tmp_path).read(folder)
+    assert list(Runs(tmp_path)) == []
+    assert Runs(tmp_path).broken([]) == (folder.relative_to(tmp_path),)
+    assert {p.name: p.read_bytes() for p in folder.iterdir() if p.is_file()} == before
 
 
 def test_runs_read_back_what_journals_wrote(tmp_path):
@@ -630,55 +522,6 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
         "down",
         [None, None],
     )
-
-
-STEPS = Graded("covers every step", ("none", "partial", "full"), "partial")
-
-
-def graded(*grades: str) -> list[Outcome]:
-    """An attempt per grade of `STEPS`, numbered from 1."""
-    return [
-        outcome("a", Verdict((Claim(STEPS.passes(g), grade=Grade(g)),)), attempt=n)
-        for n, g in enumerate(grades, 1)
-    ]
-
-
-def test_a_graded_claim_counts_its_grades_and_its_typical_one_is_the_lower_median(tmp_path):
-    journal(
-        tmp_path, "bot", "1", 1, *graded("full", "none", "full", "partial"), k=4, claims=(STEPS,)
-    )
-    (scenario,) = Report(only(tmp_path)).page().scenarios
-    (claim,) = scenario.claims
-    assert (claim.text, claim.held, claim.judged) == ("covers every step", 3, 4)
-    assert claim.grades == (("none", 1), ("partial", 1), ("full", 2))
-    assert claim.typical == "partial"
-    assert [a.claims[0].grade for a in scenario.attempts] == ["full", "none", "full", "partial"]
-
-
-def test_a_plain_claim_has_no_grades(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED))
-    (scenario,) = Report(only(tmp_path)).page().scenarios
-    assert (scenario.claims[0].grades, scenario.claims[0].typical) == ((), None)
-    assert scenario.attempts[0].claims[0].grade is None
-
-
-def test_a_comparison_sees_a_graded_claim_get_worse_with_the_same_pass_rate(tmp_path):
-    for day, grades in ((5, ("full", "full")), (6, ("partial", "partial"))):
-        journal(tmp_path, "bot", "1", 1, *graded(*grades), k=2, claims=(STEPS,), started=at(day))
-    (row,) = Comparison(*both(tmp_path)).page().rows
-    assert row.group == "same"
-    assert [(c.change, c.was, c.now, c.moved) for c in row.claims] == [
-        ("worse", "full", "partial", "worse")
-    ]
-
-
-def test_a_typical_grade_that_fell_is_worse_even_when_the_pass_rate_rose(tmp_path):
-    for day, grades in ((5, ("none", "full", "full")), (6, ("partial", "partial", "partial"))):
-        journal(tmp_path, "bot", "1", 1, *graded(*grades), k=3, claims=(STEPS,), started=at(day))
-    (row,) = Comparison(*both(tmp_path)).page().rows
-    assert [(c.change, c.was, c.now, c.moved) for c in row.claims] == [
-        ("better", "full", "partial", "worse")
-    ]
 
 
 def test_a_comparison_groups_scenarios_by_what_changed(tmp_path):
