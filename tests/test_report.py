@@ -946,7 +946,7 @@ def test_no_runs_make_an_empty_index(tmp_path):
         ({"models": ("fake", "other")}, ("judge: fake → other",)),
         ({"convy": "0.1.0"}, (f"convy: {CONVY} → 0.1.0",)),
         ({"convy": ""}, (f"convy: {CONVY} → unknown",)),
-        ({"trust": 0.5}, ("trust: 0 → 0.5",)),
+        ({"trust": 0.5}, ("trust: 0.0 → 0.5",)),
         ({"k": 3}, ()),  # more attempts measure the same thing
         ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
     ],
@@ -1571,7 +1571,7 @@ def test_different_thresholds_disable_quality_comparison_but_keep_resource_diffe
     assert page.by_tokens.mean == ("a",)
     (group,) = Index(Runs(tmp_path)).page().agents
     assert [r.run.claim_threshold for r in group.rows] == [0.5, 1]
-    assert "claim threshold: 1 → 0.5" in group.rows[0].changes
+    assert "claim threshold: 1.0 → 0.5" in group.rows[0].changes
 
 
 def test_changing_only_a_required_flag_changes_the_scenario_for_comparison(tmp_path):
@@ -1588,3 +1588,29 @@ def test_changing_only_a_required_flag_changes_the_scenario_for_comparison(tmp_p
     (row,) = Comparison(*both(tmp_path)).page().rows
     assert row.group == "apart"
     assert row.held == NO_CHANGE
+
+
+@pytest.mark.parametrize("setting", ["trust", "claim_threshold"])
+def test_setup_changes_preserve_precision_that_can_change_acceptance(tmp_path, setting):
+    verdict = Verdict(
+        (Claim(True, confidence=Confidence(2 / 3)), Claim(True), Claim(setting == "trust"))
+    )
+    for hour, value in ((5, 0.6666666), (6, 0.6666667)):
+        journal(
+            tmp_path,
+            "bot",
+            "1",
+            1,
+            outcome("a", verdict),
+            started=at(hour),
+            claims=tuple(Requirement(str(i)) for i in range(3)),
+            trust=value if setting == "trust" else 0.0,
+            claim_threshold=value if setting == "claim_threshold" else 1.0,
+        )
+    (group,) = Index(Runs(tmp_path)).page().agents
+    assert [row.rate for row in group.rows] == [0, 1]
+    expected = f"{setting.replace('_', ' ')}: 0.6666666 → 0.6666667"
+    assert group.rows[0].changes == (expected,)
+    page = Comparison(*both(tmp_path)).page()
+    assert expected in page.differences
+    assert page.quality_reason

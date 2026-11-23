@@ -1154,8 +1154,8 @@ class Setups(Struct, frozen=True):
             ("user", self.was.user, self.now.user),
             ("judge", self.was.judge, self.now.judge),
             ("convy", self.was.convy or "unknown", self.now.convy or "unknown"),
-            ("trust", f"{self.was.trust:g}", f"{self.now.trust:g}"),
-            ("claim threshold", f"{self.was.claim_threshold:g}", f"{self.now.claim_threshold:g}"),
+            ("trust", self.was.trust, self.now.trust),
+            ("claim threshold", self.was.claim_threshold, self.now.claim_threshold),
             *more,
         )
         return tuple(f"{name}: {a} → {b}" for name, a, b in pairs if a != b)
