@@ -418,6 +418,9 @@ class Measure(Struct, frozen=True):
 class ScenarioNumbers(Struct, frozen=True):
     seconds: Spread | None  # per answer kept
     tokens: Spread | None
+    attempt_seconds: Spread | None  # sum of recorded answer times per attempt with answers
+    attempt_tokens: Spread | None  # per attempt with every answer's usage reported
+    attempts: int  # recorded attempts kept, including those without measurements
 
 
 class View(Struct, frozen=True):
@@ -430,6 +433,9 @@ class View(Struct, frozen=True):
     time: tuple[Category, ...]  # the most in total first, then by name
     parts: Parts | None  # the tokens per answer by part, over the answers kept that report them
     shares: Shares | None
+    attempt_seconds: Spread | None
+    attempt_tokens: Spread | None
+    attempts: int
     out: tuple[str, ...] = ()  # the scenarios cut, in the page's order: every number leaves them
 
 
@@ -805,19 +811,28 @@ class Summary(Struct, frozen=True):
         if out >= {view.id for view in scenarios}:
             out = set()
         kept = [a for a in answers if a.scenario not in out]
+        attempts = [a for view in scenarios if view.id not in out for a in view.attempts]
         return View(
             self.measure([a.turn.seconds for a in kept]),
             self.measure([a.turn.tokens for a in kept]),
-            tuple(
-                ScenarioNumbers(
-                    self.spread(a.turn.seconds for a in kept if a.scenario == view.id),
-                    self.spread(a.turn.tokens for a in kept if a.scenario == view.id),
-                )
-                for view in scenarios
-            ),
+            tuple(self.numbers(view.attempts if view.id not in out else ()) for view in scenarios),
             self.time(kept),
             *self.split(self.parts([a.turn for a in kept])),
+            self.spread(a.seconds for a in attempts if a.turns),
+            self.spread(a.tokens for a in attempts),
+            len(attempts),
             tuple(view.id for view in scenarios if view.id in out),
+        )
+
+    def numbers(self, attempts: Sequence[AttemptView]) -> ScenarioNumbers:
+        """Answer and task distributions over the same recorded attempts."""
+        turns = [turn for attempt in attempts for turn in attempt.turns]
+        return ScenarioNumbers(
+            self.spread(t.seconds for t in turns),
+            self.spread(t.tokens for t in turns),
+            self.spread(a.seconds for a in attempts if a.turns),
+            self.spread(a.tokens for a in attempts),
+            len(attempts),
         )
 
     def fence(self, values: list[float | None]) -> float | None:
@@ -969,9 +984,9 @@ class Summary(Struct, frozen=True):
             claims=claims,
             seconds=sum(turn.seconds for turn in turns),
             slowest=max((turn.seconds for turn in turns), default=None),
-            input=self.total(turn.input for turn in turns),
-            output=self.total(turn.output for turn in turns),
-            tokens=self.total(turn.tokens for turn in turns),
+            input=self.complete_total(turn.input for turn in turns),
+            output=self.complete_total(turn.output for turn in turns),
+            tokens=self.complete_total(turn.tokens for turn in turns),
             thinking_tokens=self.total(turn.thinking_tokens for turn in turns),
             cache_read=self.total(turn.cache_read for turn in turns),
             cache_write=self.total(turn.cache_write for turn in turns),
@@ -1094,6 +1109,13 @@ class Summary(Struct, frozen=True):
     def total(self, counts: Iterable[int | None]) -> int | None:
         known = [count for count in counts if count is not None]
         return sum(known) if known else None
+
+    def complete_total(self, counts: Iterable[int | None]) -> int | None:
+        """A task total needs every answer's measurement; no answers is not a measured zero."""
+        values = list(counts)
+        if not values or any(value is None for value in values):
+            return None
+        return sum(value for value in values if value is not None)
 
     def share(self, turns: Iterable[TurnView]) -> float | None:
         """The share of input read from the cache, over the turns that report it, so turns that

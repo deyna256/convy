@@ -81,7 +81,7 @@ function attemptTiles(attempt) {
     el("div", {}, el("span", {className: "l"}, "Claim completion"),
       el("span", {className: "v"}, attempt.completion ? `${attempt.completion.held}/${attempt.completion.total} · ${pct(attempt.completion.fraction)}` : "—"),
       el("span", {className: "s"}, attempt.completion ? attempt.completion.failures.join(" ") : "No measured claim completion")),
-    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, answers ? secs(attempt.seconds) : "—"), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
     el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
       el("span", {className: "s"}, attempt.input == null ? "not reported" : tokenParts(attempt))));
 }
