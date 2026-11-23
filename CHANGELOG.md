@@ -10,6 +10,34 @@ This file is built from fragments in `changelog.d/` when a release is made; see
 
 <!-- towncrier release notes start -->
 
+## [0.6.0] - 2026-11-23
+
+### Added
+
+- Agents can report cache reads, cache writes and thinking tokens. Use `TokenPaths` to read these counts from a JSON API response. ([#47](https://github.com/deyna256/convy/issues/47))
+- Use `Tables` to read runs, scenarios, claims, attempts, decisions, answers and steps in Python. `convy export` writes the seven tables as CSV and JSON Lines in `results/export/`. ([#49](https://github.com/deyna256/convy/issues/49))
+- Run reports show pass rate, inconsistent scenarios, errors, answer time and token use. You can see time by call name, break tokens down by type, and exclude scenarios with unusually slow or large answers from resource statistics. ([#51](https://github.com/deyna256/convy/issues/51))
+- Mark claims as required and use `--claim-threshold` to set the fraction of all claims that must pass. A decision below the confidence threshold fails its claim. Reports explain why an attempt failed. In Python, use `Requirement` and `Scenario.score` in place of string claims and `Verdict.passed` or `Verdict.decided`. Exports add `claims.required` and `runs.claim_threshold`. ([#55](https://github.com/deyna256/convy/issues/55))
+- Run and scenario reports show mean and median time and tokens per answer and per attempt, with the number measured. An attempt has a token total only when all its answers report usage. ([#56](https://github.com/deyna256/convy/issues/56))
+- Reports show mean and median tool calls per attempt and how many attempts had a complete trace. Set `kind="model"` or `kind="tool"` on each Python `Call` and `steps_complete=True` on an answer with a complete trace. Both fields appear in exports. This release reads run format 9. ([#57](https://github.com/deyna256/convy/issues/57))
+
+### Changed
+
+- Pass `tokens=TokenPaths(input=..., output=...)` to `JsonAgent`. Include cache reads and writes in the input count. Missing counts use `NotReported()`. Negative counts and cached input above total input fail the turn. ([#47](https://github.com/deyna256/convy/issues/47))
+- Compare runs in `results/index.html` and open a scenario to read its dialogue. The index replaces the two-run HTML page. Use `convy compare --fail-on-regression` for the CI check. ([#48](https://github.com/deyna256/convy/issues/48))
+- Scenario loading now supports yamlrocks 0.7 as well as 0.6. ([#54](https://github.com/deyna256/convy/issues/54))
+- Updated the guides for scoring, retries, run comparisons and data exports. The pandas example handles empty results and runs with matching IDs.
+
+### Removed
+
+- Replace graded claims with yes/no claims. `Graded`, `Grade`, `NoGrade` and the grade fields in reports and exports have been removed. Existing standalone HTML reports still open. Earlier run files stay on disk and require an older convy version to read. ([#58](https://github.com/deyna256/convy/issues/58))
+
+### Fixed
+
+- convy rejects agent names that contain a path, such as `team/bot` or `../bot`, before creating a run. ([#4](https://github.com/deyna256/convy/issues/4))
+- `convy run --smoke` can check an agent in a project without `models.py`.
+
+
 ## [0.5.0] - 2026-10-20
 
 ### Added
