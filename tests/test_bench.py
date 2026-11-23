@@ -25,7 +25,7 @@ from convy.bench import (
     RunSpec,
 )
 from convy.busy import Busy, Patience
-from convy.dialog import ChatJudge, Claim, Graded, NoReason, NoVerdict, Reason, Transcript, Verdict
+from convy.dialog import ChatJudge, Claim, NoReason, NoVerdict, Reason, Transcript, Verdict
 from convy.fakes import FakeAgent, FakeJudge, FakeModel, MemoryJournal
 from convy.model import Models
 from convy.scenario import Outcome, Scenario
@@ -185,9 +185,7 @@ class ClockedModel(Clock):
 class ClockedJudge(Clock):
     name = "clocked"
 
-    async def decide(
-        self, transcript: Transcript, claims: tuple[str | Graded, ...]
-    ) -> tuple[Claim, ...]:
+    async def decide(self, transcript: Transcript, claims: tuple[str, ...]) -> tuple[Claim, ...]:
         self.tick()
         return tuple(Claim(True, NoReason()) for _ in claims)
 
@@ -261,7 +259,7 @@ def test_a_new_run_gets_its_folder_and_never_overwrites_one(tmp_path):
     journal.create()
     assert journal.folder() == tmp_path / "bot" / "2026-10-06T14-05-00_a3f9"
     file = msgspec.json.decode((journal.folder() / "run.json").read_bytes(), type=RunFile)
-    assert file == RunFile(6, SPEC, Running())
+    assert file == RunFile(7, SPEC, Running())
     assert not (journal.folder() / "run.json.tmp").exists()
     with pytest.raises(FileExistsError):
         journal.create()
@@ -435,9 +433,3 @@ def test_a_changed_label_is_a_reason_not_to_resume(now: tuple[str, str, str], re
 def test_a_run_spec_rejects_a_trust_outside_0_to_1(trust: float):
     with pytest.raises(ValueError, match="trust must be from 0 to 1"):
         msgspec.structs.replace(SPEC, trust=trust)
-
-
-def test_an_old_run_file_reads_with_trust_0():
-    old = msgspec.json.decode(msgspec.json.encode(RunFile(2, SPEC, Running())))
-    del old["spec"]["trust"]  # a run.json written before trust existed
-    assert msgspec.json.decode(msgspec.json.encode(old), type=RunFile).spec.trust == 0

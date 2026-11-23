@@ -46,5 +46,5 @@ often better to grade what the agent produced, not the path it took"
 
 - An answer shows where its time and tokens went, as far as the agent tells; a wrong report is
   shown as given, and a step convy cannot store fails the turn.
-- `Answer` and the judge interface change, a break of the alpha. Runs move to format 5
-  ([0005](0005-runs.md)).
+- `Answer` and the judge interface change, a break of the alpha. Run format compatibility is
+  defined in [decision 5](0005-runs.md).

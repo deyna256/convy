@@ -28,9 +28,9 @@ for run in runs:
 run = runs.run("7ad8")
 ```
 
-`Runs` converts older formats as it reads them. What an older run did not record comes as a
-default: the limits per minute are 0 in runs made before convy had them, `trust` is 0, and the
-files' digests and `convy` may be empty.
+`Runs` reads only the current run format. Earlier formats are unsupported and are not converted;
+see [run format compatibility](runs.md#run-format-compatibility). Reading does not change the
+saved files.
 
 ## Tables
 
@@ -52,9 +52,9 @@ drop nothing. The keys come first:
 |---|---|---|
 | `runs` | `run` | `agent`, `version`, `user_model`, `judge_model`, `k`, `turn_timeout`, `trust`, `convy`, `started`, `status` (`running`, `finished` or `interrupted`), `ended`, `agent_parallel`, `user_parallel`, `judge_parallel`, `agent_per_minute`, `user_per_minute`, `judge_per_minute`, `agent_file`, `models_file` (sha256), `format`, `path` (the run's folder inside `results/`, with `/`), `unreadable` |
 | `scenarios` | `run`, `scenario` | `instructions`, `max_turns` |
-| `claims` | `run`, `scenario`, `claim` | `text`, `grades`, `threshold` (the lowest grade that passes, the scenario file's `pass`) |
+| `claims` | `run`, `scenario`, `claim` | `text` |
 | `attempts` | `run`, `scenario`, `attempt` | `verdict` (`verdict`, `failed` or `no_verdict`), `error`, `stop` |
-| `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence`, `grade` |
+| `decisions` | `run`, `scenario`, `attempt`, `claim` | `passed`, `reason`, `confidence` |
 | `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
 | `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
 
@@ -65,12 +65,10 @@ drop nothing. The keys come first:
 - Runs come by start time; in a run, scenarios and claims in the run's order, attempts by scenario
   then number, and decisions, answers and steps in their order.
 - `None` is a value the agent or the judge did not give, or one that does not apply: a thought has
-  no `name`, a plain claim no `grades`, an attempt with a verdict no `error`. `""` is text given
+  no `name`, an attempt with a verdict no `error`. `""` is text given
   empty. A run still running has no `ended`.
 - A key means one thing in every table. A value of two grains — `started`, `seconds`, the tokens —
   keeps its name in both tables, so join on the keys and pick the columns you need.
-- A decision's `grade` is text, as the judge gives it; a claim's `grades` and `threshold` keep the
-  scenario file's type (`2`, not `"2"`). Compare them as text.
 
 Each table has a `name`, the type of its rows in `row`, so an empty table still knows its columns,
 and its `rows`. `records()` gives the rows as dicts, with times as `datetime`; `csv()` and `jsonl()`
@@ -168,3 +166,6 @@ the agent gave it.
 
 A new convy version may add columns. Renaming or removing one is a breaking change, and the
 changelog says so; see [why](decisions/0011-run-as-data.md).
+
+Removing ordered claim scales removes `grades` and `threshold` from `claims`, and `grade` from
+`decisions`. Update consumers of those columns; new exports contain yes/no decisions only.

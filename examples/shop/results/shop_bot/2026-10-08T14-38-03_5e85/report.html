@@ -1,0 +1,836 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2318212f'/><circle cx='50' cy='50' r='28' fill='none' stroke='%23eef1f5' stroke-width='17'/><circle cx='50' cy='50' r='10' fill='%235fc48a'/></svg>">
+<style>
+:root {
+  --page: #eef1f5; --surface: #ffffff; --side: #f4f6f9; --ink: #18212f; --muted: #4a5464;
+  --rule: #d5dbe3; --user: #eef1f5; --focus: #2c4a74; --thought: #7a4fc4;
+  --cache: #5d85ce; --input: #3a4aa7; --output: #bc7c40; --thinking: #8d58b7;
+  --pass: #1a6b43; --pass-bg: #e3f2ea; --fail: #b3261e; --fail-bg: #f8e3e1;
+  --flaky: #8a5100; --flaky-bg: #f6ecd9; --none: #4a5464; --none-bg: #e2e7ee; --on-status: #ffffff;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Noto Sans", "Adwaita Sans", Cantarell, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
+    --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
+    --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
+    --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
+    --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
+  --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
+  --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
+  --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
+  --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var(--sans); }
+.page { max-width: 1680px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 40px) 48px; }
+.mono { font-family: var(--mono); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
+.muted { color: var(--muted); }
+.top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; margin-bottom: 18px; }
+.top > div:first-child { flex: 1 1 320px; min-width: 0; }
+.eyebrow { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+.eyebrow a { color: inherit; }
+h1 { font-size: 22px; line-height: 1.25; margin: 8px 0 4px; font-weight: 650; overflow-wrap: anywhere; }
+.meta { color: var(--muted); margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.theme { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); cursor: pointer; font-size: 13px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
+
+/* status icon, badge */
+.si { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--on-status); font: 800 11px/1 var(--sans); flex: none; }
+/* a status's colour, wherever a mark carries one: an icon, a square, a key, a bar */
+:is(.si, .sq, .key, .fill, .meter > span).passing { background: var(--pass); }
+:is(.si, .sq, .key, .fill, .meter > span).failing { background: var(--fail); }
+:is(.si, .sq, .key, .fill, .meter > span).flaky { background: var(--flaky); }
+:is(.si, .sq, .key, .fill, .meter > span).none { background: var(--none); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; }
+.badge.passing { background: var(--pass-bg); color: var(--pass); } .badge.failing { background: var(--fail-bg); color: var(--fail); }
+.badge.flaky { background: var(--flaky-bg); color: var(--flaky); } .badge.none { background: var(--none-bg); color: var(--none); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.tile { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tile .l { font-size: 12.5px; color: var(--muted); }
+.tile .v { font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
+.tile .v small { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+.tile .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* table */
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 32px 0 10px; }
+.tools h2 { font-size: 16px; font-weight: 650; margin: 0 auto 0 0; }
+input[type=search] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; width: 220px; max-width: 100%; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+tbody tr.row { cursor: pointer; }
+tbody tr.row:hover td { background: var(--side); }
+.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metric { font-size: 15px; font-weight: 650; }
+.metric small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.open { all: unset; cursor: pointer; font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+.open:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.empty { color: var(--muted); padding: 24px 12px; }
+
+/* attempt squares */
+.squares { display: inline-flex; flex-wrap: wrap; gap: 3px; max-width: 207px; vertical-align: middle; }
+.sq { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font: 800 10px/1 var(--sans); color: var(--on-status); }
+.sq.go { cursor: pointer; } .sq.at { outline: 2px solid var(--ink); outline-offset: 1px; }
+
+/* the spread and change blocks */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-top: 14px; }
+.chart { background: var(--surface); padding: 14px 16px; min-width: 0; }
+.chart .empty { margin: 0; padding: 4px 0; font-size: 13px; }
+.chart h3 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
+.chart .scale { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
+.chart .caption { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+.chart .scale { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.chart .scale > span { font-size: 11px; }
+.chart .scale > span:nth-child(2):not(.ticks) { display: flex; justify-content: space-between; }
+.chart .scale .ticks { display: block; position: relative; height: 1.3em; }
+.chart .scale .ticks > span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart .scale .ticks > span:first-child { transform: none; } .chart .scale .ticks > span:last-child:not(:first-child) { transform: translateX(-100%); }
+.chart.grid .ptrack { background-image: linear-gradient(to right, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: var(--grid) 100%; }
+.more { all: unset; display: inline-block; cursor: pointer; color: var(--focus); font-size: 12.5px; margin-top: 8px; }
+.more:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 760px) {
+  .charts { grid-template-columns: minmax(0, 1fr); }
+  .chart .scale { grid-template-columns: minmax(0, 1fr) var(--tail, 8ch); }
+  .chart .scale > span:first-child { display: none; }
+}
+
+/* a lone panel takes the whole row */
+.charts:has(> .chart:only-child) { grid-template-columns: minmax(0, 1fr); }
+
+/* the statistic switch */
+.switch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 18px 0 0; font-size: 13px; color: var(--muted); }
+.switch [role=group] { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.switch button { all: unset; cursor: pointer; padding: 4px 12px; color: var(--ink); }
+.switch button + button { border-left: 1px solid var(--rule); }
+.switch button[aria-pressed="true"] { background: var(--focus); color: var(--surface); font-weight: 650; }
+.switch button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* the key of a colour */
+.key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* tokens by turn and by part: parts apart by a 2px gap of the panel's surface */
+.charts:empty { display: none; }
+.seg { flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 2px; }
+.seg.cache, .key.cache { background: var(--cache); } .seg.input, .key.input { background: var(--input); }
+.seg.output, .key.output { background: var(--output); } .seg.thinking, .key.thinking { background: var(--thinking); }
+.chart .ptrack { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 16px; }
+
+/* a change from before */
+.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
+
+/* a panel's message, the page's controls */
+.lede { margin: -4px 0 10px; font-size: 14px; font-weight: 550; color: var(--ink); }
+.controls { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 14px; }
+.controls .switch { margin: 0; }
+
+/* the tooltip, and the parts of a bar fading beside the one pointed at */
+.tip { position: fixed; z-index: 10; max-width: 340px; padding: 6px 10px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12.5px; line-height: 1.4; pointer-events: none; box-shadow: 0 4px 14px rgb(0 0 0 / .25); font-variant-numeric: tabular-nums; }
+[data-tip] { cursor: default; }
+.pbar:hover > .seg, .meter:hover > span, .bars:hover .seg { opacity: .35; transition: opacity .12s; }
+.pbar:hover > .seg:hover, .meter:hover > span:hover, .bars:hover .seg:hover { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pbar .seg, .meter > span, .bars .seg { transition: none; } }
+
+/* the scenario window */
+dialog.window { width: calc(100vw - 48px); height: calc(100vh - 48px); max-width: 1400px; max-height: none; padding: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--surface); color: var(--ink); overflow: hidden; }
+dialog.window::backdrop { background: rgb(0 0 0 / .5); }
+.frame { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.whead { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 64px 14px 20px; border-bottom: 1px solid var(--rule); }
+.whead h2 { margin: 0; font: 650 17px/1.3 var(--mono); overflow-wrap: anywhere; }
+.close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+.close:hover { border-color: var(--rule); }
+.wbody { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 0; }
+.side { background: var(--side); padding: 18px 20px; border-right: 1px solid var(--rule); overflow: auto; }
+.main { padding: 16px 22px 24px; overflow: auto; min-width: 0; }
+.sec { font-size: 12px; font-weight: 650; color: var(--muted); margin: 0 0 8px; }
+.told { margin: 0 0 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.claims { list-style: none; margin: 0 0 18px; padding: 0; }
+.claims li { display: grid; grid-template-columns: 22px 18px 1fr; gap: 2px 8px; margin: 0 0 14px; }
+.claims .no, .judge .no { font: 650 13px/1.6 var(--mono); color: var(--muted); }
+.claims .si, .judge .si { margin-top: 3px; }
+.claims .tally { grid-column: 3; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.claims .tally .si { width: 15px; height: 15px; font-size: 9px; margin: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); cursor: pointer; font-size: 13px; }
+.tab[aria-selected="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); font-weight: 650; }
+.mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+.mini > div { background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mini .l { font-size: 12.5px; color: var(--muted); }
+.mini .v { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mini .v.failing { color: var(--fail); } .mini .v.passing { color: var(--pass); } .mini .v.none { color: var(--none); }
+.mini .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.judge { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px; margin-bottom: 20px; }
+.judge > div { display: grid; grid-template-columns: 22px 18px 1fr; gap: 0 8px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.judge > div:last-child { border-bottom: 0; }
+.judge .why { line-height: 1.55; overflow-wrap: anywhere; }
+.error { border-left: 3px solid var(--fail); padding: 8px 12px; margin-bottom: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg { max-width: min(72ch, 92%); margin: 16px 0; }
+.who { font: 650 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+.msg.user .who { display: block; margin-bottom: 6px; }
+.bubble { padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.msg.user .bubble { background: var(--user); border-top-left-radius: 4px; white-space: pre-wrap; }
+.msg.agent { margin-left: auto; }
+.msg.agent .bubble { background: var(--surface); border: 1px solid var(--rule); border-top-right-radius: 4px; }
+.bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); font-size: 13px; line-height: 1.4; }
+.bhead .who { margin-right: auto; }
+.bhead .m { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.bhead svg { color: var(--muted); }
+.bubble p { margin: 0 0 10px; } .bubble p:last-child { margin-bottom: 0; }
+.bubble ul, .bubble ol { margin: 8px 0; padding-left: 22px; } .bubble li { margin: 4px 0; }
+.bubble ol { list-style-position: inside; padding-left: 0; }
+.bubble .h { font-weight: 700; }
+.bubble code { font-family: var(--mono); font-size: 13.5px; background: var(--side); border-radius: 4px; padding: 1px 4px; }
+@media (max-width: 860px) {
+  .wbody { grid-template-columns: 1fr; overflow: auto; }
+  .side { border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
+  .main { overflow: visible; }
+  .mini { grid-template-columns: 1fr; }
+  dialog.window { width: 100vw; height: 100vh; border-radius: 0; }
+}
+@media print { dialog.window { position: static; } }
+
+/* an answer's steps */
+.bubble.flow { padding: 12px 14px; }
+.msg.agent:has(.flow) { max-width: min(96ch, 96%); }
+.link { all: unset; cursor: pointer; color: var(--focus); font-size: 13px; }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.line { list-style: none; margin: 0; padding: 0; position: relative; }
+.line::before { content: ""; position: absolute; left: 13px; top: 14px; bottom: 14px; width: 2px; background: var(--rule); }
+.node { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; margin: 0 0 8px; }
+.node:last-child { margin-bottom: 0; }
+.dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--rule); color: var(--muted); z-index: 1; }
+.node .card { border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); min-width: 0; }
+.kind { font: 650 11px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.node.thought .card, .node.answer .card { padding: 9px 12px 10px; }
+.node.thought .card > .kind, .node.answer .card > .kind { display: block; margin-bottom: 6px; }
+.node.thought .dot, .node.thought .kind { color: var(--thought); }
+.node.thought .dot { border-color: color-mix(in srgb, var(--thought) 55%, var(--rule)); }
+.node.thought .card { background: color-mix(in srgb, var(--thought) 8%, var(--surface)); border-color: color-mix(in srgb, var(--thought) 28%, var(--rule)); }
+.node.thought .said { white-space: pre-wrap; overflow-wrap: anywhere; }
+.node.answer .dot { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 60%, var(--rule)); }
+.node.answer .card { border-color: color-mix(in srgb, var(--ink) 25%, var(--rule)); }
+.card.fold { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-style: dashed; font-size: 13.5px; cursor: pointer; }
+.card.fold:hover { border-color: var(--focus); }
+.bhead .steps { min-width: 11ch; text-align: right; }
+.bhead .steps::after { content: " ▸"; } .bhead .steps[aria-expanded="true"]::after { content: " ▾"; }
+.node.call summary { display: grid; grid-template-columns: 4.5ch minmax(10ch, 1fr) minmax(48px, 120px) 28ch 14px; align-items: center; gap: 4px 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.node.call summary::-webkit-details-marker { display: none; }
+.node.call summary::after { content: "▸"; color: var(--muted); font-size: 11px; }
+.node.call .card[open] > summary::after { content: "▾"; }
+.node.call .name { font: 650 14px/1.3 var(--mono); overflow-wrap: anywhere; }
+.node .track { position: relative; height: 10px; border-radius: 5px; background: var(--side); }
+.node .bar { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--focus); }
+.node .m { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 12px 12px; border-top: 1px solid var(--rule); }
+.io .box { margin: 0; height: 150px; overflow: auto; padding: 8px 10px; background: var(--side); border: 1px solid var(--rule); border-radius: 8px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px var(--sans); }
+@media (max-width: 600px) {
+  .io { grid-template-columns: 1fr; }
+  .node.call summary { grid-template-columns: 4.5ch minmax(0, 1fr) 14px; }
+  .node.call summary::after { grid-column: 3; grid-row: 1; }
+  .node.call .track, .node.call .m { grid-column: 1 / -1; text-align: left; }
+  .node.call .m { white-space: normal; }
+}
+.node.found .card { box-shadow: 0 0 0 2px var(--focus); transition: box-shadow .3s; }
+@media (prefers-reduced-motion: reduce) { .node.found .card { transition: none; } }
+
+/* the pass rate, with its line of scenarios, as tall as the four other tiles two by two beside it */
+.tiles.five { grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, 1fr)); }
+.tiles.five > .rates { grid-row: span 2; }
+@media (max-width: 640px) { .tiles.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tiles.five > .rates { grid-row: auto; grid-column: 1 / -1; } .controls { justify-content: flex-start; } }
+.tiles.five .tile .v { font-size: clamp(36px, 3.4vw, 48px); line-height: 1.05; margin: 2px 0 4px; }
+.tiles.five > .rates .v { font-size: clamp(48px, 5vw, 72px); }
+.tiles.five > .rates .foot { margin-top: auto; }
+.foot { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tiles.five .tile .s { font-size: 13px; }
+.meter { display: flex; gap: 2px; }
+.meter > span { min-width: 3px; border-radius: 2px; }
+.tiles.five .tile .v .frac { font-size: .6em; font-weight: 650; color: var(--muted); margin-left: 14px; letter-spacing: -.01em; }
+
+/* the scenarios by pass rate on one line, and where the tokens and time go */
+.rates .meter { height: 24px; margin: 4px 0 6px; }
+.rates .cap { margin-top: 12px; }
+.rates .meter > span { display: grid; place-items: center; color: #fff; font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgb(0 0 0 / .45); overflow: hidden; }
+.rates .endlist { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 12.5px; color: var(--muted); }
+.rates .endlist li { display: inline-flex; align-items: center; gap: 5px; }
+.rates .endlist b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+#charts { grid-template-columns: minmax(0, 1fr); }
+.chart .cat { display: grid; grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 10ch; gap: 2px 12px; align-items: center; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+.chart .cat:hover { background: var(--side); }
+.chart .cat.own { cursor: default; }
+.chart .cat .cname { display: flex; flex-direction: column; min-width: 0; }
+.chart .cat .cname b { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart .cat .cname small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart .cat .n { text-align: right; font-size: 20px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.chart .cat .n small { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); white-space: nowrap; }
+.chart .cat .ptrack { display: flex; flex-direction: row; justify-content: flex-start; align-items: center; min-height: 16px; }
+.chart .cat .fill { display: block; height: 12px; min-width: 2px; border-radius: 2px 4px 4px 2px; background: color-mix(in srgb, var(--muted) 75%, var(--surface)); }
+.chart .cat .fill.seg { flex: none; } .chart .cat .fill.cache { background: var(--cache); } .chart .cat .fill.input { background: var(--input); }
+.chart .cat .fill.output { background: var(--output); } .chart .cat .fill.thinking { background: var(--thinking); }
+.chart .cat[aria-expanded] .cname b::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 1px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s; }
+.chart .cat[aria-expanded="true"] .cname b::before { transform: rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .chart .cat .cname b::before { transition: none; } }
+.chart.cats .scale { grid-template-columns: minmax(0, 26ch) minmax(0, 1fr) 10ch; }
+.places { list-style: none; margin: 2px 0 8px 12px; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
+.places li { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+.places .open { color: var(--focus); font-size: 12.5px; }
+.places .open:hover { text-decoration: underline; }
+@media (max-width: 760px) { .chart .cat, .chart.cats .scale { grid-template-columns: minmax(0, 1fr) 10ch; } .chart .cat .cname { grid-column: 1 / -1; } .chart.cats .scale > span:first-child { display: none; } .places { margin-left: 0; } }
+</style>
+<script>
+// Every number and decision comes from the data; this script only draws it.
+// Everything from the data is added as text, never as HTML.
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (value == null || value === false) continue;
+    if (key.startsWith("aria-") || key.startsWith("data-") || key === "role" || key === "style") node.setAttribute(key, value);
+    else node[key] = value;
+  }
+  node.append(...children.flat(Infinity).filter(child => child != null && child !== false && child !== ""));
+  return node;
+}
+
+// The theme: Auto follows the system; the choice is kept where the browser allows it.
+const THEMES = ["auto", "light", "dark"];
+const NAMES = {auto: "Auto", light: "Light", dark: "Dark"};
+function storedTheme() {
+  try { return THEMES.includes(localStorage.getItem("convy-theme")) ? localStorage.getItem("convy-theme") : "auto"; }
+  catch { return "auto"; }
+}
+let theme = storedTheme();
+function applyTheme(button) {
+  if (theme === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", theme);
+  if (button) {
+    button.textContent = `Theme: ${NAMES[theme]}`;
+    button.setAttribute("aria-label", `Theme: ${NAMES[theme]}. Switch theme`);
+  }
+}
+function themeButton() {
+  const button = el("button", {className: "theme", type: "button"});
+  button.addEventListener("click", () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    try { localStorage.setItem("convy-theme", theme); } catch { /* not kept: the next page opens in Auto */ }
+    applyTheme(button);
+  });
+  applyTheme(button);
+  return button;
+}
+applyTheme(null);
+
+const SCENARIO = {passing: "Passing", failing: "Failing", flaky: "Flaky", none: "No verdict"};
+const ATTEMPT = {passing: "Passed", failing: "Failed", none: "No verdict"};
+const GLYPH = {passing: "✓", failing: "✕", flaky: "◐", none: "–"};
+
+const kind = passed => passed == null ? "none" : passed ? "passing" : "failing";
+const icon = result => el("span", {className: `si ${result}`, "aria-hidden": "true"}, GLYPH[result]);
+const badge = (result, words = SCENARIO) => el("span", {className: `badge ${result}`}, icon(result), words[result]);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const pct = rate => rate == null ? "—" : `${Math.round(rate * 100)}%`;
+const notTrusted = cut => cut ? ` · ${cut} not trusted` : "";
+const secs = s => s == null ? "—" : s > 0 && s < 0.1 ? `${Math.round(s * 1000)} ms` : s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
+const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
+const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
+const STATUS = {running: "not finished", interrupted: "interrupted", finished: null};
+
+// Squares, one per attempt: ✓, ✕ or – with its word in the title, the open attempt outlined, a
+// click opening one. Not tab stops: the row's Open button and the window's tabs are the keyboard's.
+function squares(marks, what, open, go) {
+  return el("span", {className: "squares", role: "img", "aria-label": `${what}: ${marks.map(m => m.word).join(", ")}`},
+    marks.map(m => {
+      const square = el("span", {className: `sq ${m.result}${m.attempt === open ? " at" : ""}${go ? " go" : ""}`, title: `Attempt ${m.attempt}: ${m.word}`}, GLYPH[m.result]);
+      if (go) square.addEventListener("click", event => { event.stopPropagation(); go(m.attempt); });
+      return square;
+    }));
+}
+const attemptMarks = attempts => attempts.map(a => ({attempt: a.attempt, result: kind(a.passed),
+  word: a.cut ? "not trusted" : a.passed == null ? "no verdict" : a.passed ? "passed" : "failed"}));
+
+function readAddress() {
+  const hash = location.hash.slice(1), first = hash.split("&")[0];
+  return new URLSearchParams(first && !first.includes("=") ? `id=${hash}` : hash);  // part 1's #<id>&attempt=<n>
+}
+const kept = {};  // the settings the address keeps, each unwritten at its default; a page adds its own
+function writeAddress(params) {
+  for (const [key, value] of Object.entries(kept)) { params.delete(key); if (value()) params.set(key, value()); }
+  const hash = params.toString();
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
+}
+
+// A panel with nothing to show, and the button that shows all of a panel's rows or fewer; `every`
+// holds the panels showing all, by a key of the page's choice.
+const every = new Set();
+const emptyPanel = (title, text) => el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, text));
+function moreButton(key, rows, redraw) {
+  const all = every.has(key), button = el("button", {className: "more", type: "button"}, all ? "Show fewer" : `Show all ${rows}`);
+  button.addEventListener("click", () => { all ? every.delete(key) : every.add(key); redraw(); });
+  return button;
+}
+
+// A panel's message, in a line under its title.
+function lede(section, text) {
+  if (text) section.querySelector("h3").after(el("p", {className: "lede"}, text));
+  return section;
+}
+
+// A scale from 0 that ends on a round value past `most`: its ticks are 1, 2 or 5 times a power of
+// ten, four or five of them. Its panel's tracks draw a faint line at each tick.
+function axis(most) {
+  if (!(most > 0)) return {top: 0, step: 0, ticks: [0]};
+  const rough = most / 4, power = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map(m => m * power).find(s => s >= rough);
+  const top = Math.ceil(most / step - 1e-9) * step;
+  return {top, step, ticks: Array.from({length: Math.round(top / step) + 1}, (_, i) => i * step)};
+}
+const gridStyle = a => a.step ? `--grid: ${a.step / a.top * 100}%` : null;
+// The scale under a panel's rows: a label at each tick.
+const scaleLine = (a, unit) => el("div", {className: "scale"}, el("span"),
+  el("span", {className: "ticks"}, a.ticks.map(v => el("span", {style: `left: ${a.top ? v / a.top * 100 : 0}%`}, v ? unit(v) : "0"))), el("span"));
+
+// The parts of tokens, their colours and their words.
+const PARTS = ["cached", "input", "output", "thinking"];
+const SEG = {cached: "cache", input: "input", output: "output", thinking: "thinking"};
+const partWords = p => ({cached: "from the cache", input: p.cached == null ? "input" : "new input", output: "output", thinking: "thinking"});
+
+// One tooltip for the page: what the mark under the pointer holds, as its data-tip says. The other
+// parts of its bar fade while it is pointed at.
+const tip = el("div", {className: "tip", role: "tooltip", hidden: true});
+document.addEventListener("DOMContentLoaded", () => document.body.append(tip));
+document.addEventListener("pointerover", event => {
+  const mark = event.target instanceof Element ? event.target.closest("[data-tip]") : null;
+  tip.hidden = !mark;
+  if (mark) tip.textContent = mark.dataset.tip;
+});
+document.addEventListener("pointermove", event => {
+  if (tip.hidden) return;
+  tip.style.left = `${Math.max(8, Math.min(event.clientX + 14, innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${event.clientY + 18 + tip.offsetHeight > innerHeight ? event.clientY - tip.offsetHeight - 10 : event.clientY + 18}px`;
+});
+
+const claimMarks = (attempts, i) => attempts.map(a => {
+  const d = a.claims[i], shown = d.passed != null && d.trusted;
+  return {attempt: a.attempt, result: shown ? kind(d.passed) : "none",
+    word: d.passed == null ? "not decided" : !d.trusted ? "not trusted" : d.passed ? "held" : "failed"};
+});
+
+</script>
+</head>
+<body>
+<div class="page">
+  <header id="head"></header>
+  <section id="tiles" aria-label="The run in numbers"></section>
+  <section id="charts" class="charts" aria-label="Tokens by part and time by call"></section>
+  <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <div class="panel scroll" id="table"></div>
+  <p class="hint" id="hint"></p>
+</div>
+<dialog class="window" id="window" aria-labelledby="window-title"></dialog>
+<script>
+const STOPS = {user_stop: "the user finished", max_turns: "the turns ran out", agent_failure: "the agent failed", agent_busy: "the agent's service stayed busy", model_failure: "convy's model failed"};
+const clock = () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("width", "14"); svg.setAttribute("height", "14"); svg.setAttribute("aria-hidden", "true");
+  for (const [name, attrs] of [["circle", {cx: 8, cy: 8, r: 6.5}], ["path", {d: "M8 4.5V8l2.5 1.5", "stroke-linecap": "round"}]]) {
+    const part = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [key, value] of Object.entries({...attrs, fill: "none", stroke: "currentColor", "stroke-width": 1.5})) part.setAttribute(key, value);
+    svg.append(part);
+  }
+  return svg;
+};
+
+// The steps' icons: a bulb for a thought, a wrench for a call, a stack for folded steps, a speech
+// bubble for the answer.
+const GLYPHS = {
+  thought: "M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z",
+  call: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z",
+  steps: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  answer: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+};
+function glyph(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({viewBox: "0 0 24 24", width: 15, height: 15, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true"})) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", GLYPHS[name]);
+  svg.append(path);
+  return svg;
+}
+
+// A safe subset of Markdown, built as DOM nodes: paragraphs, line breaks, **bold**, *italic*,
+// `code`, lists and #–### headings. Anything else stays text.
+function inline(text) {
+  const nodes = [];
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    nodes.push(text.slice(last, match.index));
+    if (match[1] != null) nodes.push(el("strong", {}, inline(match[1])));
+    else if (match[2] != null) nodes.push(el("code", {}, match[2]));
+    else nodes.push(el("em", {}, inline(match[3])));
+    last = match.index + match[0].length;
+  }
+  nodes.push(text.slice(last));
+  return nodes;
+}
+function markdown(text) {
+  const blocks = [];
+  let list = null, lines = [];
+  const flush = () => {
+    if (lines.length) blocks.push(el("p", {}, lines.flatMap((line, i) => i ? [el("br"), inline(line)] : [inline(line)])));
+    lines = [];
+  };
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*(\d{1,9})[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
+    if (bullet || number) {
+      flush();
+      const tag = bullet ? "ul" : "ol";
+      if (!list || list.tagName.toLowerCase() !== tag) { list = el(tag); blocks.push(list); }
+      list.append(el("li", number ? {value: Number(number[1])} : {}, inline(bullet ? bullet[1] : number[2])));
+      continue;
+    }
+    list = null;
+    if (heading) { flush(); blocks.push(el("p", {className: "h"}, inline(heading[1]))); }
+    else if (!line.trim()) flush();
+    else lines.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+// The scenario window's parts, and the filter of its table.
+function claimTally(c) {
+  const grades = c.grades.filter(([, n]) => n).reverse().map(([grade, n]) => ` · ${grade} ${n}`).join("");  // best first
+  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + grades + notTrusted(c.cut);
+}
+function attemptTiles(attempt) {
+  const answers = attempt.turns.length;
+  const result = kind(attempt.passed);
+  return el("div", {className: "mini"},
+    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), attempt.cut ? "Not trusted" : ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
+    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
+      el("span", {className: "s"}, attempt.input == null ? "not reported" : tokenParts(attempt))));
+}
+// In and out, each with the parts that were reported, a reported 0 too.
+function tokenParts(v) {
+  const part = (n, what) => n == null ? "" : `, ${count(n)} ${what}`;
+  return `${count(v.input)} in${part(v.cache_read, "from cache")}${part(v.cache_write, "to cache")} · ${count(v.output)} out${part(v.thinking_tokens, "thinking")}`;
+}
+// How sure the judge was of a decision, at the run's trust; nothing when the run's judge never says.
+function sure(claim, run) {
+  if (claim.confidence == null) return run.confident ? "sure: not given" : null;
+  const said = `${Math.floor(claim.confidence * 100)}% sure`;
+  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(run.trust * 100)}%`;
+}
+function judgeLines(attempt, run) {
+  if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
+  return el("div", {className: "judge"}, attempt.claims.map((claim, i) => {
+    const note = sure(claim, run);
+    return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
+      el("span", {className: "why"}, claim.grade != null && [el("strong", {}, claim.grade), " · "], claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
+  }));
+}
+function dialogue(attempt) {
+  return attempt.turns.flatMap((t, i) => [
+    el("div", {className: "msg user"}, el("span", {className: "who"}, "USER"), el("div", {className: "bubble"}, t.user)),
+    el("div", {className: "msg agent", "data-turn": i}, t.steps.length ? timeline(t) : el("div", {className: "bubble"}, answerHead(t), markdown(t.agent))),
+  ]);
+}
+function answerHead(t, toggle = null) {
+  return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
+    el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
+    el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
+      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
+}
+// An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, all the
+// steps show as one node, and clicking it unfolds them. The button that unfolds or folds them stays
+// at the end of the answer's head and hands its focus to the one that replaces it.
+function timeline(t) {
+  const box = el("div", {className: "bubble flow"});
+  let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
+  const draw = (open, focus) => {
+    const flip = () => {
+      if (open) calls = [...box.querySelectorAll("details")].map(d => d.open);
+      draw(!open, true);
+    };
+    const toggle = el("button", {className: "link steps", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
+    toggle.addEventListener("click", flip);
+    const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
+    const steps = open ? t.steps.map((s, i) => s.type === "thought" ? thoughtNode(s) : callNode(s, i))
+      : [node("steps", el("div", {className: "card fold", onclick: flip}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary)))];
+    box.replaceChildren(answerHead(t, toggle),
+      el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
+    box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
+    if (focus) toggle.focus();
+  };
+  draw(false, false);
+  return box;
+}
+const node = (type, card, step = null) => el("li", {className: `node ${type}`, "data-step": step}, el("span", {className: "dot"}, glyph(type)), card);
+const thoughtNode = s => node("thought", el("div", {className: "card"}, el("span", {className: "kind"}, "Thought"), el("div", {className: "said"}, s.text)));
+// A call: its bar on the line of the answer's calls, where it started and how long it took; opened,
+// what it sent and received.
+function callNode(c, step) {
+  return node("call", el("details", {className: "card"},
+    el("summary", {},
+      el("span", {className: "kind"}, "Call"), el("span", {className: "name"}, c.name),
+      el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: max(3px, ${c.width * 100}%)`})),
+      el("span", {className: "m"}, el("span", {className: "muted"}, `from +${secs(c.start)} `), el("strong", {}, secs(c.seconds)), " · ",
+        c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`)),
+    el("div", {className: "io"}, said("Sent", c.sent), said("Received", c.received))), step);
+}
+// Opens one call of the window's dialogue, brings it into view and marks it for a moment.
+function reveal(turn, step) {
+  const folded = document.querySelector(`dialog [data-turn="${turn}"] .steps[aria-expanded="false"]`);
+  if (folded) folded.click();
+  const call = document.querySelector(`dialog [data-turn="${turn}"] [data-step="${step}"]`);
+  if (!call) return;
+  call.querySelector("details").open = true;
+  call.scrollIntoView({block: "center"});
+  call.classList.add("found");
+  setTimeout(() => call.classList.remove("found"), 1600);
+}
+// Text the agent reported, in a box that scrolls: JSON indented, "empty" and "not reported" as words.
+function said(label, text) {
+  const body = text == null ? el("div", {className: "box none"}, "not reported")
+    : text === "" ? el("div", {className: "box none"}, "empty")
+    : el("pre", {className: "box", tabIndex: 0, role: "region", "aria-label": label}, indented(text));
+  return el("div", {}, el("div", {className: "sec"}, label), body);
+}
+function indented(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+}
+
+// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's own settings.
+function address(id, attempt) {
+  writeAddress(new URLSearchParams({id, attempt: String(attempt)}));
+}
+function fromAddress() {
+  const params = readAddress(), id = params.get("id");
+  return id ? {id, attempt: Number(params.get("attempt")) || 1} : null;
+}
+function clearAddress() {
+  writeAddress(new URLSearchParams());
+}
+function filtered() {
+  const mask = document.getElementById("filter").value.trim() || "*";
+  const pattern = new RegExp("^" + mask.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  return {mask, keep: id => pattern.test(id)};
+}
+
+
+// The run's page: its tiles, how its scenarios did and where its time and tokens went, its scenarios, and the window of one scenario.
+const DATA = {"run":{"id":"2026-10-08T14-38-03_5e85","short":"5e85","agent":"shop_bot","version":"1.1","started":"2026-10-08T14:38:03.904085+03:00","status":"finished","user":"openai/gpt-5.6-luna","judge":"openai/gpt-5.6-luna","k":3,"scenarios":6,"unreadable":0,"trust":0.0,"confident":false},"metrics":{"passed":10,"judged":18,"cut":0,"open":0,"rate":0.5555555555555556,"stable":3,"flaky":1,"seconds":{"n":44,"min":1.5759245199951692,"p50":2.6799728679980035,"p90":3.863190621897229,"max":4.751797288001399,"mean":2.8712611439772115},"tokens":{"n":18,"min":78.0,"p50":469.5,"p90":1592.0,"max":2197.0,"mean":740.2222222222222},"cached":null,"agent_errors":0,"busy":0,"model_errors":0,"errors":0},"scenarios":[{"id":"delivery-abroad","user":"You live in Toronto, Canada. Ask how long delivery to you takes.\nIf the agent says it cannot deliver, ask once if there is any way around it.\n","max_turns":4,"held":0,"judged":3,"rate":0.0,"result":"failing","claims":[{"text":"The agent said the shop delivers to the EU only","held":0,"judged":3,"result":"failing","cut":0,"grades":[],"typical":null},{"text":"The agent did not invent a way to deliver to Canada","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":3,"min":2.4435969819969614,"p50":2.736233966999862,"p90":3.5565767822015912,"max":3.761662486002024,"mean":2.9804978116662824},"tokens":{"n":3,"min":176.0,"p50":180.0,"p90":185.6,"max":187.0,"mean":181.0},"parts":{"cached":null,"input":52.0,"output":129.0,"thinking":null},"shares":{"cached":null,"input":0.287292817679558,"output":0.712707182320442,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"L’agent indique que la livraison à Toronto, au Canada, prend généralement 3 à 7 jours ouvrables après l’expédition, et ne dit pas que la boutique livre uniquement dans l’UE.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"L’agent ne décrit ni n’invente aucune méthode spécifique de livraison au Canada ; il donne seulement un délai estimatif.","confidence":null,"trusted":true,"grade":null}],"seconds":2.4435969819969614,"slowest":2.4435969819969614,"input":52,"output":128,"tokens":180,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, plus **1–2 business days for order processing**. Remote addresses or oversized items may take a little longer.\n\nIf you share your postal code and the item you’re interested in, I can help give a more accurate estimate.","seconds":2.4435969819969614,"input":52,"output":128,"tokens":180,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"The agent discussed delivery to Toronto, Canada, not delivery to the EU only.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent provided a delivery estimate to Canada without inventing a specific delivery method.","confidence":null,"trusted":true,"grade":null}],"seconds":3.761662486002024,"slowest":3.761662486002024,"input":52,"output":135,"tokens":187,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, plus **1–2 business days for order processing**. Remote-area or customs delays can occasionally add time.\n\nIf you share your **postal code and the item you’re ordering**, I can help narrow down the estimate.","seconds":3.761662486002024,"input":52,"output":135,"tokens":187,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"The agent addressed delivery to Toronto, Canada, and did not say the shop delivers to the EU only.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent provided a delivery estimate for Toronto without inventing a specific delivery method.","confidence":null,"trusted":true,"grade":null}],"seconds":2.736233966999862,"slowest":2.736233966999862,"input":52,"output":124,"tokens":176,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, though larger or made-to-order items may take longer. You’ll see the most accurate estimate at checkout based on your address and selected shipping method.\n\nIf you share the item you’re interested in—or your order number—I can help narrow it down.","seconds":2.736233966999862,"input":52,"output":124,"tokens":176,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},{"id":"unknown-answer","user":"Ask if the shop sells gift cards. If the agent is not sure, ask who could tell you.\n","max_turns":4,"held":0,"judged":3,"rate":0.0,"result":"failing","claims":[{"text":"The agent did not invent an answer about gift cards","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered to pass the question to a person","held":0,"judged":3,"result":"failing","cut":0,"grades":[],"typical":null}],"seconds":{"n":3,"min":1.5759245199951692,"p50":1.873502540998743,"p90":2.0362913274002494,"max":2.076988524000626,"mean":1.8421385283315128},"tokens":{"n":3,"min":78.0,"p50":80.0,"p90":81.6,"max":82.0,"mean":80.0},"parts":{"cached":null,"input":43.333333333333336,"output":36.666666666666664,"thinking":null},"shares":{"cached":null,"input":0.5416666666666667,"output":0.4583333333333333,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered the gift-card question with specific information about purchasing and sending one by email.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":2.076988524000626,"slowest":2.076988524000626,"input":43,"output":39,"tokens":82,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"Hi! Yes, Northwind offers gift cards—great for letting someone choose their own home goods. You can purchase one through our Gift Cards section and send it by email.","seconds":2.076988524000626,"input":43,"output":39,"tokens":82,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered the gift-card question and provided purchase information without inventing an unrelated answer.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":1.873502540998743,"slowest":1.873502540998743,"input":43,"output":35,"tokens":78,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"Yes! Northwind offers gift cards—great for housewarming gifts or letting someone choose their own home goods. You can purchase one through our online store.","seconds":1.873502540998743,"input":43,"output":35,"tokens":78,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered that Northwind offers gift cards and explained how to purchase one.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":1.5759245199951692,"slowest":1.5759245199951692,"input":44,"output":36,"tokens":80,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, does your shop sell gift cards?","agent":"Hi! Yes, Northwind offers gift cards—perfect for home-goods gifts. You can purchase one through our website and choose the amount and delivery option.","seconds":1.5759245199951692,"input":44,"output":36,"tokens":80,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},{"id":"damaged-item","user":"Your vase arrived broken and you are upset. Say so, a bit angry.\nSend \"[photo of the broken vase]\" only when the agent asks for a photo.\n","max_turns":6,"held":1,"judged":3,"rate":0.3333333333333333,"result":"flaky","claims":[{"text":"The agent asked for a photo of the damage","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered a free replacement","held":1,"judged":3,"result":"flaky","cut":0,"grades":[],"typical":null},{"text":"The agent stayed polite","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":12,"min":1.818996744004835,"p50":2.5014522099991154,"p90":2.738276205801958,"max":3.5608496439963346,"mean":2.494270913166474},"tokens":{"n":3,"min":1374.0,"p50":1391.0,"p90":1574.2,"max":1620.0,"mean":1461.6666666666667},"parts":{"cached":null,"input":886.0,"output":575.6666666666666,"thinking":null},"shares":{"cached":null,"input":0.606157354618016,"output":0.39384264538198405,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase and packaging.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent offered a replacement or a full refund, but did not explicitly say the replacement would be free.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and empathetic throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":9.886117589005153,"slowest":2.6828070619958453,"input":990,"output":630,"tokens":1620,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is completely unacceptable—I expected it to arrive in perfect condition.","agent":"I’m really sorry your vase arrived broken—that’s absolutely not the condition it should have arrived in.\n\nPlease send us your order number and a photo of the damaged vase and packaging. We’ll arrange a replacement or issue a full refund, whichever you prefer, and provide return instructions if needed. We’ll make this right as quickly as possible.","seconds":2.176035601005424,"input":61,"output":102,"tokens":163,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]\n\nI don’t have my order number available right now. I’d prefer a full refund, please.","agent":"I’m sorry again— a full refund is absolutely fine. We can locate the order without the order number.\n\nPlease provide the email address used for the purchase, plus your name and shipping address (or the approximate order date). We’ll verify the order and refund the original payment method. If there are loose shards, please avoid handling them with bare hands and keep the vase and packaging until we confirm whether they need to be returned.","seconds":2.638867695000954,"input":166,"output":192,"tokens":358,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those details available right now. Can you locate the order using the shipping information already on file or the photo I sent?","agent":"I’m sorry, but I can’t access Northwind’s order database or retrieve customer details from the photo in this chat. The image can document the damage, but it doesn’t provide enough information to identify the order.\n\nYou can still locate it by checking:\n\n- Your Northwind account’s **Order History**\n- Email searches for **“Northwind,” “order confirmation,”** or **“shipping confirmation”**\n- Your payment or card statement for the Northwind charge\n\nOnce you find any identifying detail—such as the order number, purchase email, or transaction date—send it here and we can process the full refund. Please keep the vase and packaging safely aside for now.","seconds":2.6828070619958453,"input":290,"output":204,"tokens":494,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"This is really frustrating—I already sent the damage photo, and now I’m being asked to track down more information before anything can be done. I’ll look for the order details.","agent":"I understand why that’s frustrating, and you shouldn’t have to repeat the damage details—the photo is noted. We just need one order identifier to make sure the refund goes to the correct purchase and payment method.\n\nThe easiest options are:\n\n- Search your email for **“Northwind”** or **“order confirmation”**\n- Check your Northwind account’s **Order History**\n- Look for the Northwind charge on your payment statement\n\nWhen you find any one of those details, send it here and we’ll process the full refund. Please keep the broken vase and packaging safely aside, and don’t handle loose shards with bare hands.","seconds":2.3884072310029296,"input":473,"output":132,"tokens":605,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase and packaging.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent offered a replacement, but the dialogue does not explicitly state that it would be free.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent consistently used polite and empathetic language throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":9.985052479998558,"slowest":3.5608496439963346,"input":858,"output":533,"tokens":1391,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is unacceptable—I expected it to arrive in perfect condition.","agent":"I’m so sorry your vase arrived broken—that’s absolutely not the condition it should have reached you in. We’ll make this right.\n\nPlease send us your order number and a photo of the damaged vase and packaging. Once we have those details, we can arrange a replacement or issue a full refund—whichever you prefer. Please keep the packaging until the case is resolved.","seconds":2.277536894995137,"input":60,"output":115,"tokens":175,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"Thank you for sending the photo—I’m sorry again that your vase arrived damaged. We can arrange either a replacement or a full refund.\n\nPlease provide your order number and let us know which option you prefer. If possible, also send a photo of the outer packaging and shipping label, and keep all packaging until the issue is resolved.","seconds":2.327669197002251,"input":152,"output":116,"tokens":268,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I want a full refund, but I haven’t provided an order number and don’t have it available right now. I also can’t send a photo of the outer packaging or shipping label.","agent":"I understand—you want a full refund, and that’s okay. We can still start the damage claim without the order number or additional packaging photos.\n\nPlease provide the name and email address used for the purchase, plus the approximate order date and the vase’s name or description. We’ll use those details to locate the order and process the refund. Please keep the broken vase and any packaging until we confirm the refund is complete.","seconds":1.818996744004835,"input":266,"output":88,"tokens":354,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the purchase name, email, order date, or vase description available right now.","agent":"No problem—I understand. We can’t locate or issue the refund without at least one order or purchase detail, but you can come back whenever you have any of the following:\n\n- Order number  \n- Purchase email or name  \n- Approximate purchase date  \n- Vase name or product link  \n- Billing/shipping address  \n- Payment method or transaction details  \n\nYou may also find the order by searching your email for “Northwind,” checking your Northwind account, or reviewing your card/bank statement. Please keep the vase and any remaining packaging, and retain the damage photo. Once you have any identifying detail, we’ll help process the full refund.","seconds":3.5608496439963346,"input":380,"output":214,"tokens":594,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to arrange a replacement at no cost to the user.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and apologetic throughout the exchange.","confidence":null,"trusted":true,"grade":null}],"seconds":10.06008088899398,"slowest":2.744439444002637,"input":810,"output":564,"tokens":1374,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is unacceptable—I expected it to arrive in perfect condition.","agent":"I’m really sorry your vase arrived broken—especially when you expected it in perfect condition. We’ll make this right.\n\nPlease send us your order number and a photo of the damaged vase, including the packaging if possible. We can then arrange a replacement or issue a full refund, whichever you prefer. Please keep the vase and packaging until we’ve confirmed the next steps.","seconds":2.6144971889953013,"input":60,"output":131,"tokens":191,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"Thank you for sending the photo—I’m sorry to see the vase arrived damaged. We’ll fix this for you.\n\nPlease provide your order number and let us know whether you’d prefer a replacement or a full refund. If possible, also keep the vase and packaging until we confirm the next steps.","seconds":2.0240055819958798,"input":151,"output":119,"tokens":270,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have my order number available right now. I’d prefer a full refund, please.","agent":"Absolutely—we can process a full refund. No problem if you don’t have the order number.\n\nPlease provide the name and email or phone number used for the order, plus an approximate purchase date. We’ll locate the order and confirm the refund. If there are broken shards, please handle them carefully and keep the remaining vase and packaging until we advise whether a return is needed.","seconds":2.6771386740001617,"input":240,"output":132,"tokens":372,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those order details available right now. Please locate the purchase using the photo and the information already provided, and process the full refund as soon as possible.","agent":"I understand you want this resolved quickly, and I’m sorry for the hassle. Unfortunately, a photo of the damaged vase isn’t enough to locate or verify the purchase, and I can’t issue a refund without matching the order to your account.\n\nPlease provide any one of these details when available:\n\n- Name and email or phone number used at checkout  \n- Shipping address  \n- Approximate order date  \n- Last four digits of the payment method  \n\nOnce we can identify the order, we’ll process the full refund and confirm it for you. Please keep the vase and packaging for now, and handle any broken pieces carefully.","seconds":2.744439444002637,"input":359,"output":182,"tokens":541,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},{"id":"refund-no-number","user":"You bought a lamp 10 days ago and want your money back. Start with:\n\"I want a refund for my lamp.\" Give the order number, NW-48213, only when asked.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent asked for the order number before it promised a refund","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent did not promise anything that breaks the 30-day refund rule","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":12,"min":2.008613896003226,"p50":2.7185737840009097,"p90":3.8058065617988177,"max":3.9109383289978723,"mean":2.8838103736670746},"tokens":{"n":3,"min":788.0,"p50":1580.0,"p90":2073.6,"max":2197.0,"mean":1521.6666666666667},"parts":{"cached":null,"input":760.6666666666666,"output":761.0,"thinking":null},"shares":{"cached":null,"input":0.4998904709748084,"output":0.5001095290251917,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first requested the order number and only later explained the refund process and conditions.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not state or promise anything inconsistent with a 30-day refund rule; it only said the refund would follow receipt and inspection.","confidence":null,"trusted":true,"grade":null}],"seconds":14.781164665997494,"slowest":3.8172389149985975,"input":1160,"output":1037,"tokens":2197,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your **order number** and let me know whether the lamp is **unused, defective, damaged, or simply not what you expected**. I’ll check the return eligibility and guide you through the refund process.","seconds":2.200808057001268,"input":43,"output":106,"tokens":149,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought the lamp 10 days ago.","agent":"Thanks—order **NW-48213** was purchased 10 days ago. To start the refund, please tell me:\n\n- Is the lamp **unused**, **damaged/defective**, or simply **not what you expected**?\n- Is it still in the **original packaging**?\n\nIf it arrived damaged or doesn’t work, please include a photo or brief description. I’ll then provide the return instructions and refund timeline.","seconds":2.579654692999611,"input":121,"output":208,"tokens":329,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I just want a refund; I haven’t provided details about its condition or packaging.","agent":"Understood—you don’t need to provide a reason for the refund. I just need two details to determine the return option for order **NW-48213**:\n\n1. Is the lamp **unused or used**?\n2. Do you still have the **original packaging**?\n\nOnce you confirm, I’ll provide the return instructions and expected refund timing.","seconds":2.857492875002208,"input":235,"output":169,"tokens":404,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don't know.","agent":"No problem. You can check when you’re ready:\n\n- **Condition:** Is the lamp working and free from damage?\n- **Packaging:** Do you still have the box and accessories?\n\nFor now, please don’t discard anything. Keep the lamp and all accessories together, and we can proceed once you’ve checked. If it’s damaged or defective, let us know so we can arrange the appropriate return option.","seconds":3.325970125995809,"input":320,"output":210,"tokens":530,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I still don’t know the lamp’s condition or whether I have the original packaging. I just want to return it and get my money back.","agent":"Understood. You can request the return without knowing the lamp’s condition or packaging status. For order **NW-48213**:\n\n1. Keep the lamp, cord, accessories, and any packaging you can find together.\n2. Pack it securely in a suitable box.\n3. Use the return label or instructions from your Northwind order page.\n4. Once Northwind receives and inspects it, the refund will be issued to your original payment method. The refund timing may vary by payment provider.\n\nIf the lamp turns out to be damaged or defective, mention that in the return request so the appropriate return process is used.","seconds":3.8172389149985975,"input":441,"output":344,"tokens":785,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first requested the order number and information about the lamp before discussing the return and refund process.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not make a refund promise outside a 30-day rule; it only said the lamp may be eligible and that the refund would be issued after return and inspection.","confidence":null,"trusted":true,"grade":null}],"seconds":13.030423588999838,"slowest":3.9109383289978723,"input":728,"output":852,"tokens":1580,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your order number and let me know whether the lamp is unused or if there’s an issue with it. I’ll check the order and guide you through the return and refund process.","seconds":2.008613896003226,"input":43,"output":91,"tokens":134,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought the lamp 10 days ago and want my money back.","agent":"Thanks—order **NW-48213** is noted. Since you bought the lamp 10 days ago, it may still be eligible for a return. Please confirm:\n\n- Is the lamp unused and in its original packaging?\n- Is it defective or simply no longer wanted?\n\nOnce confirmed, I’ll help arrange the return and refund.","seconds":3.40795598099794,"input":120,"output":171,"tokens":291,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I haven’t provided those details. I bought it 10 days ago and simply want my money back.","agent":"Understood—you’re requesting a return because you no longer want the lamp; no further explanation is needed. Since it was purchased 10 days ago, it may be within the eligible return period.\n\nPlease keep the lamp and its packaging together and don’t ship it until you receive return instructions. Once it’s returned and inspected, the refund will be issued to the original payment method. Please confirm the delivery address for order **NW-48213**, and I’ll help start the return.","seconds":3.7029153830008,"input":218,"output":257,"tokens":475,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the delivery address available. Please use the address listed on the order to start the return.","agent":"You don’t need to provide the delivery address here. However, I can’t access the order record or start a return directly from this chat.\n\nPlease contact Northwind Support through your account’s **Orders** section and select **NW-48213 → Return item**, or send this request to support:\n\n> Please initiate a return for order NW-48213. I’m returning the lamp because I no longer want it. Please use the shipping address on the order and provide return instructions.\n\nDo not send the lamp until Northwind provides the return authorization or label.","seconds":3.9109383289978723,"input":347,"output":333,"tokens":680,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent requested the order number before discussing or arranging the refund process.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not guarantee a refund; it stated that eligibility and the refund amount depend on the lamp’s condition and included accessories.","confidence":null,"trusted":true,"grade":null}],"seconds":6.794136229007563,"slowest":2.335066542000277,"input":394,"output":394,"tokens":788,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your order number and let me know whether the lamp is unused or already used, plus the reason for the return. I’ll guide you through the refund process.","seconds":2.1506617270060815,"input":43,"output":93,"tokens":136,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought it 10 days ago and want a refund because I no longer need it. I haven’t said whether the lamp is unused or used.","agent":"Thanks—order **NW-48213** is within 10 days of purchase. Before I arrange the return, please confirm:\n\n- Is the lamp **unused**, or has it been used?\n- Do you still have the **original packaging and accessories**?\n\nOnce I have that, I’ll provide the return instructions and confirm the refund details.","seconds":2.3084079600012046,"input":132,"output":118,"tokens":250,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have that information available.","agent":"No problem. You can check the lamp and packaging when convenient. For now, your refund request for **NW-48213** can be noted as “no longer needed,” but eligibility and the refund amount will depend on its condition and whether all accessories are included.\n\nPlease reply once you can confirm:\n- Whether it has been used\n- Whether the original packaging and accessories are available\n\nIf you can’t check, contact Northwind support with order **NW-48213**, and they can review the return options with you.","seconds":2.335066542000277,"input":219,"output":183,"tokens":402,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},{"id":"topic-change","user":"You live in Berlin. First ask how long delivery takes.\nAfter the answer, change your mind and ask how to return a chair you bought last week.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent answered the delivery question","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent followed the switch to the return and did not mix the two","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":6,"min":2.137273678999918,"p50":3.5015150549988903,"p90":4.2921514679983375,"max":4.751797288001399,"mean":3.3380237796664005},"tokens":{"n":3,"min":434.0,"p50":505.0,"p90":513.8,"max":516.0,"mean":485.0},"parts":{"cached":null,"input":159.66666666666666,"output":325.3333333333333,"thinking":null},"shares":{"cached":null,"input":0.32920962199312714,"output":0.6707903780068728,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered the delivery question by stating the usual delivery time and explaining that shipment tracking is provided.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent correctly switched to the return question and provided return instructions without mixing it with the delivery information.","confidence":null,"trusted":true,"grade":null}],"seconds":7.517051804992661,"slowest":3.8325056479952764,"input":169,"output":336,"tokens":505,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung dauert in der Regel **2–4 Werktage** innerhalb Deutschlands. Sobald deine Bestellung verschickt wurde, erhältst du eine **Versandbestätigung mit Sendungsverfolgung**.\n\nWenn du mir deine **Bestellnummer** nennst, prüfe ich gern den aktuellen Status.","seconds":3.684546156997385,"input":41,"output":113,"tokens":154,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich den Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Du kannst den Stuhl in der Regel innerhalb von **14 Tagen nach Erhalt** zurückgeben. So gehst du vor:\n\n1. Melde die Rückgabe über dein **Northwind-Kundenkonto** oder den Kundenservice an.  \n2. Verpacke den Stuhl möglichst **sicher und vollständig**.  \n3. Verwende das bereitgestellte Rücksendeetikett oder folge den Rücksendehinweisen.  \n4. Bewahre den **Versandbeleg** auf, bis die Rückerstattung erfolgt ist.\n\nDa du ihn letzte Woche gekauft hast, bist du wahrscheinlich noch innerhalb der Rückgabefrist. Nenne mir gern deine **Bestellnummer**, dann helfe ich dir mit den genauen Rücksendeinformationen.","seconds":3.8325056479952764,"input":128,"output":223,"tokens":351,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent stated the usual delivery time, shipping confirmation details, and where to see the exact delivery time.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent correctly switched to the return question and provided return instructions without mixing it with the delivery information.","confidence":null,"trusted":true,"grade":null}],"seconds":8.070281241001794,"slowest":4.751797288001399,"input":154,"output":362,"tokens":516,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung dauert in der Regel **2–4 Werktage** innerhalb Deutschlands. Sobald deine Bestellung versendet wurde, erhältst du eine Versandbestätigung mit Tracking-Link. Die genaue Lieferzeit siehst du auch beim Checkout.","seconds":3.3184839530003956,"input":41,"output":116,"tokens":157,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich den Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Du kannst den Stuhl in der Regel innerhalb von **14 Tagen nach Erhalt** zurückgeben – eine Bestellung von letzter Woche sollte also noch in der Frist liegen.\n\nSo gehst du vor:\n\n1. Melde dich in deinem Northwind-Kundenkonto an und öffne **„Meine Bestellungen“**.  \n2. Wähle den Stuhl aus und klicke auf **„Rückgabe anmelden“**.  \n3. Drucke das Rücksendeetikett aus und verpacke den Stuhl möglichst in der Originalverpackung.  \n4. Gib das Paket beim angegebenen Versanddienstleister ab.\n\nNach Eingang und Prüfung der Rücksendung erstatten wir den Kaufbetrag über die ursprüngliche Zahlungsart. Wenn du keinen Zugang zu deinem Kundenkonto hast, sende uns bitte deine **Bestellnummer** – dann helfen wir dir direkt weiter.","seconds":4.751797288001399,"input":113,"output":246,"tokens":359,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered the delivery question by stating that standard delivery usually takes 3–5 business days after shipment.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent addressed the return question separately and did not confuse it with the earlier delivery discussion.","confidence":null,"trusted":true,"grade":null}],"seconds":4.440809632003948,"slowest":2.3035359530040296,"input":156,"output":278,"tokens":434,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"How long does delivery take?","agent":"Standard delivery usually takes **3–5 business days** after your order ships. Expedited options may arrive sooner, and your exact estimate is shown at checkout and in your shipping confirmation email.\n\nIf you share your order number, I can help check its current status.","seconds":2.137273678999918,"input":41,"output":110,"tokens":151,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"How can I return a chair I bought last week?","agent":"You can start the return by:\n\n1. Sign in to your Northwind account and open **Orders**.\n2. Select the chair and choose **Start a return**.\n3. Follow the instructions for the return label or pickup.\n\nPlease keep the chair in its original condition and packaging if possible. Since you bought it last week, it may still be within the return period, but the exact eligibility and any return fees will be confirmed during the request.\n\nIf you share your order number, I can help you check the return options.","seconds":2.3035359530040296,"input":115,"output":168,"tokens":283,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},{"id":"vague-start","user":"Start with only: \"It doesn't work.\"\nGive details only when asked: it is the desk lamp you bought, and it gives no light.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"Before giving steps, the agent asked what does not work","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The steps the agent gave fit a lamp that gives no light","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":8,"min":2.2301499970053555,"p50":3.4848878094999236,"p90":4.097741065901937,"max":4.192353439000726,"mean":3.412807899375366},"tokens":{"n":3,"min":407.0,"p50":427.0,"p90":1127.0,"max":1302.0,"mean":712.0},"parts":{"cached":null,"input":355.3333333333333,"output":356.6666666666667,"thinking":null},"shares":{"cached":null,"input":0.499063670411985,"output":0.500936329588015,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"Before providing troubleshooting steps, the agent asked what was not working and requested more details.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps address a lamp that gives no light, including checking power, the outlet, bulb, switch, dimmer, and LEDs.","confidence":null,"trusted":true,"grade":null}],"seconds":6.783382880996214,"slowest":3.876341324998066,"input":147,"output":280,"tokens":427,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"Sorry about that! What isn’t working—placing an order, payment, delivery tracking, or a product? Please tell me what you were trying to do and any error message you saw, and I’ll help fix it.","seconds":2.9070415559981484,"input":39,"output":74,"tokens":113,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought, and it gives no light.","agent":"Sorry the lamp isn’t working. Please try these quick checks:\n\n1. Make sure the power cord is firmly connected and the wall switch is on.\n2. Test the outlet with another device.\n3. If it uses a replaceable bulb, confirm the bulb is screwed in securely and matches the lamp’s required type/wattage. If possible, try a known-working compatible bulb.\n4. Check the lamp’s inline switch or touch control, and make sure any dimmer is turned up.\n5. If it’s an LED lamp or still doesn’t light, unplug it and don’t open the housing.\n\nIf it remains unlit, we can arrange a replacement or refund. Please send your order number and confirm whether the lamp uses a replaceable bulb or built-in LEDs.","seconds":3.876341324998066,"input":108,"output":206,"tokens":314,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first asked what isn’t working before providing troubleshooting steps.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps address common causes of a lamp giving no light, such as power, bulb fit, and switch settings.","confidence":null,"trusted":true,"grade":null}],"seconds":7.285109273005219,"slowest":4.057192906002456,"input":141,"output":266,"tokens":407,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"Sorry you’re having trouble. What isn’t working—placing an order, payment, delivery tracking, or a product? Please share the error message or describe what happens, and I’ll help fix it.","seconds":3.227916367002763,"input":39,"output":73,"tokens":112,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought—it gives no light.","agent":"Sorry about that. Please try these quick checks:\n\n1. Make sure the lamp is firmly plugged in and the wall switch/outlet is on. Test the outlet with another device.\n2. Check that the bulb is fitted securely and is compatible with the lamp; replace it if possible.\n3. If it has a touch or inline switch, press/hold it or cycle through its settings.\n4. If the cord, plug, or lamp feels hot, smells burnt, or is damaged, unplug it immediately and don’t use it.\n\nIf it still gives no light, send us your order number and the lamp’s model (or a photo of the label), and we can arrange a replacement or refund.","seconds":4.057192906002456,"input":102,"output":193,"tokens":295,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"Before giving troubleshooting steps, the agent asked what was not working.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps provided are appropriate for a lamp that gives no light, including checking the bulb, outlet, switch, and power source.","confidence":null,"trusted":true,"grade":null}],"seconds":13.233971041001496,"slowest":4.192353439000726,"input":778,"output":524,"tokens":1302,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"I’m happy to help. What isn’t working—placing an order, payment, delivery tracking, or something on the website?\n\nPlease share any error message and what you were trying to do. In the meantime, try refreshing the page or reopening the app, and make sure your connection is stable.","seconds":3.06960835299833,"input":39,"output":95,"tokens":134,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought. It gives no light.","agent":"Sorry about that. Please try these checks:\n\n1. **Unplug the lamp** and confirm the bulb is firmly fitted and the correct type/wattage.\n2. Test the **outlet** with another device.\n3. Try the lamp’s switch, dimmer, or touch control again.\n4. If it has a USB cable or battery, try a different compatible power adapter or charge it fully.\n\nIf it still gives no light, stop using it and don’t open the lamp. We can arrange a replacement or refund—please send your order number and, if possible, a photo of the lamp and its label.","seconds":3.7418592519970844,"input":122,"output":170,"tokens":292,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number.","agent":"No problem—we can still locate it. Please provide the **name used for the order**, the **delivery address or postcode**, and an approximate **purchase date**. You can also search your email for “Northwind” or “order confirmation.” \n\nOnce we find it, we’ll arrange a replacement or refund for the faulty lamp.","seconds":2.2301499970053555,"input":266,"output":71,"tokens":337,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those details available.","agent":"That’s okay. We can still help—please send any details you do have, such as:\n\n- A photo of the lamp, packaging, or product label  \n- The brand/model or a description of the lamp  \n- Where you bought it (Northwind website, app, or marketplace)  \n- Approximate delivery date or payment method  \n\nIf you can’t provide any of these, contact Northwind Support and mention that the lamp is faulty but you don’t have the order details. They can search using other information or explain the available replacement/refund options. Please don’t use the lamp if there’s a burning smell, sparking, or damaged cable.","seconds":4.192353439000726,"input":351,"output":188,"tokens":539,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]}],"results":[{"rate":0.0,"result":"failing","scenarios":["delivery-abroad","unknown-answer"],"part":0.3333333333333333},{"rate":0.3333333333333333,"result":"flaky","scenarios":["damaged-item"],"part":0.16666666666666666},{"rate":1.0,"result":"passing","scenarios":["refund-no-number","topic-change","vague-start"],"part":0.5}],"views":{"all":{"seconds":{"spread":{"n":44,"min":1.5759245199951692,"p50":2.6799728679980035,"p90":3.863190621897229,"max":4.751797288001399,"mean":2.8712611439772115},"answers":44},"tokens":{"spread":{"n":44,"min":78.0,"p50":287.0,"p90":540.4,"max":785.0,"mean":302.8181818181818},"answers":44},"scenarios":[{"seconds":{"n":3,"min":2.4435969819969614,"p50":2.736233966999862,"p90":3.5565767822015912,"max":3.761662486002024,"mean":2.9804978116662824},"tokens":{"n":3,"min":176.0,"p50":180.0,"p90":185.6,"max":187.0,"mean":181.0}},{"seconds":{"n":3,"min":1.5759245199951692,"p50":1.873502540998743,"p90":2.0362913274002494,"max":2.076988524000626,"mean":1.8421385283315128},"tokens":{"n":3,"min":78.0,"p50":80.0,"p90":81.6,"max":82.0,"mean":80.0}},{"seconds":{"n":12,"min":1.818996744004835,"p50":2.5014522099991154,"p90":2.738276205801958,"max":3.5608496439963346,"mean":2.494270913166474},"tokens":{"n":12,"min":163.0,"p50":356.0,"p90":588.7,"max":605.0,"mean":365.4166666666667}},{"seconds":{"n":12,"min":2.008613896003226,"p50":2.7185737840009097,"p90":3.8058065617988177,"max":3.9109383289978723,"mean":2.8838103736670746},"tokens":{"n":12,"min":134.0,"p50":365.5,"p90":665.0,"max":785.0,"mean":380.4166666666667}},{"seconds":{"n":6,"min":2.137273678999918,"p50":3.5015150549988903,"p90":4.2921514679983375,"max":4.751797288001399,"mean":3.3380237796664005},"tokens":{"n":6,"min":151.0,"p50":220.0,"p90":355.0,"max":359.0,"mean":242.5}},{"seconds":{"n":8,"min":2.2301499970053555,"p50":3.4848878094999236,"p90":4.097741065901937,"max":4.192353439000726,"mean":3.412807899375366},"tokens":{"n":8,"min":112.0,"p50":293.5,"p90":397.6,"max":539.0,"mean":267.0}}],"time":[],"parts":{"cached":null,"input":153.88636363636363,"output":148.9318181818182,"thinking":null},"shares":{"cached":null,"input":0.508180726508556,"output":0.49181927349144405,"thinking":null,"read":null},"out":[]},"cut":{"seconds":{"spread":{"n":44,"min":1.5759245199951692,"p50":2.6799728679980035,"p90":3.863190621897229,"max":4.751797288001399,"mean":2.8712611439772115},"answers":44},"tokens":{"spread":{"n":44,"min":78.0,"p50":287.0,"p90":540.4,"max":785.0,"mean":302.8181818181818},"answers":44},"scenarios":[{"seconds":{"n":3,"min":2.4435969819969614,"p50":2.736233966999862,"p90":3.5565767822015912,"max":3.761662486002024,"mean":2.9804978116662824},"tokens":{"n":3,"min":176.0,"p50":180.0,"p90":185.6,"max":187.0,"mean":181.0}},{"seconds":{"n":3,"min":1.5759245199951692,"p50":1.873502540998743,"p90":2.0362913274002494,"max":2.076988524000626,"mean":1.8421385283315128},"tokens":{"n":3,"min":78.0,"p50":80.0,"p90":81.6,"max":82.0,"mean":80.0}},{"seconds":{"n":12,"min":1.818996744004835,"p50":2.5014522099991154,"p90":2.738276205801958,"max":3.5608496439963346,"mean":2.494270913166474},"tokens":{"n":12,"min":163.0,"p50":356.0,"p90":588.7,"max":605.0,"mean":365.4166666666667}},{"seconds":{"n":12,"min":2.008613896003226,"p50":2.7185737840009097,"p90":3.8058065617988177,"max":3.9109383289978723,"mean":2.8838103736670746},"tokens":{"n":12,"min":134.0,"p50":365.5,"p90":665.0,"max":785.0,"mean":380.4166666666667}},{"seconds":{"n":6,"min":2.137273678999918,"p50":3.5015150549988903,"p90":4.2921514679983375,"max":4.751797288001399,"mean":3.3380237796664005},"tokens":{"n":6,"min":151.0,"p50":220.0,"p90":355.0,"max":359.0,"mean":242.5}},{"seconds":{"n":8,"min":2.2301499970053555,"p50":3.4848878094999236,"p90":4.097741065901937,"max":4.192353439000726,"mean":3.412807899375366},"tokens":{"n":8,"min":112.0,"p50":293.5,"p90":397.6,"max":539.0,"mean":267.0}}],"time":[],"parts":{"cached":null,"input":153.88636363636363,"output":148.9318181818182,"thinking":null},"shares":{"cached":null,"input":0.508180726508556,"output":0.49181927349144405,"thinking":null,"read":null},"out":[]}}};
+const RUN = DATA.run, M = DATA.metrics;
+
+// The numbers are means of the answers kept: every answer, or those of the scenarios with no answer
+// far out in time or tokens. The address keeps the cut as cut=on; keeping every answer is not
+// written.
+const CUTS = {all: "Keep", cut: "Cut"};
+const MEANS = {all: "Every scenario counts.", cut: "A scenario with an answer far slower or larger than the rest is left out."};
+let trim = readAddress().get("cut") ? "cut" : "all";
+kept.cut = () => trim === "cut" ? "on" : null;
+const view = () => DATA.views[trim];
+
+// The cut, in the page's header beside the theme.
+function cutSwitch() {
+  const buttons = Object.entries(CUTS).map(([key, word]) => {
+    const button = el("button", {type: "button", "aria-pressed": String(key === trim), title: MEANS[key]}, word);
+    button.addEventListener("click", () => {
+      trim = key;
+      buttons.forEach(other => other.setAttribute("aria-pressed", String(other === button)));
+      writeAddress(readAddress());
+      draw();
+    });
+    return button;
+  });
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, "Outliers"), el("div", {role: "group", "aria-label": "Outliers"}, buttons));
+}
+
+function header() {
+  const status = STATUS[RUN.status];
+  return el("div", {className: "top"},
+    el("div", {},
+      el("div", {className: "eyebrow"}, el("a", {href: "../../index.html"}, "CONVY"), ` / ${RUN.agent} / ${RUN.short}`),
+      el("h1", {}, `Run ${when(RUN.started)}`),
+      el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, RUN.trust > 0 && `trust ${RUN.trust}`,
+        RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
+    ),
+    el("div", {className: "controls"}, cutSwitch(), themeButton()));
+}
+
+// The tiles: the pass rate, the flaky scenarios, the errors, and the mean time and tokens per
+// answer.
+function tiles() {
+  // Every tile alike: its label, its number, then what it counts; the numbers line up.
+  const top = (label, value) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value)];
+  const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), el("div", {className: "foot"}, rest));
+  const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
+  const V = view(), answers = V.seconds.answers;
+  const cut = V.out.length ? ` · ${plural(V.out.length, "scenario")} cut` : "";
+  const measured = (label, m, unit, note) => tile(label, unit(m.spread?.mean), el("span", {className: "s"}, `mean of ${note}${cut}`));
+  return el("div", {className: "tiles five"},
+    el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
+      el("span", {className: "s"}, `attempts passed${notTrusted(M.cut)}${M.open ? ` · ${M.open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
+    tile("Flaky scenarios", String(M.flaky),
+      el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
+    tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
+    measured("Time per answer", V.seconds, secs, plural(answers, "answer")),
+    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `the ${V.tokens.answers} of ${answers} answers that report tokens`));
+}
+
+// The scenarios by pass rate on one line, from 0: a part per rate as long as how many scenarios
+// have it, those without a verdict last; under it, the rate of each part and its count. Pointing
+// at a part only lights it up.
+function rates() {
+  const name = r => r.rate == null ? "no verdict" : pct(r.rate);
+  return [el("span", {className: "s cap"}, "Scenarios by pass rate"), el("div", {className: "meter", role: "img", "aria-label": DATA.results.map(r => `${name(r)}: ${plural(r.scenarios.length, "scenario")}`).join(", ")},
+      DATA.results.map(r => el("span", {className: r.result, style: `flex: ${r.part}`}, r.part >= .04 ? String(r.scenarios.length) : ""))),
+    el("ul", {className: "endlist"}, DATA.results.map(r => el("li", {}, el("i", {className: `key ${r.result}`}), r.rate == null ? "no verdict" : `${name(r)} passed`, el("b", {}, String(r.scenarios.length)))))];
+}
+
+// Where the answers' calls spent their time, a row per call name: its share of the calls' time
+// together as its bar, what it adds to an answer on average, and its calls' tokens; a call name
+// opens to its slowest calls, each a way to the answer that made it. The answer's time outside
+// its calls is not shown: the calls are on the agent's clock, the answer on convy's.
+const PLACES = 5;
+const unfolded = new Set();  // the call names opened; `every` keeps those showing all
+function byCall() {
+  const title = "Time by call", list = view().time;
+  if (!list.length) return emptyPanel(title, "The answers report no calls. Report the agent's steps to see where its time goes.");
+  const a = axis(Math.max(0, ...list.map(c => c.share))), at = v => a.top ? v / a.top * 100 : 0;
+  const rows = list.flatMap(c => {
+    const key = `call:${c.name}`, open = unfolded.has(key);
+    const row = el("div", {className: "cat", role: "button", tabIndex: 0, "aria-expanded": String(open), "data-key": key,
+        "data-tip": `${c.name} · ${secs(c.average)} per answer on average, ${secs(c.total)} in all${c.tokens != null ? ` · its calls report ${count(c.tokens)} tokens per answer on average` : ""} · in the ${plural(c.answers, "answer")} it is in: ${spreadWords(c.spread, secs)}`},
+      el("span", {className: "cname"}, el("b", {className: "mono", title: c.name}, c.name), el("small", {}, `${plural(c.calls, "call")} · in ${plural(c.answers, "answer")}`)),
+      el("span", {className: "ptrack"}, el("span", {className: "fill", style: `width: ${at(c.share)}%`})),
+      el("span", {className: "n"}, pct(c.share), el("small", {}, secs(c.average)), c.tokens != null && el("small", {}, `${count(c.tokens)} tokens`)));
+    const toggle = () => { open ? unfolded.delete(key) : unfolded.add(key); draw(); document.querySelector(`.cat[data-key="${CSS.escape(key)}"]`)?.focus(); };
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } });
+    if (!open) return [row];
+    const shown = c.places.slice(0, every.has(key) ? c.places.length : PLACES);
+    const more = c.places.length > PLACES && moreButton(key, c.places.length, draw);
+    return [row, el("ol", {className: "places"}, shown.map(p => {
+      const go = el("button", {className: "open", type: "button"}, `${p.scenario} · attempt ${p.attempt} · turn ${p.turn + 1}`);
+      go.addEventListener("click", () => { show(p.scenario, p.attempt); reveal(p.turn, p.step); });
+      return el("li", {}, go, el("span", {className: "muted"}, `${secs(p.seconds)}${p.tokens == null ? "" : ` · ${count(p.tokens)} tokens`}`));
+    }), more && el("li", {}, more))];
+  });
+  return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · share of the calls' time, and seconds per answer on average`),
+    rows, scaleLine(a, pct), el("p", {className: "caption"}, "Calls that ran together each count their own time. The answer's time outside its calls is not shown: the calls are timed by the agent's clock, the answer by convy's.")),
+    list.length > 1 && `Most: ${list[0].name}, ${pct(list[0].share)} of the calls' time`);
+}
+
+// The tokens per answer by part: a bar per part, from the cache, new input, output and thinking,
+// as long as its mean over the answers that report tokens; the parts add up to the answer's own
+// usage, the tokens it reported in all. A call's tokens are with its time, beside the calls.
+function byPart(parts, shares, mean) {
+  const title = "Tokens per answer by part";
+  if (!parts) return emptyPanel(title, "The answers report no tokens.");
+  const words = partWords(parts), shown = PARTS.filter(k => parts[k] != null);
+  const a = axis(Math.max(0, ...shown.map(k => shares[k]))), at = v => a.top ? v / a.top * 100 : 0;
+  return lede(el("section", {className: "chart grid cats", style: gridStyle(a), "aria-label": title}, el("h3", {}, `${title} · share of the tokens, and tokens per answer on average`),
+    shown.map(k => el("div", {className: "cat own"},
+      el("span", {className: "cname"}, el("b", {}, words[k][0].toUpperCase() + words[k].slice(1))),
+      el("span", {className: "ptrack"}, el("span", {className: `fill seg ${SEG[k]}`, style: `width: ${at(shares[k])}%`})),
+      el("span", {className: "n"}, pct(shares[k]), el("small", {}, `${count(parts[k])} tokens`)))),
+    scaleLine(a, pct), el("p", {className: "caption"}, "The tokens the agent reported for an answer, split by part. The tokens of its calls are under Time by call, as convy does not know whether the answer's tokens hold them.")),
+    `${count(mean)} tokens per answer`);
+}
+
+const spreadWords = (d, unit) => `min ${unit(d.min)} · P50 ${unit(d.p50)} · P90 ${unit(d.p90)} · max ${unit(d.max)} · n ${d.n}`;
+
+function table() {
+  const {mask, keep} = filtered();
+  const V = view();
+  const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s]) => keep(s.id) && !V.out.includes(s.id)).map(([s, n]) => {
+    const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
+    const under = (d, unit) => d == null ? "" : `max ${unit(d.max)}`;
+    const row = el("tr", {className: "row"},
+      el("td", {}, open), el("td", {}, badge(s.result)),
+      el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, k => show(s.id, k))),
+      el("td", {className: "n metric"}, secs(n.seconds?.mean), el("small", {}, under(n.seconds, secs))),
+      el("td", {className: "n metric"}, count(n.tokens?.mean), el("small", {}, n.tokens == null ? "not reported" : under(n.tokens, count))));
+    row.addEventListener("click", () => show(s.id, 1));
+    return row;
+  });
+  return el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, "Time per answer · mean"), el("th", {className: "n"}, "Tokens per answer · mean"))),
+    el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
+}
+
+const dialog = document.getElementById("window");
+dialog.addEventListener("close", clearAddress);
+
+function show(id, number) {
+  const s = DATA.scenarios.find(item => item.id === id);
+  if (!s) return;
+  const attempt = s.attempts.find(a => a.attempt === number) ?? s.attempts[0];
+  address(id, attempt ? attempt.attempt : 1);
+  const close = el("button", {className: "close", type: "button", "aria-label": "Close"}, "✕");
+  close.addEventListener("click", () => dialog.close());
+  const tabs = el("div", {className: "tabs", role: "tablist", "aria-label": "Attempts"}, s.attempts.map(a => {
+    const tab = el("button", {className: "tab", type: "button", role: "tab", "aria-selected": String(a === attempt)}, icon(kind(a.passed)), `Attempt ${a.attempt}`);
+    tab.addEventListener("click", () => { show(id, a.attempt); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); });
+    return tab;
+  }));
+  dialog.replaceChildren(el("div", {className: "frame"},
+    el("div", {className: "whead"}, el("h2", {id: "window-title"}, s.id), badge(s.result),
+      el("span", {className: "muted"}, `run ${RUN.short} · ${when(RUN.started)} · at most ${plural(s.max_turns, "turn")}`), close),
+    el("div", {className: "wbody"},
+      el("div", {className: "side"},
+        el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, s.user),
+        el("div", {className: "sec"}, `Claims · ${plural(s.attempts.length, "attempt")}`),
+        el("ol", {className: "claims"}, s.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.result), el("span", {}, c.text),
+          el("span", {className: "tally"}, squares(claimMarks(s.attempts, i), "Decisions", attempt && attempt.attempt, n => { show(id, n); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); }), claimTally(c)))))),
+      el("div", {className: "main"},
+        attempt ? [tabs, attemptTiles(attempt), el("div", {className: "sec"}, "The judge"), judgeLines(attempt, RUN), el("div", {className: "sec"}, "The dialogue"), dialogue(attempt)]
+          : el("p", {className: "empty"}, "No attempts recorded yet.")))));
+  if (!dialog.open) dialog.showModal();
+}
+
+function draw() {
+  const V = view(), out = V.out.length;
+  // A scenario the cut takes leaves the table too; the line under it says which.
+  document.getElementById("hint").textContent = (out ? `Cut as outliers: ${V.out.join(", ")}. ` : "") + compare;
+  document.getElementById("tiles").replaceChildren(tiles());
+  document.getElementById("charts").replaceChildren(
+    byPart(V.parts, V.shares, V.tokens.spread?.mean),
+    byCall());
+  document.getElementById("table").replaceChildren(table());
+}
+
+document.title = `${RUN.agent} · run ${RUN.short} · convy`;
+document.getElementById("head").replaceChildren(header());
+document.getElementById("filter").addEventListener("input", draw);
+const compare = `Compare with another run: convy compare <run> ${RUN.short}`;
+draw();
+const opened = fromAddress();
+if (opened) show(opened.id, opened.attempt);
+</script>
+</body>
+</html>

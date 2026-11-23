@@ -16,32 +16,18 @@ judge:
 ```
 
 - `user` tells the simulated user who to be and what to want.
-- `judge` lists claims, as text or [graded](#graded-claims). All of them must hold for the scenario
-  to pass.
+- `judge` lists claims as text. All of them must hold for the scenario to pass.
 - `max_turns` is how many messages the user may send.
 - `id` must be unique across all folders.
 
 Write scenarios in any language. The simulated user speaks the language of its instructions.
 
-## Graded claims
+Each claim needs a yes/no answer. State the condition the dialogue must meet, and split independent
+requirements into separate claims so a failure has a clear reason.
 
-Some things are not yes or no: how complete an answer is, or how polite. Such a claim lists its
-grades, from worst to best, and the worst grade that still passes:
-
-```yaml
-judge:
-  - Before giving a finished script, the agent asked what to back up and where to
-  - claim: The final script covers every step
-    grades: [none, partial, full]
-    pass: partial
-  - claim: The agent is polite
-    grades: [1, 2, 3, 4, 5]
-    pass: 4
-```
-
-The judge picks one grade. The scenario says whether it passes: here `partial` and `full` pass,
-`none` fails. The report shows each grade, and the comparison of two runs shows when a claim's
-typical grade moved, even if it still passes.
+Ordered claim scales have been removed. Replace a mapping with `claim`, `grades` and `pass` with a
+plain statement of the condition that counts as passing. Such mappings are rejected; convy does not
+convert a scale into a yes/no condition for you.
 
 ## Verdicts
 
@@ -52,7 +38,7 @@ The judge decides each claim on its own and gives a reason, so the report shows 
   rate. See [A busy service](agents.md#a-busy-service).
 - If one of convy's own models fails, the attempt gets no verdict and does not count in the pass
   rate. That happens when a model does not answer, or the judge does not give one decision per
-  claim, or gives a grade the claim does not have.
+  claim, or gives a decision whose `pass` is not `true` or `false`.
 - If the judge is less sure than the run's `--trust`, the attempt may not count;
   [the pass rate](report.md#tiles) gives the rule. See [The judge](judge.md).
 

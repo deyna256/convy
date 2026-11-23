@@ -13,15 +13,12 @@ import msgspec
 from msgspec import Struct
 
 from convy.agent import Call, NotReported, NoUsage, Reported, Thought, Usage
-from convy.bench import Finished, Interrupted, Limits, Pair, RunFile, Running, RunSpec, Status
+from convy.bench import Finished, Interrupted, Pair, RunFile, Running, RunSpec, Status
 from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoConfidence,
-    NoGrade,
     NoReason,
     NoVerdict,
     Reason,
@@ -33,79 +30,14 @@ from convy.scenario import Outcome, Scenario, Stop
 UNREADABLE = (msgspec.DecodeError, OSError)  # ValidationError is a DecodeError
 
 
-class OlderLine(Struct, frozen=True):
-    """An attempt line of an older format, read as format 6: format 2 kept a claim's reason as a
-    string, formats before 5 kept the agent's thinking apart from the steps of its answer, and
-    formats 3 to 5 wrote 0 for a thinking count the agent did not give. Reading drops the old
-    `thinking` field, as fields an `Outcome` does not have."""
+class RunFormat(Struct, frozen=True):
+    """Check the format before decoding a specification with a different schema."""
 
-    line: bytes
+    format: int
 
-    def outcome(self) -> Outcome:
-        data = msgspec.json.decode(self.line)
-        match data:
-            case {"verdict": {"type": "verdict", "claims": list() as claims}}:
-                data["verdict"]["claims"] = [self.claim(claim) for claim in claims]
-        match data:
-            case {"transcript": {"turns": list() as turns}}:
-                data["transcript"]["turns"] = [self.turn(turn) for turn in turns]
-        return msgspec.convert(data, Outcome)
-
-    def turn(self, turn: object) -> object:
-        match turn:
-            case {"answer": {"thinking": {"type": "thinking", "text": str() as text}} as answer}:
-                turn = {**turn, "answer": {**answer, "steps": [{"type": "thought", "text": text}]}}
-        match turn:
-            case {"answer": dict() as answer}:
-                return {**turn, "answer": self.answer(answer)}
-            case _:
-                return turn
-
-    def answer(self, answer: dict) -> dict:
-        """The answer, with its usage and its calls' usage read as format 6."""
-        match answer:
-            case {"usage": usage}:
-                answer = {**answer, "usage": self.usage(usage)}
-        match answer:
-            case {"steps": list() as steps}:
-                answer = {**answer, "steps": [self.step(step) for step in steps]}
-        return answer
-
-    def step(self, step: object) -> object:
-        match step:
-            case {"type": "call", "usage": usage}:
-                return {**step, "usage": self.usage(usage)}
-            case _:
-                return step
-
-    def usage(self, usage: object) -> object:
-        """0 was the default thinking count, not one the agent gave."""
-        match usage:
-            case {"type": "usage", "thinking": 0}:
-                return {**usage, "thinking": {"type": "not_reported"}}
-            case _:
-                return usage
-
-    def claim(self, claim: object) -> object:
-        match claim:
-            case {"reason": str() as text}:
-                reason = {"type": "reason", "text": text} if text.strip() else {"type": "no_reason"}
-                return {**claim, "reason": reason}
-            case _:
-                return claim
-
-
-class OlderSpec(Struct, frozen=True):
-    """What the specification of a `run.json` of format 2 or 3 held instead of `limits`: one
-    `parallel`, which held all three participants."""
-
-    parallel: int
-
-
-class OlderRunFile(Struct, frozen=True):
-    """A `run.json` of format 2 or 3, as far as format 4 changed it."""
-
-    spec: OlderSpec
+    def __post_init__(self) -> None:
+        if self.format != 7:
+            raise ValueError(f"unsupported run format {self.format}; expected 7; start a new run")
 
 
 class Run(Struct, frozen=True):
@@ -118,7 +50,7 @@ class Run(Struct, frozen=True):
     status: Status
     outcomes: tuple[Outcome, ...]
     unreadable: int = 0
-    format: Literal[2, 3, 4, 5, 6] = 6
+    format: Literal[7] = 7
 
     def done(self) -> frozenset[Pair]:
         """The attempts the run has recorded."""
@@ -150,6 +82,12 @@ class Runs(Struct, frozen=True):
         """The run whose id is `wanted`, or ends with `_<wanted>`: its random part."""
         found = [run for run in self if wanted in (run.spec.id, run.spec.short())]
         if not found:
+            for folder in self.folders():
+                if wanted in (folder.name, folder.name.rpartition("_")[2]):
+                    try:
+                        self.read(folder)
+                    except UNREADABLE as error:
+                        raise ValueError(f"{folder}: {error}") from error
             raise ValueError(f"no run {wanted!r} in {self.directory}")
         if len(found) > 1:
             names = ", ".join(run.path.as_posix() for run in found)
@@ -161,13 +99,8 @@ class Runs(Struct, frozen=True):
 
     def read(self, folder: Path) -> Run:
         raw = (folder / "run.json").read_bytes()
+        msgspec.json.decode(raw, type=RunFormat)
         file = msgspec.json.decode(raw, type=RunFile)
-        if file.format < 4:
-            shared = msgspec.json.decode(raw, type=OlderRunFile).spec.parallel
-            limits = Limits(agent=shared, user=shared, judge=shared)
-            file = msgspec.structs.replace(
-                file, spec=msgspec.structs.replace(file.spec, limits=limits)
-            )
         attempts = folder / "attempts.jsonl"
         lines = attempts.read_bytes().splitlines() if attempts.exists() else []
         claims = {scenario.id: len(scenario.claims) for scenario in file.spec.scenarios}
@@ -175,11 +108,7 @@ class Runs(Struct, frozen=True):
         unreadable = 0
         for line in lines:
             try:
-                outcome = (
-                    msgspec.json.decode(line, type=Outcome)
-                    if file.format >= 6
-                    else OlderLine(line).outcome()
-                )
+                outcome = msgspec.json.decode(line, type=Outcome)
             except UNREADABLE:  # a line cut short by a crash, say
                 unreadable += 1
                 continue
@@ -280,7 +209,6 @@ class ClaimView(Struct, frozen=True):
     reason: str
     confidence: float | None = None  # None: the judge did not say
     trusted: bool = True  # False: less sure than the run's trust
-    grade: str | None = None  # None: the claim is not graded
 
 
 class ThoughtView(Struct, frozen=True, tag="thought"):
@@ -340,8 +268,6 @@ class ClaimSummary(Struct, frozen=True):
     judged: int
     result: Result
     cut: int  # decisions less sure than the run's trust
-    grades: tuple[tuple[str, int], ...] = ()  # each grade, worst to best, and how many trusted
-    typical: str | None = None  # the median trusted grade, the worse of two; None: not graded
 
 
 class Parts(Struct, frozen=True):
@@ -550,10 +476,7 @@ class ClaimChange(Struct, frozen=True):
     text: str
     before: Result
     after: Result
-    change: Change  # by the pass rate; when that is equal, as `moved`
-    was: str | None = None  # the typical grade before; None: not graded
-    now: str | None = None
-    moved: Change = "unchanged"  # where the typical grade went, whatever the pass rate did
+    change: Change
 
 
 class CompareRow(Struct, frozen=True):
@@ -991,20 +914,12 @@ class Summary(Struct, frozen=True):
             else cached / (cached + parts.input),
         )
 
-    def claim(self, claim: str | Graded, decisions: list[ClaimView]) -> ClaimSummary:
-        """A claim over the attempts the judge decided, cut or not: its trusted decisions are
-        tallied, the rest counted as cut. A graded claim also counts each grade."""
+    def claim(self, claim: str, decisions: list[ClaimView]) -> ClaimSummary:
+        """Tally trusted decisions and count the rest as cut."""
         trusted = [d for d in decisions if d.passed is not None and d.trusted]
         tally = Tally(sum(d.passed is True for d in trusted), len(trusted))
         cut = sum(d.passed is not None and not d.trusted for d in decisions)
-        match claim:
-            case str():
-                text, grades, typical = claim, (), None
-            case Graded(text=text, levels=levels):
-                ranks = sorted(levels.index(d.grade) for d in trusted if d.grade in levels)
-                grades = tuple((level, ranks.count(i)) for i, level in enumerate(levels))
-                typical = levels[ranks[(len(ranks) - 1) // 2]] if ranks else None
-        return ClaimSummary(text, tally.held, tally.judged, tally.result(), cut, grades, typical)
+        return ClaimSummary(claim, tally.held, tally.judged, tally.result(), cut)
 
     def attempt(self, scenario: Scenario, outcome: Outcome) -> AttemptView:
         turns = tuple(self.turn(turn) for turn in outcome.transcript.turns)
@@ -1046,17 +961,12 @@ class Summary(Struct, frozen=True):
                 sure: float | None = value
             case NoConfidence():
                 sure = None
-        match claim.grade:
-            case Grade(value=value):
-                grade: str | None = value
-            case NoGrade():
-                grade = None
         match claim.reason:
             case Reason(text=text):
                 reason = text
             case NoReason():
                 reason = ""
-        return ClaimView(claim.passed, reason, sure, claim.trusted(trust), grade)
+        return ClaimView(claim.passed, reason, sure, claim.trusted(trust))
 
     def turn(self, turn: Turn) -> TurnView:
         match turn.answer.usage:
@@ -1344,24 +1254,11 @@ class Comparison(Struct, frozen=True):
         for old, new in zip(was.claims, now.claims, strict=True):
             before = Tally(old.held, old.judged).rate()
             after = Tally(new.held, new.judged).rate()
-            moved = self.moved(old, new)
-            change = moved
+            change: Change = "unchanged"
             if before is not None and after is not None and before != after:
                 change = "better" if after > before else "worse"
-            changes.append(
-                ClaimChange(
-                    new.text, old.result, new.result, change, old.typical, new.typical, moved
-                )
-            )
+            changes.append(ClaimChange(new.text, old.result, new.result, change))
         return tuple(changes)
-
-    def moved(self, old: ClaimSummary, new: ClaimSummary) -> Change:
-        """Where a claim's typical grade went. Its grades are the same in both runs: a scenario
-        edited between them is not compared."""
-        if not old.typical or not new.typical or old.typical == new.typical:
-            return "unchanged"
-        levels = [grade for grade, _ in new.grades]
-        return "better" if levels.index(new.typical) > levels.index(old.typical) else "worse"
 
     def deltas(
         self, was: Metrics, now: Metrics, shown: Literal["better", "worse"] | None

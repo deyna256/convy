@@ -38,8 +38,8 @@ usually live in a version-controlled file of the tool, with environment variable
   [Runs](../runs.md#how-much-runs-at-once); how they are read and checked is in
   [ARCHITECTURE](../../ARCHITECTURE.md).
 - **`--parallel` is removed.** The command says where the limits are now.
-- **A run records its limits,** and its format moves from 3 to 4. Older runs read their one
-  `parallel` as every limit, since it held all three ([0005](0005-runs.md)).
+- **A run records each participant's limits.** Format compatibility is defined in
+  [decision 5](0005-runs.md).
 - **`convy resume` plays with the current limits.** They change how hard convy pushes, not what it
   measures, so they are not fingerprinted. The command says when the agent's limit changed, since
   the agent's load can change its answer time.

@@ -354,14 +354,15 @@ def test_a_run_of_an_older_format_is_not_resumed(
     before = recorded(folder)
     capsys.readouterr()
     data = json.loads((folder / "run.json").read_text())
-    older = {**data, "format": 5}
+    older = {**data, "format": 6}
     (folder / "run.json").write_text(json.dumps(older))
     assert convy("resume", folder.name) == 2
     assert capsys.readouterr().err == (
-        f"error: run {folder.name} was written by an older convy; start a new run\n"
+        f"error: {folder.relative_to(project)}: unsupported run format 6; "
+        "expected 7; start a new run\n"
     )
     assert recorded(folder) == before
-    assert json.loads((folder / "run.json").read_text())["format"] == 5
+    assert json.loads((folder / "run.json").read_text())["format"] == 6
 
 
 def test_after_an_upgrade_resume_says_so_without_running_the_project(

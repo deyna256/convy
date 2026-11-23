@@ -25,8 +25,6 @@ from convy.dialog import (
     Claim,
     Confidence,
     Failed,
-    Grade,
-    Graded,
     NoVerdict,
     Reason,
     Transcript,
@@ -37,8 +35,7 @@ from convy.report import Run
 from convy.scenario import Outcome, Scenario
 
 DAY = datetime(2026, 10, 6, tzinfo=UTC)
-GRADED = Graded("solved", ("none", "partial", "full"), "partial")
-REFUND = Scenario("refund", 4, "Ask for a refund.", ("asks for the order", GRADED))
+REFUND = Scenario("refund", 4, "Ask for a refund.", ("asks for the order", "solved"))
 HELLO = Scenario("hello", 2, "Say hi.", ("greets",))
 SPEC = RunSpec(
     id="2026-10-06T00-00-00_ab12",
@@ -70,7 +67,7 @@ FULL = Answer(
 VERDICT = Verdict(
     (
         Claim(True, Reason("asked"), Confidence(0.9)),
-        Claim(False, grade=Grade("none")),
+        Claim(False),
     )
 )
 TALK = Transcript(
@@ -116,7 +113,7 @@ def test_a_run_row_holds_every_value_of_its_spec_and_status():
         judge_per_minute=30,
         agent_file="aa",
         models_file="bb",
-        format=6,
+        format=7,
         path="bot/2026-10-06T00-00-00_ab12",
         unreadable=0,
     )
@@ -158,18 +155,14 @@ def test_claims_come_in_the_order_of_their_scenario():
             scenario="refund",
             claim=1,
             text="asks for the order",
-            grades=None,
-            threshold=None,
         ),
         ClaimRow(
             run=RUN_ID,
             scenario="refund",
             claim=2,
             text="solved",
-            grades=("none", "partial", "full"),
-            threshold="partial",
         ),
-        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets", grades=None, threshold=None),
+        ClaimRow(run=RUN_ID, scenario="hello", claim=1, text="greets"),
     )
 
 
@@ -224,7 +217,6 @@ def test_decisions_hold_what_the_judge_said_and_none_for_what_it_did_not():
             passed=True,
             reason="asked",
             confidence=0.9,
-            grade=None,
         ),
         DecisionRow(
             run=RUN_ID,
@@ -234,7 +226,6 @@ def test_decisions_hold_what_the_judge_said_and_none_for_what_it_did_not():
             passed=False,
             reason=None,
             confidence=None,
-            grade="none",
         ),
     )
 
@@ -349,8 +340,7 @@ def test_every_row_finds_its_parent_by_its_keys():
     assert {(r.run, r.scenario, r.attempt, r.turn) for r in TABLES.steps().rows} <= turns
 
 
-def test_records_keep_none_tuples_and_datetimes():
-    assert TABLES.claims().records()[1]["grades"] == ("none", "partial", "full")
+def test_records_keep_none_and_datetimes():
     assert TABLES.runs().records()[0]["started"] == DAY
     assert TABLES.runs().records()[1]["ended"] is None
 
@@ -391,9 +381,9 @@ def test_tables_come_in_order_with_their_rows_and_columns():
             ],
         ),
         ("scenarios", ScenarioRow, ["run", "scenario", "instructions", "max_turns"]),
-        ("claims", ClaimRow, ["run", "scenario", "claim", "text", "grades", "threshold"]),
+        ("claims", ClaimRow, ["run", "scenario", "claim", "text"]),
         ("attempts", AttemptRow, [*keys, "verdict", "error", "stop"]),
-        ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence", "grade"]),
+        ("decisions", DecisionRow, [*keys, "claim", "passed", "reason", "confidence"]),
         ("answers", AnswerRow, [*keys, "turn", "message", "answer", "seconds", *tokens]),
         (
             "steps",
@@ -449,9 +439,6 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Scenario", "max_turns"): ("scenarios.max_turns",),
     ("Scenario", "instructions"): ("scenarios.instructions",),
     ("Scenario", "claims"): ("claims.text",),  # a plain claim is its text
-    ("Graded", "text"): ("claims.text",),
-    ("Graded", "grades"): ("claims.grades",),
-    ("Graded", "threshold"): ("claims.threshold",),
     ("Outcome", "scenario"): ("attempts.scenario",),
     ("Outcome", "attempt"): ("attempts.attempt",),
     ("Outcome", "transcript"): (),
@@ -464,10 +451,8 @@ COLUMNS = {  # (class, field): the columns it fills; () for a field that only ho
     ("Claim", "passed"): ("decisions.passed",),
     ("Claim", "reason"): (),
     ("Claim", "confidence"): (),
-    ("Claim", "grade"): (),
     ("Reason", "text"): ("decisions.reason",),
     ("Confidence", "value"): ("decisions.confidence",),
-    ("Grade", "value"): ("decisions.grade",),
     ("Turn", "message"): (),
     ("Turn", "answer"): (),
     ("Turn", "seconds"): ("answers.seconds",),
@@ -532,7 +517,7 @@ def test_every_column_but_the_keys_holds_a_field_of_a_run():
 class Cells(msgspec.Struct, frozen=True, kw_only=True):
     text: str | None
     flag: bool
-    grades: tuple[str, ...] | None
+    items: tuple[str, ...] | None
     at: datetime | None
     number: float
 
@@ -541,22 +526,22 @@ CELLS = Table(
     "cells",
     Cells,
     (
-        Cells(text='two\nlines, "quoted"', flag=True, grades=("a", "b"), at=DAY, number=0.5),
-        Cells(text="", flag=False, grades=None, at=None, number=2),
+        Cells(text='two\nlines, "quoted"', flag=True, items=("a", "b"), at=DAY, number=0.5),
+        Cells(text="", flag=False, items=None, at=None, number=2),
     ),
 )
 
 
 def test_csv_quotes_every_value_writes_what_is_not_text_as_json_and_leaves_a_missing_one_empty():
     assert CELLS.csv() == (
-        '"text","flag","grades","at","number"\r\n'
+        '"text","flag","items","at","number"\r\n'
         '"two\nlines, ""quoted""","true","[""a"",""b""]","2026-10-06T00:00:00Z","0.5"\r\n'
         '"","false",,,"2"\r\n'
     )
 
 
 def test_an_empty_table_still_has_its_header():
-    assert Table("cells", Cells, ()).csv() == '"text","flag","grades","at","number"\r\n'
+    assert Table("cells", Cells, ()).csv() == '"text","flag","items","at","number"\r\n'
 
 
 def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
@@ -566,11 +551,11 @@ def test_json_lines_give_every_row_back_with_null_and_empty_text_apart():
         {
             "text": 'two\nlines, "quoted"',
             "flag": True,
-            "grades": ["a", "b"],
+            "items": ["a", "b"],
             "at": "2026-10-06T00:00:00Z",
             "number": 0.5,
         },
-        {"text": "", "flag": False, "grades": None, "at": None, "number": 2},
+        {"text": "", "flag": False, "items": None, "at": None, "number": 2},
     ]
 
 
@@ -642,27 +627,6 @@ def claim_counts(tables: Tables, trust: float) -> list[tuple[int, int]]:
     return counts
 
 
-def typical_grade(tables: Tables, trust: float, scenario: str) -> str | None:
-    """Scenarios: a claim's typical grade is the middle one of its trusted grades, in the claim's
-    order; with two in the middle, the worse."""
-    ((number, levels),) = [
-        (c.claim, c.grades)
-        for c in tables.claims().rows
-        if c.scenario == scenario and c.grades is not None
-    ]
-    grades = sorted(
-        (
-            d.grade
-            for d in tables.decisions().rows
-            if (d.scenario, d.claim) == (scenario, number)
-            and trusted(d, trust)
-            and d.grade is not None
-        ),
-        key=levels.index,
-    )
-    return grades[(len(grades) - 1) // 2] if grades else None
-
-
 def answered(usage: Usage | NoUsage, seconds: float) -> Turn:
     return Turn(Message("hi"), Answer("a", usage), seconds)
 
@@ -704,15 +668,15 @@ NUMBERS = Run(
 )
 NUMBERS_PAGE = Report(NUMBERS).page()
 NUMBERS_TABLES = Tables((NUMBERS,))
-GRADES = Run(
-    Path("bot/grades"),
+CONSISTENCY = Run(
+    Path("bot/consistency"),
     msgspec.structs.replace(
         SPEC,
         k=2,
         trust=0.5,
         scenarios=(
             Scenario("a", 2, "Ask.", ("one",)),
-            Scenario("b", 2, "Ask.", (GRADED,)),
+            Scenario("b", 2, "Ask.", ("solved",)),
             Scenario("c", 2, "Ask.", ("one",)),
             Scenario("d", 2, "Ask.", ("one",)),
             Scenario("e", 2, "Ask.", ("one",)),
@@ -722,17 +686,17 @@ GRADES = Run(
     (
         played("a", 1, Verdict((Claim(True),))),
         played("a", 2, Verdict((Claim(True),))),
-        played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9), grade=Grade("full")),))),
-        played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1), grade=Grade("none")),))),
+        played("b", 1, Verdict((Claim(True, confidence=Confidence(0.9)),))),
+        played("b", 2, Verdict((Claim(False, confidence=Confidence(0.1)),))),
         played("c", 1, Verdict((Claim(True),))),
         played("d", 1, Verdict((Claim(True),))),
         played("d", 2, Verdict((Claim(False),))),
         played("e", 1, Verdict((Claim(True),))),
         played("e", 2, Verdict((sure(True, 0.1),))),
-    ),  # with the unsure grade, b's grades are none and full, and the worse of two is none
+    ),
 )  # stable: a only; c has an attempt not played, d one that failed, e one not counted
-GRADES_PAGE = Report(GRADES).page()
-GRADES_TABLES = Tables((GRADES,))
+CONSISTENCY_PAGE = Report(CONSISTENCY).page()
+CONSISTENCY_TABLES = Tables((CONSISTENCY,))
 
 
 def test_the_pass_rate_is_the_share_of_counted_attempts_that_passed():
@@ -742,7 +706,7 @@ def test_the_pass_rate_is_the_share_of_counted_attempts_that_passed():
 
 
 def test_a_stable_scenario_has_its_k_attempts_counted_and_passed():
-    assert stable(GRADES_TABLES, 2, 0.5) == GRADES_PAGE.metrics.stable == 1
+    assert stable(CONSISTENCY_TABLES, 2, 0.5) == CONSISTENCY_PAGE.metrics.stable == 1
 
 
 def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
@@ -768,8 +732,3 @@ def test_a_claim_s_count_is_over_its_trusted_decisions():
         == [(c.held, c.judged) for c in scenario.claims]
         == [(3, 3), (2, 3)]
     )
-
-
-def test_a_claim_s_typical_grade_is_the_middle_of_its_trusted_grades():
-    (b,) = (scenario for scenario in GRADES_PAGE.scenarios if scenario.id == "b")
-    assert typical_grade(GRADES_TABLES, 0.5, "b") == b.claims[0].typical == "full"

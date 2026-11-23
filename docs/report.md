@@ -113,10 +113,8 @@ to open that attempt. A filter such as `refund-*` narrows the list.
 
 Click a row to open the scenario. You see what the simulated user was told, and each claim with how
 many attempts it held in, a square per attempt with the judge's decision on it, and how many of its
-decisions were not trusted. A claim's count is over its trusted decisions. Its typical grade is the
-middle one of its trusted grades; with two in the middle, the worse. A graded claim also says how
-often it got each grade (`held in 3 of 4 · full 2 · partial 1 · none 1`). For each attempt you see
-the judge's decision on every claim with its grade, if it has one, and its reason, and the dialogue
+decisions were not trusted. A claim's count is over its trusted decisions. For each attempt you see
+the judge's yes/no decision on every claim and its reason, and the dialogue
 with the time and tokens of each answer; **Total answer time** adds them up for the attempt. An
 answer's tokens show their parts, such as `1.2k in, 1.0k from cache · 300 out, 200 thinking`: cached
 tokens are part of the input, and thinking part of the output, not added to them. A part the agent
@@ -194,10 +192,6 @@ Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**; e
 squares of its attempts before and after and how many more or fewer passed. A scenario is not
 compared if only one run played it, it was edited between the runs, or one run has no verdict for
 it. A scenario's window shows both dialogues side by side.
-
-A graded claim whose typical grade moved says so in the window, such as `full → partial`: red when
-it fell, green when it rose, whatever the pass rate did. The typical grade is as in
-[the scenario's window](#scenarios).
 
 Each run is read with its own `trust`, shown next to it in the page's head.
 
