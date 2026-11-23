@@ -149,6 +149,11 @@ class Scenarios(Struct, frozen=True):
                 scenario = msgspec.convert(
                     yamlrocks.loads(path.read_text(encoding="utf-8")), Scenario
                 )
+            except msgspec.ValidationError as error:
+                raise ValueError(
+                    f"{path}: {error}; judge entries must be plain yes/no claim text, "
+                    "not graded mappings"
+                ) from error
             except ValueError as error:  # YAML and validation errors are both ValueError
                 raise ValueError(f"{path}: {error}") from error
             if scenario.id in seen:

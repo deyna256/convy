@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comparison</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%2318212f'/><circle cx='50' cy='50' r='28' fill='none' stroke='%23eef1f5' stroke-width='17'/><circle cx='50' cy='50' r='10' fill='%235fc48a'/></svg>">
+<style>
+:root {
+  --page: #eef1f5; --surface: #ffffff; --side: #f4f6f9; --ink: #18212f; --muted: #4a5464;
+  --rule: #d5dbe3; --user: #eef1f5; --focus: #2c4a74; --thought: #7a4fc4;
+  --cache: #5d85ce; --input: #3a4aa7; --output: #bc7c40; --thinking: #8d58b7;
+  --pass: #1a6b43; --pass-bg: #e3f2ea; --fail: #b3261e; --fail-bg: #f8e3e1;
+  --flaky: #8a5100; --flaky-bg: #f6ecd9; --none: #4a5464; --none-bg: #e2e7ee; --on-status: #ffffff;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, Roboto, "Noto Sans", "Adwaita Sans", Cantarell, "Helvetica Neue", Arial, "Liberation Sans", "DejaVu Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
+    --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
+    --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
+    --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
+    --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #15181e; --surface: #171a21; --side: #1d212a; --ink: #e4e7ec; --muted: #a3abb8;
+  --rule: #2e3440; --user: #232833; --focus: #9db4ff; --thought: #b69cf5;
+  --cache: #7892d9; --input: #5061b3; --output: #b67f46; --thinking: #9970c4;
+  --pass: #5fc48a; --pass-bg: #16301f; --fail: #ef7b70; --fail-bg: #3a1d1b;
+  --flaky: #e0b155; --flaky-bg: #352a14; --none: #a3abb8; --none-bg: #262c36; --on-status: #171a21;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var(--sans); }
+.page { max-width: 1680px; margin: 0 auto; padding: 24px clamp(16px, 3vw, 40px) 48px; }
+.mono { font-family: var(--mono); }
+.hint { color: var(--muted); font-size: 12.5px; margin: 12px 0 0; }
+.muted { color: var(--muted); }
+.top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; margin-bottom: 18px; }
+.top > div:first-child { flex: 1 1 320px; min-width: 0; }
+.eyebrow { font: 600 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+.eyebrow a { color: inherit; }
+h1 { font-size: 22px; line-height: 1.25; margin: 8px 0 4px; font-weight: 650; overflow-wrap: anywhere; }
+.meta { color: var(--muted); margin: 0; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.theme { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--rule); border-radius: 999px; background: var(--surface); cursor: pointer; font-size: 13px; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
+
+/* status icon, badge */
+.si { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: var(--on-status); font: 800 11px/1 var(--sans); flex: none; }
+/* a status's colour, wherever a mark carries one: an icon, a square, a key, a bar */
+:is(.si, .sq, .key, .fill, .meter > span).passing { background: var(--pass); }
+:is(.si, .sq, .key, .fill, .meter > span).failing { background: var(--fail); }
+:is(.si, .sq, .key, .fill, .meter > span).flaky { background: var(--flaky); }
+:is(.si, .sq, .key, .fill, .meter > span).none { background: var(--none); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; }
+.badge.passing { background: var(--pass-bg); color: var(--pass); } .badge.failing { background: var(--fail-bg); color: var(--fail); }
+.badge.flaky { background: var(--flaky-bg); color: var(--flaky); } .badge.none { background: var(--none-bg); color: var(--none); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; }
+.tile { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tile .l { font-size: 12.5px; color: var(--muted); }
+.tile .v { font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; white-space: nowrap; }
+.tile .v small { font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+.tile .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* table */
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 32px 0 10px; }
+.tools h2 { font-size: 16px; font-weight: 650; margin: 0 auto 0 0; }
+input[type=search] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; width: 220px; max-width: 100%; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+tbody tr.row { cursor: pointer; }
+tbody tr.row:hover td { background: var(--side); }
+.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metric { font-size: 15px; font-weight: 650; }
+.metric small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.open { all: unset; cursor: pointer; font-family: var(--mono); font-size: 13.5px; white-space: nowrap; }
+.open:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.empty { color: var(--muted); padding: 24px 12px; }
+
+/* attempt squares */
+.squares { display: inline-flex; flex-wrap: wrap; gap: 3px; max-width: 207px; vertical-align: middle; }
+.sq { width: 18px; height: 18px; border-radius: 4px; display: grid; place-items: center; font: 800 10px/1 var(--sans); color: var(--on-status); }
+.sq.go { cursor: pointer; } .sq.at { outline: 2px solid var(--ink); outline-offset: 1px; }
+
+/* the spread and change blocks */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-top: 14px; }
+.chart { background: var(--surface); padding: 14px 16px; min-width: 0; }
+.chart .empty { margin: 0; padding: 4px 0; font-size: 13px; }
+.chart h3 { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 0 0 10px; }
+.chart .scale { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
+.chart .caption { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+.chart .scale { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.chart .scale > span { font-size: 11px; }
+.chart .scale > span:nth-child(2):not(.ticks) { display: flex; justify-content: space-between; }
+.chart .scale .ticks { display: block; position: relative; height: 1.3em; }
+.chart .scale .ticks > span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chart .scale .ticks > span:first-child { transform: none; } .chart .scale .ticks > span:last-child:not(:first-child) { transform: translateX(-100%); }
+.chart.grid .ptrack { background-image: linear-gradient(to right, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: var(--grid) 100%; }
+.more { all: unset; display: inline-block; cursor: pointer; color: var(--focus); font-size: 12.5px; margin-top: 8px; }
+.more:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+@media (max-width: 760px) {
+  .charts { grid-template-columns: minmax(0, 1fr); }
+  .chart .scale { grid-template-columns: minmax(0, 1fr) var(--tail, 8ch); }
+  .chart .scale > span:first-child { display: none; }
+}
+
+/* a lone panel takes the whole row */
+.charts:has(> .chart:only-child) { grid-template-columns: minmax(0, 1fr); }
+
+/* the statistic switch */
+.switch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 18px 0 0; font-size: 13px; color: var(--muted); }
+.switch [role=group] { display: inline-flex; border: 1px solid var(--rule); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.switch button { all: unset; cursor: pointer; padding: 4px 12px; color: var(--ink); }
+.switch button + button { border-left: 1px solid var(--rule); }
+.switch button[aria-pressed="true"] { background: var(--focus); color: var(--surface); font-weight: 650; }
+.switch button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+/* the key of a colour */
+.key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+/* tokens by turn and by part: parts apart by a 2px gap of the panel's surface */
+.charts:empty { display: none; }
+.seg { flex: 1 1 0; min-width: 0; min-height: 0; border-radius: 2px; }
+.seg.cache, .key.cache { background: var(--cache); } .seg.input, .key.input { background: var(--input); }
+.seg.output, .key.output { background: var(--output); } .seg.thinking, .key.thinking { background: var(--thinking); }
+.chart .ptrack { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 16px; }
+
+/* a change from before */
+.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
+
+/* a panel's message, the page's controls */
+.lede { margin: -4px 0 10px; font-size: 14px; font-weight: 550; color: var(--ink); }
+.controls { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 14px; }
+.controls .switch { margin: 0; }
+
+/* the tooltip, and the parts of a bar fading beside the one pointed at */
+.tip { position: fixed; z-index: 10; max-width: 340px; padding: 6px 10px; border-radius: 8px; background: var(--ink); color: var(--surface); font-size: 12.5px; line-height: 1.4; pointer-events: none; box-shadow: 0 4px 14px rgb(0 0 0 / .25); font-variant-numeric: tabular-nums; }
+[data-tip] { cursor: default; }
+.pbar:hover > .seg, .meter:hover > span, .bars:hover .seg { opacity: .35; transition: opacity .12s; }
+.pbar:hover > .seg:hover, .meter:hover > span:hover, .bars:hover .seg:hover { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .pbar .seg, .meter > span, .bars .seg { transition: none; } }
+
+/* what only the comparison draws: the hero tile, the spread tiles, the rows of changes, tokens by turn and by part */
+.tile.hero .v { font-size: 36px; }
+@media (max-width: 600px) { .tile.hero { grid-column: 1 / -1; } }
+.block:has(> .charts:empty) { display: none; }
+.block > .charts { margin-top: 0; }
+.chart .rrow { display: grid; grid-template-columns: minmax(0, 16ch) minmax(0, 1fr) var(--tail, 8ch); gap: 4px 12px; align-items: center; }
+.chart .rrow { font-size: 13px; min-height: 26px; border-radius: 6px; }
+.chart .rid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chart .rrow .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .chart .rrow { grid-template-columns: minmax(0, 1fr) var(--tail, 8ch); }
+  .chart .rrow .rid { grid-column: 1 / -1; }
+}
+/* tiles of a spread: its four statistics at the same size */
+.tiles + .tiles { margin-top: 10px; }
+.tiles.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.tile .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin: 4px 0; }
+.tile .stats > div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tile .stats .k { font-size: 11.5px; font-weight: 650; color: var(--muted); }
+.tile .stats .v { font-size: 22px; }
+@media (max-width: 480px) { .tile .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+.chart h3 + .legend, .chart .lede + .legend { margin: 0 0 10px; }
+.turns { position: relative; display: grid; grid-template-columns: auto; grid-auto-flow: column; grid-auto-columns: minmax(76px, 1fr); min-width: max-content; padding: 4px 0 2px; }
+.turns .yaxis { display: grid; align-content: start; justify-items: end; gap: 4px; padding-right: 6px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.turns .yaxis > div { position: relative; height: 160px; min-width: 4ch; }
+.turns .yaxis .share { height: 1.6em; }
+.turns .yaxis > div > span { position: absolute; right: 0; transform: translateY(50%); font-size: 11px; line-height: 1; }
+.turns .bars { background-image: linear-gradient(to top, color-mix(in srgb, var(--rule) 70%, transparent) 1px, transparent 1px); background-size: 100% var(--grid, 100%); background-position: left bottom; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rule) 70%, transparent); }
+.turn { display: grid; justify-items: center; gap: 4px; font-size: 12px; }
+.turn .share { height: 1.6em; display: flex; align-items: flex-end; font-weight: 650; font-variant-numeric: tabular-nums; }
+.turn .bars { display: flex; align-items: flex-end; justify-content: center; gap: 3px; width: 100%; height: 160px; border-bottom: 1px solid var(--muted); }
+.turn .bar { width: 24px; display: flex; flex-direction: column; gap: 2px; }
+.turn .bar > .seg:first-child { border-radius: 4px 4px 1px 1px; }
+.turn .tn { font-weight: 650; margin-top: 2px; }
+.turn .sub { color: var(--muted); text-align: center; }
+.turn.few .bars { opacity: .55; }
+.pbar { display: flex; gap: 2px; height: 12px; min-width: 2px; }
+.pbar.thin { height: 6px; }
+.pbar > .seg:last-child { border-radius: 2px 4px 4px 2px; }
+/* the scenario window */
+dialog.window { width: calc(100vw - 48px); height: calc(100vh - 48px); max-width: 1400px; max-height: none; padding: 0; border: 1px solid var(--rule); border-radius: 14px; background: var(--surface); color: var(--ink); overflow: hidden; }
+dialog.window::backdrop { background: rgb(0 0 0 / .5); }
+.frame { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.whead { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 14px 64px 14px 20px; border-bottom: 1px solid var(--rule); }
+.whead h2 { margin: 0; font: 650 17px/1.3 var(--mono); overflow-wrap: anywhere; }
+.close { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; font-size: 16px; }
+.close:hover { border-color: var(--rule); }
+.wbody { display: grid; grid-template-columns: 320px minmax(0, 1fr); min-height: 0; }
+.side { background: var(--side); padding: 18px 20px; border-right: 1px solid var(--rule); overflow: auto; }
+.main { padding: 16px 22px 24px; overflow: auto; min-width: 0; }
+.sec { font-size: 12px; font-weight: 650; color: var(--muted); margin: 0 0 8px; }
+.told { margin: 0 0 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.claims { list-style: none; margin: 0 0 18px; padding: 0; }
+.claims li { display: grid; grid-template-columns: 22px 18px 1fr; gap: 2px 8px; margin: 0 0 14px; }
+.claims .no, .judge .no { font: 650 13px/1.6 var(--mono); color: var(--muted); }
+.claims .si, .judge .si { margin-top: 3px; }
+.claims .tally { grid-column: 3; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.claims .tally .si { width: 15px; height: 15px; font-size: 9px; margin: 0; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.tab { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px 5px 6px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); cursor: pointer; font-size: 13px; }
+.tab[aria-selected="true"] { border-color: var(--focus); box-shadow: inset 0 0 0 1px var(--focus); font-weight: 650; }
+.mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+.mini > div { background: var(--surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mini .l { font-size: 12.5px; color: var(--muted); }
+.mini .v { display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mini .v.failing { color: var(--fail); } .mini .v.passing { color: var(--pass); } .mini .v.none { color: var(--none); }
+.mini .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.judge { border: 1px solid var(--rule); border-radius: 12px; padding: 2px 16px; margin-bottom: 20px; }
+.judge > div { display: grid; grid-template-columns: 22px 18px 1fr; gap: 0 8px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.judge > div:last-child { border-bottom: 0; }
+.judge .why { line-height: 1.55; overflow-wrap: anywhere; }
+.error { border-left: 3px solid var(--fail); padding: 8px 12px; margin-bottom: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg { max-width: min(72ch, 92%); margin: 16px 0; }
+.who { font: 650 11px/1 var(--mono); color: var(--muted); letter-spacing: .04em; }
+.msg.user .who { display: block; margin-bottom: 6px; }
+.bubble { padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.msg.user .bubble { background: var(--user); border-top-left-radius: 4px; white-space: pre-wrap; }
+.msg.agent { margin-left: auto; }
+.msg.agent .bubble { background: var(--surface); border: 1px solid var(--rule); border-top-right-radius: 4px; }
+.bhead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: -2px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); font-size: 13px; line-height: 1.4; }
+.bhead .who { margin-right: auto; }
+.bhead .m { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.bhead svg { color: var(--muted); }
+.bubble p { margin: 0 0 10px; } .bubble p:last-child { margin-bottom: 0; }
+.bubble ul, .bubble ol { margin: 8px 0; padding-left: 22px; } .bubble li { margin: 4px 0; }
+.bubble ol { list-style-position: inside; padding-left: 0; }
+.bubble .h { font-weight: 700; }
+.bubble code { font-family: var(--mono); font-size: 13.5px; background: var(--side); border-radius: 4px; padding: 1px 4px; }
+@media (max-width: 860px) {
+  .wbody { grid-template-columns: 1fr; overflow: auto; }
+  .side { border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
+  .main { overflow: visible; }
+  .mini { grid-template-columns: 1fr; }
+  dialog.window { width: 100vw; height: 100vh; border-radius: 0; }
+}
+@media print { dialog.window { position: static; } }
+
+/* an answer's steps */
+.bubble.flow { padding: 12px 14px; }
+.msg.agent:has(.flow) { max-width: min(96ch, 96%); }
+.link { all: unset; cursor: pointer; color: var(--focus); font-size: 13px; }
+.link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.line { list-style: none; margin: 0; padding: 0; position: relative; }
+.line::before { content: ""; position: absolute; left: 13px; top: 14px; bottom: 14px; width: 2px; background: var(--rule); }
+.node { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; margin: 0 0 8px; }
+.node:last-child { margin-bottom: 0; }
+.dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1.5px solid var(--rule); color: var(--muted); z-index: 1; }
+.node .card { border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); min-width: 0; }
+.kind { font: 650 11px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.node.thought .card, .node.answer .card { padding: 9px 12px 10px; }
+.node.thought .card > .kind, .node.answer .card > .kind { display: block; margin-bottom: 6px; }
+.node.thought .dot, .node.thought .kind { color: var(--thought); }
+.node.thought .dot { border-color: color-mix(in srgb, var(--thought) 55%, var(--rule)); }
+.node.thought .card { background: color-mix(in srgb, var(--thought) 8%, var(--surface)); border-color: color-mix(in srgb, var(--thought) 28%, var(--rule)); }
+.node.thought .said { white-space: pre-wrap; overflow-wrap: anywhere; }
+.node.answer .dot { color: var(--ink); border-color: color-mix(in srgb, var(--ink) 60%, var(--rule)); }
+.node.answer .card { border-color: color-mix(in srgb, var(--ink) 25%, var(--rule)); }
+.card.fold { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-style: dashed; font-size: 13.5px; cursor: pointer; }
+.card.fold:hover { border-color: var(--focus); }
+.bhead .steps { min-width: 11ch; text-align: right; }
+.bhead .steps::after { content: " ▸"; } .bhead .steps[aria-expanded="true"]::after { content: " ▾"; }
+.node.call summary { display: grid; grid-template-columns: 4.5ch minmax(10ch, 1fr) minmax(48px, 120px) 28ch 14px; align-items: center; gap: 4px 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.node.call summary::-webkit-details-marker { display: none; }
+.node.call summary::after { content: "▸"; color: var(--muted); font-size: 11px; }
+.node.call .card[open] > summary::after { content: "▾"; }
+.node.call .name { font: 650 14px/1.3 var(--mono); overflow-wrap: anywhere; }
+.node .track { position: relative; height: 10px; border-radius: 5px; background: var(--side); }
+.node .bar { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: var(--focus); }
+.node .m { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; text-align: right; }
+.io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 12px 12px; border-top: 1px solid var(--rule); }
+.io .box { margin: 0; height: 150px; overflow: auto; padding: 8px 10px; background: var(--side); border: 1px solid var(--rule); border-radius: 8px; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.io .box.none { height: auto; min-height: 44px; display: grid; place-items: center; color: var(--muted); font: italic 13px var(--sans); }
+@media (max-width: 600px) {
+  .io { grid-template-columns: 1fr; }
+  .node.call summary { grid-template-columns: 4.5ch minmax(0, 1fr) 14px; }
+  .node.call summary::after { grid-column: 3; grid-row: 1; }
+  .node.call .track, .node.call .m { grid-column: 1 / -1; text-align: left; }
+  .node.call .m { white-space: normal; }
+}
+.node.found .card { box-shadow: 0 0 0 2px var(--focus); transition: box-shadow .3s; }
+@media (prefers-reduced-motion: reduce) { .node.found .card { transition: none; } }
+
+.tile .s.good { color: var(--pass); } .tile .s.bad { color: var(--fail); }
+.tally .good { color: var(--pass); } .tally .bad { color: var(--fail); }
+.group td { padding: 16px 12px 6px; font-size: 13px; font-weight: 650; cursor: default; }
+.arrow { color: var(--muted); padding: 0 6px; }
+.tab.plain { padding-left: 12px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.colhead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.colhead .badge { margin-left: auto; }
+.cols .msg { max-width: 100%; }
+@media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+.changes { --tail: 22ch; }
+.chart .dev { position: relative; height: 16px; }
+.chart .dev::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--muted); }
+.chart .dbar { position: absolute; top: 4px; height: 8px; border-radius: 3px; }
+.dbar.bad { background: var(--fail); } .dbar.good { background: var(--pass); } .dbar.same { background: var(--muted); }
+.chart .clip { position: absolute; top: -1px; font-weight: 800; color: var(--muted); } .clip.up { right: -2px; } .clip.down { left: -2px; }
+.pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.pair .delta { font-size: 13px; }
+.tile .stats .delta { font-size: 12.5px; }
+#tokens { --tail: 24ch; }
+#tokens .n small.block { display: block; }
+#tokens > .chart:last-child:nth-child(odd) { grid-column: 1 / -1; }
+</style>
+<script>
+// Every number and decision comes from the data; this script only draws it.
+// Everything from the data is added as text, never as HTML.
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (value == null || value === false) continue;
+    if (key.startsWith("aria-") || key.startsWith("data-") || key === "role" || key === "style") node.setAttribute(key, value);
+    else node[key] = value;
+  }
+  node.append(...children.flat(Infinity).filter(child => child != null && child !== false && child !== ""));
+  return node;
+}
+
+// The theme: Auto follows the system; the choice is kept where the browser allows it.
+const THEMES = ["auto", "light", "dark"];
+const NAMES = {auto: "Auto", light: "Light", dark: "Dark"};
+function storedTheme() {
+  try { return THEMES.includes(localStorage.getItem("convy-theme")) ? localStorage.getItem("convy-theme") : "auto"; }
+  catch { return "auto"; }
+}
+let theme = storedTheme();
+function applyTheme(button) {
+  if (theme === "auto") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", theme);
+  if (button) {
+    button.textContent = `Theme: ${NAMES[theme]}`;
+    button.setAttribute("aria-label", `Theme: ${NAMES[theme]}. Switch theme`);
+  }
+}
+function themeButton() {
+  const button = el("button", {className: "theme", type: "button"});
+  button.addEventListener("click", () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    try { localStorage.setItem("convy-theme", theme); } catch { /* not kept: the next page opens in Auto */ }
+    applyTheme(button);
+  });
+  applyTheme(button);
+  return button;
+}
+applyTheme(null);
+
+const SCENARIO = {passing: "Passing", failing: "Failing", flaky: "Flaky", none: "No verdict"};
+const ATTEMPT = {passing: "Passed", failing: "Failed", none: "No verdict"};
+const GLYPH = {passing: "✓", failing: "✕", flaky: "◐", none: "–"};
+
+const kind = passed => passed == null ? "none" : passed ? "passing" : "failing";
+const icon = result => el("span", {className: `si ${result}`, "aria-hidden": "true"}, GLYPH[result]);
+const badge = (result, words = SCENARIO) => el("span", {className: `badge ${result}`}, icon(result), words[result]);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const pct = rate => rate == null ? "—" : `${Math.round(rate * 100)}%`;
+const notTrusted = cut => cut ? ` · ${cut} not trusted` : "";
+const secs = s => s == null ? "—" : s > 0 && s < 0.1 ? `${Math.round(s * 1000)} ms` : s < 10 ? `${s.toFixed(1)} s` : `${Math.round(s)} s`;
+const count = n => n == null ? "—" : n < 1000 ? String(Math.round(n)) : n < 1e6 ? `${(n / 1e3).toFixed(n < 1e4 ? 1 : 0)}k` : `${(n / 1e6).toFixed(1)}M`;
+const when = iso => new Date(iso).toLocaleString("en-GB", {dateStyle: "medium", timeStyle: "short"});
+const STATUS = {running: "not finished", interrupted: "interrupted", finished: null};
+
+// Squares, one per attempt: ✓, ✕ or – with its word in the title, the open attempt outlined, a
+// click opening one. Not tab stops: the row's Open button and the window's tabs are the keyboard's.
+function squares(marks, what, open, go) {
+  return el("span", {className: "squares", role: "img", "aria-label": `${what}: ${marks.map(m => m.word).join(", ")}`},
+    marks.map(m => {
+      const square = el("span", {className: `sq ${m.result}${m.attempt === open ? " at" : ""}${go ? " go" : ""}`, title: `Attempt ${m.attempt}: ${m.word}`}, GLYPH[m.result]);
+      if (go) square.addEventListener("click", event => { event.stopPropagation(); go(m.attempt); });
+      return square;
+    }));
+}
+const attemptMarks = attempts => attempts.map(a => ({attempt: a.attempt, result: kind(a.passed),
+  word: a.cut ? "not trusted" : a.passed == null ? "no verdict" : a.passed ? "passed" : "failed"}));
+
+function readAddress() {
+  const hash = location.hash.slice(1), first = hash.split("&")[0];
+  return new URLSearchParams(first && !first.includes("=") ? `id=${hash}` : hash);  // part 1's #<id>&attempt=<n>
+}
+const kept = {};  // the settings the address keeps, each unwritten at its default; a page adds its own
+function writeAddress(params) {
+  for (const [key, value] of Object.entries(kept)) { params.delete(key); if (value()) params.set(key, value()); }
+  const hash = params.toString();
+  history.replaceState(null, "", hash ? `#${hash}` : location.pathname + location.search);
+}
+
+// A panel with nothing to show, and the button that shows all of a panel's rows or fewer; `every`
+// holds the panels showing all, by a key of the page's choice.
+const every = new Set();
+const emptyPanel = (title, text) => el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), el("p", {className: "empty"}, text));
+function moreButton(key, rows, redraw) {
+  const all = every.has(key), button = el("button", {className: "more", type: "button"}, all ? "Show fewer" : `Show all ${rows}`);
+  button.addEventListener("click", () => { all ? every.delete(key) : every.add(key); redraw(); });
+  return button;
+}
+
+// A panel's message, in a line under its title.
+function lede(section, text) {
+  if (text) section.querySelector("h3").after(el("p", {className: "lede"}, text));
+  return section;
+}
+
+// A scale from 0 that ends on a round value past `most`: its ticks are 1, 2 or 5 times a power of
+// ten, four or five of them. Its panel's tracks draw a faint line at each tick.
+function axis(most) {
+  if (!(most > 0)) return {top: 0, step: 0, ticks: [0]};
+  const rough = most / 4, power = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 5, 10].map(m => m * power).find(s => s >= rough);
+  const top = Math.ceil(most / step - 1e-9) * step;
+  return {top, step, ticks: Array.from({length: Math.round(top / step) + 1}, (_, i) => i * step)};
+}
+const gridStyle = a => a.step ? `--grid: ${a.step / a.top * 100}%` : null;
+// The scale under a panel's rows: a label at each tick.
+const scaleLine = (a, unit) => el("div", {className: "scale"}, el("span"),
+  el("span", {className: "ticks"}, a.ticks.map(v => el("span", {style: `left: ${a.top ? v / a.top * 100 : 0}%`}, v ? unit(v) : "0"))), el("span"));
+
+// The parts of tokens, their colours and their words.
+const PARTS = ["cached", "input", "output", "thinking"];
+const SEG = {cached: "cache", input: "input", output: "output", thinking: "thinking"};
+const partWords = p => ({cached: "from the cache", input: p.cached == null ? "input" : "new input", output: "output", thinking: "thinking"});
+
+// One tooltip for the page: what the mark under the pointer holds, as its data-tip says. The other
+// parts of its bar fade while it is pointed at.
+const tip = el("div", {className: "tip", role: "tooltip", hidden: true});
+document.addEventListener("DOMContentLoaded", () => document.body.append(tip));
+document.addEventListener("pointerover", event => {
+  const mark = event.target instanceof Element ? event.target.closest("[data-tip]") : null;
+  tip.hidden = !mark;
+  if (mark) tip.textContent = mark.dataset.tip;
+});
+document.addEventListener("pointermove", event => {
+  if (tip.hidden) return;
+  tip.style.left = `${Math.max(8, Math.min(event.clientX + 14, innerWidth - tip.offsetWidth - 8))}px`;
+  tip.style.top = `${event.clientY + 18 + tip.offsetHeight > innerHeight ? event.clientY - tip.offsetHeight - 10 : event.clientY + 18}px`;
+});
+
+
+// What only the comparison draws: the statistic switch, changes, spread tiles, tokens by turn and
+// by part.
+const atTrust = trust => trust > 0 ? ` · trust ${trust}` : "";
+// The statistic of each time and token spread that the charts and tables after the switch show,
+// P50 by default. The address keeps it as stat=, beside the open scenario's id and
+// attempt; P50 is not written.
+const STATS = ["p50", "p90", "max", "mean"];
+const STAT = {p50: "P50", p90: "P90", max: "Max", mean: "Mean"};
+const MEANING = {p50: "P50: half the values are at or under it", p90: "P90: 9 in 10 values are at or under it",
+  max: "Max: the largest value", mean: "Mean: the sum of the values over their count"};
+kept.stat = () => stat === "p50" ? null : stat;
+const fromHash = readAddress().get("stat");
+let stat = STATS.includes(fromHash) ? fromHash : "p50";
+const chosen = spread => spread == null ? null : spread[stat];
+function statSwitch(redraw, label = "Show") {
+  const buttons = STATS.map(s => el("button", {type: "button", "aria-pressed": String(s === stat), title: MEANING[s]}, STAT[s]));
+  buttons.forEach((button, i) => button.addEventListener("click", () => {
+    stat = STATS[i];
+    buttons.forEach((other, j) => other.setAttribute("aria-pressed", String(i === j)));
+    writeAddress(readAddress());
+    redraw();
+  }));
+  return el("div", {className: "switch"}, el("span", {"aria-hidden": "true"}, label), el("div", {role: "group", "aria-label": "Charts and tables show"}, buttons));
+}
+
+
+const points = v => `${v < 10 ? v.toFixed(1) : Math.round(v)} pts`;  // percentage points
+
+
+// A change: an arrow and a number in the metric's own unit; colour and "~" come from the data; "=" only for no change at all.
+function change(delta, unit) {
+  if (delta.tone === "none") return el("span", {className: "delta none"}, "—");
+  if (delta.tone === "same" && !delta.value) return el("span", {className: "delta same"}, "=");
+  const arrow = delta.value > 0 ? "▲" : "▼";
+  const text = `${delta.tone === "noise" ? "~ " : ""}${arrow} ${unit(Math.abs(delta.value))}`;
+  return el("span", {className: `delta ${delta.tone}`, title: delta.tone === "noise" ? "within noise" : null}, text);
+}
+
+
+// A panel of the spread or change block: its title, its rows, its scale, and "Show all" past ten.
+const ROWS = 10;
+function chart(title, rows, scale, redraw) {
+  if (!rows.length) return emptyPanel(title, "No scenario to show");
+  const key = title.split(" · ")[0];
+  return el("section", {className: "chart", "aria-label": title}, el("h3", {}, title), rows.slice(0, every.has(key) ? rows.length : ROWS), scale,
+    rows.length > ROWS && moreButton(key, rows.length, redraw));
+}
+
+
+const swatch = (part, word) => el("span", {}, el("i", {className: `key ${part}`}), word);
+
+
+// A tile of a spread: its four statistics at the same size, each with what goes under it,
+// then its lines.
+function spreadTile(label, spread, unit, lines, under = () => null) {
+  return el("div", {className: "tile"}, el("span", {className: "l"}, label),
+    el("div", {className: "stats"}, STATS.map(k => el("div", {}, el("span", {className: "k"}, STAT[k]), el("span", {className: "v"}, spread ? unit(spread[k]) : "—"), under(k)))),
+    lines.map(line => typeof line === "string" ? el("span", {className: "s"}, line) : line));
+}
+
+// Tokens by turn: per turn number a bar of the chosen statistic of its answers' input, split into
+// what was read from the cache and the new input by their share of the summed input when every
+// answer reports its cache reads, and a bar of their output; that share above, how many answers
+// under. A part's tooltip gives its own statistic. `top` is the shared scale's top.
+function turnChart(title, turns, most) {
+  const a = axis(most), top = a.top;
+  const h = v => `${top ? v / top * 100 : 0}%`;
+  const drawn = turns.filter(t => t.input);  // a turn a run did not reach with tokens is an empty column
+  const split = drawn.some(t => t.cached), whole = drawn.some(t => !t.cached);
+  const cols = turns.map(t => {
+    if (!t.input) return el("div", {className: "turn few"}, el("span", {className: "share"}), el("div", {className: "bars", "aria-hidden": "true"}),
+      el("span", {className: "tn"}, `Turn ${t.turn}`), el("span", {className: "sub"}, "no tokens"));
+    const input = chosen(t.input), output = chosen(t.output), cached = t.cached ? chosen(t.cached) : null;
+    const said = `Turn ${t.turn}, ${STAT[stat]} per answer: ${count(input)} in${cached == null ? ", cache not reported" : `, ${count(cached)} of it from the cache`} · ${count(output)} out`;
+    const at = `Turn ${t.turn} · ${STAT[stat]} · `;
+    const parts = cached == null ? [el("span", {className: "seg input", "data-tip": `${at}input: ${count(input)}`})]
+      : [el("span", {className: "seg input", "data-tip": `${at}new input: ${count(chosen(t.fresh))}`}),
+        el("span", {className: "seg cache", style: `flex: 0 0 ${t.share * 100}%`, "data-tip": `${at}from the cache: ${count(cached)}`})];
+    return el("div", {className: t.answers < 3 ? "turn few" : "turn", "data-tip": `${said} · ${plural(t.answers, "answer")} of ${plural(t.scenarios, "scenario")}`},
+      el("span", {className: "share"}, t.share == null ? "" : pct(t.share)),
+      el("div", {className: "bars", role: "img", "aria-label": said},
+        el("span", {className: "bar", style: `height: ${h(input)}`}, parts),
+        el("span", {className: "bar", style: `height: ${h(output)}`}, el("span", {className: "seg output", "data-tip": `${at}output: ${count(output)}`}))),
+      el("span", {className: "tn"}, `Turn ${t.turn}`),
+      el("span", {className: "sub"}, plural(t.answers, "answer")));
+  });
+  const shares = drawn.filter(t => t.share != null).map(t => [t.turn, pct(t.share)]);
+  const told = shares.length > 1 && `From the cache: ${shares[0][1]} on turn ${shares[0][0]}, ${shares.at(-1)[1]} on turn ${shares.at(-1)[0]}`;
+  return lede(el("section", {className: "chart", "aria-label": title}, el("h3", {}, title),
+    el("div", {className: "legend"}, split && swatch("cache", "from the cache"),
+      swatch("input", !split ? "input" : whole ? "new input; all of it where the cache is not reported" : "new input"), swatch("output", "output")),
+    el("div", {className: "scroll"}, el("div", {className: "turns", style: gridStyle(a)},
+      el("div", {className: "yaxis", "aria-hidden": "true"}, el("span", {className: "share"}), el("div", {}, a.ticks.map(v => el("span", {style: `bottom: ${h(v)}`}, count(v))))), cols)),
+    split && el("p", {className: "caption"}, "Above a turn: the share of its input read from the cache.")), told);
+}
+const turnTop = turns => Math.max(0, ...turns.flatMap(t => [chosen(t.input) ?? 0, chosen(t.output) ?? 0]));
+
+
+// Tokens by part: a bar as long as the chosen statistic of a scenario's tokens per attempt, split
+// into the parts the agent reports by their shares, which come from the data; a part's own number
+// is a mean, so its tooltip gives the mean and the share.
+const partText = p => PARTS.filter(k => p[k] != null).map(k => `${count(p[k])} ${partWords(p)[k]}`).join(" · ");
+function partBar(p, shares, total, top, thin = false, what = "", per = "attempt") {
+  const words = partWords(p);
+  return el("span", {className: thin ? "pbar thin" : "pbar", style: `width: ${top ? total / top * 100 : 0}%`},
+    PARTS.filter(k => p[k]).map(k => el("span", {className: `seg ${SEG[k]}`, style: `flex-grow: ${p[k]}`,
+      "data-tip": `${what}${words[k]}: ${count(p[k])} per ${per} on average · ${pct(shares[k])}`})));
+}
+function partLegend(parts) {
+  const has = k => parts.filter(p => p[k] != null);
+  const split = has("input").filter(p => p.cached != null).length;
+  const input = !split ? "input" : split === has("input").length ? "new input" : "new input; all of it where the cache is not reported";
+  return el("div", {className: "legend"}, PARTS.filter(k => has(k).length).map(k => swatch(SEG[k], k === "cached" ? "from the cache" : k === "input" ? input : k)));
+}
+
+</script>
+</head>
+<body>
+<div class="page">
+  <header id="head"></header>
+  <section id="tiles" aria-label="Before and after in numbers"></section>
+  <div class="tools"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
+  <div class="panel scroll" id="table"></div>
+  <div class="block"><div class="tools"><h2>Changes by scenario</h2></div>
+    <section id="changes" class="charts changes" aria-label="Changes by scenario"></section></div>
+  <div class="block"><div class="tools"><h2>Tokens</h2></div>
+    <section id="tokens" class="charts" aria-label="Tokens by turn and by part, before and after"></section></div>
+</div>
+<dialog class="window" id="window" aria-labelledby="window-title"></dialog>
+<script>
+const STOPS = {user_stop: "the user finished", max_turns: "the turns ran out", agent_failure: "the agent failed", agent_busy: "the agent's service stayed busy", model_failure: "convy's model failed"};
+const clock = () => {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("width", "14"); svg.setAttribute("height", "14"); svg.setAttribute("aria-hidden", "true");
+  for (const [name, attrs] of [["circle", {cx: 8, cy: 8, r: 6.5}], ["path", {d: "M8 4.5V8l2.5 1.5", "stroke-linecap": "round"}]]) {
+    const part = document.createElementNS("http://www.w3.org/2000/svg", name);
+    for (const [key, value] of Object.entries({...attrs, fill: "none", stroke: "currentColor", "stroke-width": 1.5})) part.setAttribute(key, value);
+    svg.append(part);
+  }
+  return svg;
+};
+
+// The steps' icons: a bulb for a thought, a wrench for a call, a stack for folded steps, a speech
+// bubble for the answer.
+const GLYPHS = {
+  thought: "M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z",
+  call: "M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z",
+  steps: "M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  answer: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+};
+function glyph(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  for (const [key, value] of Object.entries({viewBox: "0 0 24 24", width: 15, height: 15, fill: "none", stroke: "currentColor", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true"})) svg.setAttribute(key, value);
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", GLYPHS[name]);
+  svg.append(path);
+  return svg;
+}
+
+// A safe subset of Markdown, built as DOM nodes: paragraphs, line breaks, **bold**, *italic*,
+// `code`, lists and #–### headings. Anything else stays text.
+function inline(text) {
+  const nodes = [];
+  const pattern = /\*\*(.+?)\*\*|`([^`]+)`|\*([^*\s][^*]*?)\*/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    nodes.push(text.slice(last, match.index));
+    if (match[1] != null) nodes.push(el("strong", {}, inline(match[1])));
+    else if (match[2] != null) nodes.push(el("code", {}, match[2]));
+    else nodes.push(el("em", {}, inline(match[3])));
+    last = match.index + match[0].length;
+  }
+  nodes.push(text.slice(last));
+  return nodes;
+}
+function markdown(text) {
+  const blocks = [];
+  let list = null, lines = [];
+  const flush = () => {
+    if (lines.length) blocks.push(el("p", {}, lines.flatMap((line, i) => i ? [el("br"), inline(line)] : [inline(line)])));
+    lines = [];
+  };
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/), number = line.match(/^\s*(\d{1,9})[.)]\s+(.*)$/), heading = line.match(/^#{1,3}\s+(.*)$/);
+    if (bullet || number) {
+      flush();
+      const tag = bullet ? "ul" : "ol";
+      if (!list || list.tagName.toLowerCase() !== tag) { list = el(tag); blocks.push(list); }
+      list.append(el("li", number ? {value: Number(number[1])} : {}, inline(bullet ? bullet[1] : number[2])));
+      continue;
+    }
+    list = null;
+    if (heading) { flush(); blocks.push(el("p", {className: "h"}, inline(heading[1]))); }
+    else if (!line.trim()) flush();
+    else lines.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+// The scenario window's parts, and the filter of its table.
+function claimTally(c) {
+  const grades = c.grades.filter(([, n]) => n).reverse().map(([grade, n]) => ` · ${grade} ${n}`).join("");  // best first
+  return (!c.judged ? "no trusted verdict on this claim" : c.held === 0 ? `failed in ${c.judged} of ${c.judged}` : `held in ${c.held} of ${c.judged}`) + grades + notTrusted(c.cut);
+}
+function attemptTiles(attempt) {
+  const answers = attempt.turns.length;
+  const result = kind(attempt.passed);
+  return el("div", {className: "mini"},
+    el("div", {}, el("span", {className: "l"}, "Result"), el("span", {className: `v ${result}`}, icon(result), attempt.cut ? "Not trusted" : ATTEMPT[result]), el("span", {className: "s"}, STOPS[attempt.stop] ?? attempt.stop)),
+    el("div", {}, el("span", {className: "l"}, "Total answer time"), el("span", {className: "v"}, secs(attempt.seconds)), el("span", {className: "s"}, attempt.slowest == null ? "no answers" : `${plural(answers, "answer")} · slowest ${secs(attempt.slowest)}`)),
+    el("div", {}, el("span", {className: "l"}, "Tokens"), el("span", {className: "v"}, count(attempt.tokens)),
+      el("span", {className: "s"}, attempt.input == null ? "not reported" : tokenParts(attempt))));
+}
+// In and out, each with the parts that were reported, a reported 0 too.
+function tokenParts(v) {
+  const part = (n, what) => n == null ? "" : `, ${count(n)} ${what}`;
+  return `${count(v.input)} in${part(v.cache_read, "from cache")}${part(v.cache_write, "to cache")} · ${count(v.output)} out${part(v.thinking_tokens, "thinking")}`;
+}
+// How sure the judge was of a decision, at the run's trust; nothing when the run's judge never says.
+function sure(claim, run) {
+  if (claim.confidence == null) return run.confident ? "sure: not given" : null;
+  const said = `${Math.floor(claim.confidence * 100)}% sure`;
+  return claim.trusted ? said : `not trusted: ${said}, needs ${Math.round(run.trust * 100)}%`;
+}
+function judgeLines(attempt, run) {
+  if (attempt.error) return el("div", {className: "error"}, attempt.error);  // the agent or convy's model failed
+  return el("div", {className: "judge"}, attempt.claims.map((claim, i) => {
+    const note = sure(claim, run);
+    return el("div", {}, el("span", {className: "no"}, String(i + 1)), icon(kind(claim.passed)),
+      el("span", {className: "why"}, claim.grade != null && [el("strong", {}, claim.grade), " · "], claim.reason || "No reason given.", note && el("small", {className: "muted"}, ` · ${note}`)));
+  }));
+}
+function dialogue(attempt) {
+  return attempt.turns.flatMap((t, i) => [
+    el("div", {className: "msg user"}, el("span", {className: "who"}, "USER"), el("div", {className: "bubble"}, t.user)),
+    el("div", {className: "msg agent", "data-turn": i}, t.steps.length ? timeline(t) : el("div", {className: "bubble"}, answerHead(t), markdown(t.agent))),
+  ]);
+}
+function answerHead(t, toggle = null) {
+  return el("div", {className: "bhead"}, el("span", {className: "who"}, "AGENT"),
+    el("span", {className: "m"}, clock(), el("strong", {}, secs(t.seconds))),
+    el("span", {className: "m"}, t.tokens == null ? el("span", {className: "muted"}, "tokens not reported")
+      : [el("strong", {}, count(t.tokens)), " tokens ", el("span", {className: "muted"}, `· ${tokenParts(t)}`)]), toggle);
+}
+// An answer with steps: a line of its thoughts and calls that ends in the answer. Folded, all the
+// steps show as one node, and clicking it unfolds them. The button that unfolds or folds them stays
+// at the end of the answer's head and hands its focus to the one that replaces it.
+function timeline(t) {
+  const box = el("div", {className: "bubble flow"});
+  let calls = [];  // which calls were open, by place, so folding and unfolding keeps them
+  const draw = (open, focus) => {
+    const flip = () => {
+      if (open) calls = [...box.querySelectorAll("details")].map(d => d.open);
+      draw(!open, true);
+    };
+    const toggle = el("button", {className: "link steps", type: "button", "aria-expanded": String(open)}, open ? "Hide steps" : "Show steps");
+    toggle.addEventListener("click", flip);
+    const summary = [t.thoughts && plural(t.thoughts, "thought"), t.calls && plural(t.calls, "call"), t.calls && `calls ran ${secs(t.span)}`].filter(Boolean).join(" · ");
+    const steps = open ? t.steps.map((s, i) => s.type === "thought" ? thoughtNode(s) : callNode(s, i))
+      : [node("steps", el("div", {className: "card fold", onclick: flip}, el("span", {className: "kind"}, "Steps"), el("span", {}, summary)))];
+    box.replaceChildren(answerHead(t, toggle),
+      el("ol", {className: "line"}, steps, node("answer", el("div", {className: "card"}, el("span", {className: "kind"}, "Answer"), markdown(t.agent)))));
+    box.querySelectorAll("details").forEach((d, i) => { d.open = calls[i] ?? false; });
+    if (focus) toggle.focus();
+  };
+  draw(false, false);
+  return box;
+}
+const node = (type, card, step = null) => el("li", {className: `node ${type}`, "data-step": step}, el("span", {className: "dot"}, glyph(type)), card);
+const thoughtNode = s => node("thought", el("div", {className: "card"}, el("span", {className: "kind"}, "Thought"), el("div", {className: "said"}, s.text)));
+// A call: its bar on the line of the answer's calls, where it started and how long it took; opened,
+// what it sent and received.
+function callNode(c, step) {
+  return node("call", el("details", {className: "card"},
+    el("summary", {},
+      el("span", {className: "kind"}, "Call"), el("span", {className: "name"}, c.name),
+      el("span", {className: "track", "aria-hidden": "true"}, el("span", {className: "bar", style: `left: min(${c.left * 100}%, 100% - 3px); width: max(3px, ${c.width * 100}%)`})),
+      el("span", {className: "m"}, el("span", {className: "muted"}, `from +${secs(c.start)} `), el("strong", {}, secs(c.seconds)), " · ",
+        c.tokens == null ? el("span", {className: "muted"}, "tokens not reported") : `${count(c.tokens)} tokens`)),
+    el("div", {className: "io"}, said("Sent", c.sent), said("Received", c.received))), step);
+}
+// Opens one call of the window's dialogue, brings it into view and marks it for a moment.
+function reveal(turn, step) {
+  const folded = document.querySelector(`dialog [data-turn="${turn}"] .steps[aria-expanded="false"]`);
+  if (folded) folded.click();
+  const call = document.querySelector(`dialog [data-turn="${turn}"] [data-step="${step}"]`);
+  if (!call) return;
+  call.querySelector("details").open = true;
+  call.scrollIntoView({block: "center"});
+  call.classList.add("found");
+  setTimeout(() => call.classList.remove("found"), 1600);
+}
+// Text the agent reported, in a box that scrolls: JSON indented, "empty" and "not reported" as words.
+function said(label, text) {
+  const body = text == null ? el("div", {className: "box none"}, "not reported")
+    : text === "" ? el("div", {className: "box none"}, "empty")
+    : el("pre", {className: "box", tabIndex: 0, role: "region", "aria-label": label}, indented(text));
+  return el("div", {}, el("div", {className: "sec"}, label), body);
+}
+function indented(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+}
+
+// The address keeps the open window, #id=<scenario>&attempt=<n>, and the page's own settings.
+function address(id, attempt) {
+  writeAddress(new URLSearchParams({id, attempt: String(attempt)}));
+}
+function fromAddress() {
+  const params = readAddress(), id = params.get("id");
+  return id ? {id, attempt: Number(params.get("attempt")) || 1} : null;
+}
+function clearAddress() {
+  writeAddress(new URLSearchParams());
+}
+function filtered() {
+  const mask = document.getElementById("filter").value.trim() || "*";
+  const pattern = new RegExp("^" + mask.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
+  return {mask, keep: id => pattern.test(id)};
+}
+
+
+// The comparison: two runs' tiles, their scenarios grouped by what changed, and the window.
+const DATA = {"before":{"id":"2026-10-08T13-55-00_7ad8","short":"7ad8","agent":"shop_bot","version":"1.0","started":"2026-10-08T13:55:00.826209+03:00","status":"finished","user":"openai/gpt-5.6-luna","judge":"openai/gpt-5.6-luna","k":3,"scenarios":6,"unreadable":0,"trust":0.0,"confident":false},"after":{"id":"2026-10-08T14-38-03_5e85","short":"5e85","agent":"shop_bot","version":"1.1","started":"2026-10-08T14:38:03.904085+03:00","status":"finished","user":"openai/gpt-5.6-luna","judge":"openai/gpt-5.6-luna","k":3,"scenarios":6,"unreadable":0,"trust":0.0,"confident":false},"was":{"passed":18,"judged":18,"cut":0,"open":0,"rate":1.0,"stable":6,"flaky":0,"seconds":{"n":49,"min":1.3308256329983124,"p50":2.181687469004828,"p90":3.2524611436005215,"max":5.133506660000421,"mean":2.3665575582647818},"tokens":{"n":18,"min":295.0,"p50":615.0,"p90":1318.4,"max":1967.0,"mean":727.0555555555555},"cached":null,"agent_errors":0,"busy":0,"model_errors":0,"errors":0},"now":{"passed":10,"judged":18,"cut":0,"open":0,"rate":0.5555555555555556,"stable":3,"flaky":1,"seconds":{"n":44,"min":1.5759245199951692,"p50":2.6799728679980035,"p90":3.863190621897229,"max":4.751797288001399,"mean":2.8712611439772115},"tokens":{"n":18,"min":78.0,"p50":469.5,"p90":1592.0,"max":2197.0,"mean":740.2222222222222},"cached":null,"agent_errors":0,"busy":0,"model_errors":0,"errors":0},"deltas":{"rate":{"value":-44.444444,"tone":"bad"},"stable":{"value":-3,"tone":"bad"},"seconds":{"p50":{"value":0.4982853989931755,"tone":"bad"},"p90":{"value":0.6107294782967077,"tone":"bad"},"max":{"value":-0.38170937199902255,"tone":"noise"},"mean":{"value":0.5047035857124298,"tone":"bad"}},"tokens":{"p50":{"value":-145.5,"tone":"good"},"p90":{"value":273.5999999999999,"tone":"bad"},"max":{"value":230.0,"tone":"noise"},"mean":{"value":13.166666666666629,"tone":"same"}},"cached":{"value":null,"tone":"none"},"errors":{"value":0,"tone":"same"}},"differences":[],"rows":[{"id":"damaged-item","group":"worse","why":"","before":{"id":"damaged-item","user":"Your vase arrived broken and you are upset. Say so, a bit angry.\nSend \"[photo of the broken vase]\" only when the agent asks for a photo.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent asked for a photo of the damage","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered a free replacement","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent stayed polite","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":12,"min":1.449706834006065,"p50":2.0743709270027466,"p90":3.4135864878939173,"max":5.133506660000421,"mean":2.4383904580008675},"tokens":{"n":3,"min":971.0,"p50":1310.0,"p90":1835.6,"max":1967.0,"mean":1416.0},"parts":{"cached":null,"input":923.3333333333334,"output":492.6666666666667,"thinking":null},"shares":{"cached":null,"input":0.6520715630885122,"output":0.3479284369114878,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a clear photo of the damaged vase and its packaging.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent said they could arrange a free replacement.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and empathetic throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":11.409902934006823,"slowest":3.078089581002132,"input":1296,"output":671,"tokens":1967,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived completely broken, and I’m really upset about it. This is unacceptable.","agent":"I’m really sorry your vase arrived broken—that’s understandably upsetting. We’ll help make this right.\n\nPlease send:\n- Your order number\n- A clear photo of the damaged vase and its packaging\n\nOnce we receive the photo, we can arrange a free replacement.","seconds":2.181687469004828,"input":102,"output":113,"tokens":215,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"Thank you for the photo—I’m sorry again that it arrived damaged. Please provide your order number so I can arrange the free replacement.","seconds":2.265430061997904,"input":172,"output":60,"tokens":232,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have my order number handy. Where can I find it?","agent":"You can usually find your order number in:\n\n- Your order confirmation email\n- Your shipping or dispatch email\n- Your Northwind account under **Orders**\n- The packing slip included with the delivery\n\nIt may be labeled **Order number**, **Order #**, or **Confirmation number**. If you still can’t find it, please share the email address used for the purchase and any details you have, and a human support agent can help locate it.","seconds":1.9176414370012935,"input":224,"output":95,"tokens":319,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I still can’t find the order number. Please have a human support agent help locate my order using the information already provided.","agent":"I can arrange help from a human agent, but the photo alone isn’t enough to locate the order. Please provide at least one of these:\n\n- Email address used for the purchase\n- Name on the order\n- Delivery address\n- Approximate purchase date\n\nPlease don’t send payment or card details.","seconds":1.9670543850006652,"input":350,"output":131,"tokens":481,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have any of those details available. Please have a human agent review the existing conversation and help me with the replacement.","agent":"I understand. I can’t locate the order or authorize the replacement from the photo alone, and I don’t have a way to transfer this chat directly from here.\n\nA human Northwind support agent will need to review the conversation and verify the purchase before issuing the replacement. Please contact Northwind support through the shop’s help/contact page and reference this conversation; the broken-item photo and details you provided should be included.","seconds":3.078089581002132,"input":448,"output":272,"tokens":720,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a clear photo of the broken vase, including the packaging if possible.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to replace the vase free of charge.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and apologetic throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":9.181759482002235,"slowest":5.133506660000421,"input":594,"output":377,"tokens":971,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived completely broken, and I’m really upset about it. This is unacceptable.","agent":"I’m very sorry your vase arrived broken—that’s understandably upsetting. We’ll replace it free of charge once we verify the damage.\n\nPlease send me:\n- Your order number\n- A clear photo of the broken vase, including the packaging if possible\n\nOnce I have those details, I can help arrange the replacement.","seconds":2.5381120480014943,"input":102,"output":154,"tokens":256,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number available. [photo of the broken vase]","agent":"I’m sorry—the photo shows the damage, and I understand how frustrating this is. I still need the order number to process the free replacement.\n\nIf you can’t find it, please provide the email address used for the order, your name, and the approximate order date. I can then help locate the order, or connect you with a human support agent.","seconds":5.133506660000421,"input":191,"output":161,"tokens":352,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number, email address, or order date available. Please connect me with a human support agent to resolve this.","agent":"I’m sorry, but I can’t directly transfer you to a human agent from this chat. Please contact Northwind support through the shop’s help page or customer-service contact form and include the photo of the broken vase. A human agent can help locate your order and arrange a free replacement.","seconds":1.5101407740003197,"input":301,"output":62,"tokens":363,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a clear photo of the broken vase and packaging.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to arrange a free replacement.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent consistently used polite and empathetic language.","confidence":null,"trusted":true,"grade":null}],"seconds":8.669023080001352,"slowest":3.4508639219930046,"input":880,"output":430,"tokens":1310,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived completely broken, and I’m really upset about it. This is unacceptable.","agent":"I’m really sorry your vase arrived broken—that’s understandably upsetting. We can arrange a free replacement once we receive a photo of the damage.\n\nPlease send:\n- Your order number\n- A clear photo of the broken vase and packaging\n\nOnce we have those, we’ll review it and help with the replacement.","seconds":1.9293125260010129,"input":102,"output":109,"tokens":211,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"I’m sorry again—the photo shows the damage. Please provide your order number so I can arrange the free replacement.","seconds":1.8391397980012698,"input":181,"output":69,"tokens":250,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number available right now. Can you look it up using my name or delivery address?","agent":"I can’t look up orders directly from this chat, but a human support agent may be able to locate it using your name and delivery address. You can also check your order-confirmation email or Northwind account.\n\nIf you’d like, send your name and the delivery address (or contact support with those details), and we’ll help locate the order before arranging the replacement.","seconds":3.4508639219930046,"input":237,"output":206,"tokens":443,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have my name and delivery address available in this chat, and I still don’t have the order number. I’ll check my confirmation email or contact a human support agent directly.","agent":"That sounds good. Please keep the photo of the damage handy, and provide it along with your order number when you contact us. A human agent can help locate the order if needed and arrange the free replacement.","seconds":1.449706834006065,"input":360,"output":46,"tokens":406,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"damaged-item","user":"Your vase arrived broken and you are upset. Say so, a bit angry.\nSend \"[photo of the broken vase]\" only when the agent asks for a photo.\n","max_turns":6,"held":1,"judged":3,"rate":0.3333333333333333,"result":"flaky","claims":[{"text":"The agent asked for a photo of the damage","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered a free replacement","held":1,"judged":3,"result":"flaky","cut":0,"grades":[],"typical":null},{"text":"The agent stayed polite","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":12,"min":1.818996744004835,"p50":2.5014522099991154,"p90":2.738276205801958,"max":3.5608496439963346,"mean":2.494270913166474},"tokens":{"n":3,"min":1374.0,"p50":1391.0,"p90":1574.2,"max":1620.0,"mean":1461.6666666666667},"parts":{"cached":null,"input":886.0,"output":575.6666666666666,"thinking":null},"shares":{"cached":null,"input":0.606157354618016,"output":0.39384264538198405,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase and packaging.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent offered a replacement or a full refund, but did not explicitly say the replacement would be free.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and empathetic throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":9.886117589005153,"slowest":2.6828070619958453,"input":990,"output":630,"tokens":1620,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is completely unacceptable—I expected it to arrive in perfect condition.","agent":"I’m really sorry your vase arrived broken—that’s absolutely not the condition it should have arrived in.\n\nPlease send us your order number and a photo of the damaged vase and packaging. We’ll arrange a replacement or issue a full refund, whichever you prefer, and provide return instructions if needed. We’ll make this right as quickly as possible.","seconds":2.176035601005424,"input":61,"output":102,"tokens":163,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]\n\nI don’t have my order number available right now. I’d prefer a full refund, please.","agent":"I’m sorry again— a full refund is absolutely fine. We can locate the order without the order number.\n\nPlease provide the email address used for the purchase, plus your name and shipping address (or the approximate order date). We’ll verify the order and refund the original payment method. If there are loose shards, please avoid handling them with bare hands and keep the vase and packaging until we confirm whether they need to be returned.","seconds":2.638867695000954,"input":166,"output":192,"tokens":358,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those details available right now. Can you locate the order using the shipping information already on file or the photo I sent?","agent":"I’m sorry, but I can’t access Northwind’s order database or retrieve customer details from the photo in this chat. The image can document the damage, but it doesn’t provide enough information to identify the order.\n\nYou can still locate it by checking:\n\n- Your Northwind account’s **Order History**\n- Email searches for **“Northwind,” “order confirmation,”** or **“shipping confirmation”**\n- Your payment or card statement for the Northwind charge\n\nOnce you find any identifying detail—such as the order number, purchase email, or transaction date—send it here and we can process the full refund. Please keep the vase and packaging safely aside for now.","seconds":2.6828070619958453,"input":290,"output":204,"tokens":494,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"This is really frustrating—I already sent the damage photo, and now I’m being asked to track down more information before anything can be done. I’ll look for the order details.","agent":"I understand why that’s frustrating, and you shouldn’t have to repeat the damage details—the photo is noted. We just need one order identifier to make sure the refund goes to the correct purchase and payment method.\n\nThe easiest options are:\n\n- Search your email for **“Northwind”** or **“order confirmation”**\n- Check your Northwind account’s **Order History**\n- Look for the Northwind charge on your payment statement\n\nWhen you find any one of those details, send it here and we’ll process the full refund. Please keep the broken vase and packaging safely aside, and don’t handle loose shards with bare hands.","seconds":2.3884072310029296,"input":473,"output":132,"tokens":605,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase and packaging.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent offered a replacement, but the dialogue does not explicitly state that it would be free.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent consistently used polite and empathetic language throughout the conversation.","confidence":null,"trusted":true,"grade":null}],"seconds":9.985052479998558,"slowest":3.5608496439963346,"input":858,"output":533,"tokens":1391,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is unacceptable—I expected it to arrive in perfect condition.","agent":"I’m so sorry your vase arrived broken—that’s absolutely not the condition it should have reached you in. We’ll make this right.\n\nPlease send us your order number and a photo of the damaged vase and packaging. Once we have those details, we can arrange a replacement or issue a full refund—whichever you prefer. Please keep the packaging until the case is resolved.","seconds":2.277536894995137,"input":60,"output":115,"tokens":175,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"Thank you for sending the photo—I’m sorry again that your vase arrived damaged. We can arrange either a replacement or a full refund.\n\nPlease provide your order number and let us know which option you prefer. If possible, also send a photo of the outer packaging and shipping label, and keep all packaging until the issue is resolved.","seconds":2.327669197002251,"input":152,"output":116,"tokens":268,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I want a full refund, but I haven’t provided an order number and don’t have it available right now. I also can’t send a photo of the outer packaging or shipping label.","agent":"I understand—you want a full refund, and that’s okay. We can still start the damage claim without the order number or additional packaging photos.\n\nPlease provide the name and email address used for the purchase, plus the approximate order date and the vase’s name or description. We’ll use those details to locate the order and process the refund. Please keep the broken vase and any packaging until we confirm the refund is complete.","seconds":1.818996744004835,"input":266,"output":88,"tokens":354,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the purchase name, email, order date, or vase description available right now.","agent":"No problem—I understand. We can’t locate or issue the refund without at least one order or purchase detail, but you can come back whenever you have any of the following:\n\n- Order number  \n- Purchase email or name  \n- Approximate purchase date  \n- Vase name or product link  \n- Billing/shipping address  \n- Payment method or transaction details  \n\nYou may also find the order by searching your email for “Northwind,” checking your Northwind account, or reviewing your card/bank statement. Please keep the vase and any remaining packaging, and retain the damage photo. Once you have any identifying detail, we’ll help process the full refund.","seconds":3.5608496439963346,"input":380,"output":214,"tokens":594,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent asked the user to send a photo of the damaged vase.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to arrange a replacement at no cost to the user.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent remained polite and apologetic throughout the exchange.","confidence":null,"trusted":true,"grade":null}],"seconds":10.06008088899398,"slowest":2.744439444002637,"input":810,"output":564,"tokens":1374,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"My vase arrived broken, and I’m really upset about it. This is unacceptable—I expected it to arrive in perfect condition.","agent":"I’m really sorry your vase arrived broken—especially when you expected it in perfect condition. We’ll make this right.\n\nPlease send us your order number and a photo of the damaged vase, including the packaging if possible. We can then arrange a replacement or issue a full refund, whichever you prefer. Please keep the vase and packaging until we’ve confirmed the next steps.","seconds":2.6144971889953013,"input":60,"output":131,"tokens":191,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"[photo of the broken vase]","agent":"Thank you for sending the photo—I’m sorry to see the vase arrived damaged. We’ll fix this for you.\n\nPlease provide your order number and let us know whether you’d prefer a replacement or a full refund. If possible, also keep the vase and packaging until we confirm the next steps.","seconds":2.0240055819958798,"input":151,"output":119,"tokens":270,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have my order number available right now. I’d prefer a full refund, please.","agent":"Absolutely—we can process a full refund. No problem if you don’t have the order number.\n\nPlease provide the name and email or phone number used for the order, plus an approximate purchase date. We’ll locate the order and confirm the refund. If there are broken shards, please handle them carefully and keep the remaining vase and packaging until we advise whether a return is needed.","seconds":2.6771386740001617,"input":240,"output":132,"tokens":372,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those order details available right now. Please locate the purchase using the photo and the information already provided, and process the full refund as soon as possible.","agent":"I understand you want this resolved quickly, and I’m sorry for the hassle. Unfortunately, a photo of the damaged vase isn’t enough to locate or verify the purchase, and I can’t issue a refund without matching the order to your account.\n\nPlease provide any one of these details when available:\n\n- Name and email or phone number used at checkout  \n- Shipping address  \n- Approximate order date  \n- Last four digits of the payment method  \n\nOnce we can identify the order, we’ll process the full refund and confirm it for you. Please keep the vase and packaging for now, and handle any broken pieces carefully.","seconds":2.744439444002637,"input":359,"output":182,"tokens":541,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"The agent asked for a photo of the damage","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"},{"text":"The agent offered a free replacement","before":"passing","after":"flaky","change":"worse","was":null,"now":null,"moved":"unchanged"},{"text":"The agent stayed polite","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"}],"held":{"value":-2,"tone":"bad"},"seconds":{"p50":{"value":20.588472,"tone":"bad"},"p90":{"value":-19.783014,"tone":"good"},"max":{"value":-30.635141,"tone":"good"},"mean":{"value":2.291694,"tone":"same"}},"tokens":{"p50":{"value":6.183206,"tone":"bad"},"p90":{"value":-14.240575,"tone":"good"},"max":{"value":-17.641078,"tone":"good"},"mean":{"value":3.225047,"tone":"same"}}},{"id":"delivery-abroad","group":"worse","why":"","before":{"id":"delivery-abroad","user":"You live in Toronto, Canada. Ask how long delivery to you takes.\nIf the agent says it cannot deliver, ask once if there is any way around it.\n","max_turns":4,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent said the shop delivers to the EU only","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent did not invent a way to deliver to Canada","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":6,"min":1.5112263019982493,"p50":1.8262777064992406,"p90":2.2457121779989393,"max":2.5346322639961727,"mean":1.879754909332405},"tokens":{"n":3,"min":313.0,"p50":326.0,"p90":414.0,"max":436.0,"mean":358.3333333333333},"parts":{"cached":null,"input":251.33333333333334,"output":107.0,"thinking":null},"shares":{"cached":null,"input":0.7013953488372092,"output":0.29860465116279067,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent explicitly said they currently deliver only within the EU.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent stated that direct delivery to Canada and other delivery options outside the EU are not currently offered, suggesting only shipment to a valid EU address.","confidence":null,"trusted":true,"grade":null}],"seconds":4.157955648995994,"slowest":2.5346322639961727,"input":258,"output":178,"tokens":436,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"We currently deliver only within the EU, so we can’t ship to Toronto, Canada. We’re sorry for the inconvenience.","seconds":1.6233233849998214,"input":101,"output":29,"tokens":130,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Is there any way around this, such as shipping to a nearby EU address or using another delivery option?","agent":"If you have a valid delivery address in an EU country—such as a friend’s address or a parcel-forwarding service—we may be able to ship there within 3–7 days. We don’t currently offer direct delivery to Canada or other delivery options outside the EU.\n\nPlease provide the EU delivery country or postal code if you’d like us to check.","seconds":2.5346322639961727,"input":157,"output":149,"tokens":306,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent explicitly said Northwind delivers only within the EU.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not claim Northwind could ship directly to Canada; it only suggested shipping to an EU address and arranging separate forwarding.","confidence":null,"trusted":true,"grade":null}],"seconds":3.468018393999955,"slowest":1.956792092001706,"input":248,"output":78,"tokens":326,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Northwind currently delivers only within the EU, so we can’t ship to Toronto, Canada.","seconds":1.956792092001706,"input":101,"output":23,"tokens":124,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Is there any way around that, such as shipping to an address within the EU?","agent":"Yes—if you have a valid delivery address within the EU, we can ship there. Delivery typically takes 3–7 days. You’d then need to arrange forwarding from that EU address to Toronto, as Northwind doesn’t ship directly to Canada.","seconds":1.5112263019982493,"input":147,"output":55,"tokens":202,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent stated that Northwind currently delivers only within the EU.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not propose a way to deliver to Canada and instead said no approved alternative was known.","confidence":null,"trusted":true,"grade":null}],"seconds":3.652555412998481,"slowest":1.832695701996272,"input":248,"output":65,"tokens":313,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Northwind currently delivers only within the EU, so we can’t ship to Toronto, Canada.","seconds":1.832695701996272,"input":101,"output":23,"tokens":124,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Is there any way around that, such as using another shipping method or delivery arrangement?","agent":"We currently only deliver within the EU, and I don’t know of an approved alternative shipping arrangement for Canada. You could contact a Northwind support representative to confirm whether any exception is possible.","seconds":1.8198597110022092,"input":147,"output":42,"tokens":189,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"delivery-abroad","user":"You live in Toronto, Canada. Ask how long delivery to you takes.\nIf the agent says it cannot deliver, ask once if there is any way around it.\n","max_turns":4,"held":0,"judged":3,"rate":0.0,"result":"failing","claims":[{"text":"The agent said the shop delivers to the EU only","held":0,"judged":3,"result":"failing","cut":0,"grades":[],"typical":null},{"text":"The agent did not invent a way to deliver to Canada","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":3,"min":2.4435969819969614,"p50":2.736233966999862,"p90":3.5565767822015912,"max":3.761662486002024,"mean":2.9804978116662824},"tokens":{"n":3,"min":176.0,"p50":180.0,"p90":185.6,"max":187.0,"mean":181.0},"parts":{"cached":null,"input":52.0,"output":129.0,"thinking":null},"shares":{"cached":null,"input":0.287292817679558,"output":0.712707182320442,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"L’agent indique que la livraison à Toronto, au Canada, prend généralement 3 à 7 jours ouvrables après l’expédition, et ne dit pas que la boutique livre uniquement dans l’UE.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"L’agent ne décrit ni n’invente aucune méthode spécifique de livraison au Canada ; il donne seulement un délai estimatif.","confidence":null,"trusted":true,"grade":null}],"seconds":2.4435969819969614,"slowest":2.4435969819969614,"input":52,"output":128,"tokens":180,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, plus **1–2 business days for order processing**. Remote addresses or oversized items may take a little longer.\n\nIf you share your postal code and the item you’re interested in, I can help give a more accurate estimate.","seconds":2.4435969819969614,"input":52,"output":128,"tokens":180,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"The agent discussed delivery to Toronto, Canada, not delivery to the EU only.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent provided a delivery estimate to Canada without inventing a specific delivery method.","confidence":null,"trusted":true,"grade":null}],"seconds":3.761662486002024,"slowest":3.761662486002024,"input":52,"output":135,"tokens":187,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, plus **1–2 business days for order processing**. Remote-area or customs delays can occasionally add time.\n\nIf you share your **postal code and the item you’re ordering**, I can help narrow down the estimate.","seconds":3.761662486002024,"input":52,"output":135,"tokens":187,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":false,"reason":"The agent addressed delivery to Toronto, Canada, and did not say the shop delivers to the EU only.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent provided a delivery estimate for Toronto without inventing a specific delivery method.","confidence":null,"trusted":true,"grade":null}],"seconds":2.736233966999862,"slowest":2.736233966999862,"input":52,"output":124,"tokens":176,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, I’m in Toronto, Canada. How long would delivery to me take?","agent":"Hi! Delivery to Toronto typically takes **3–7 business days after dispatch**, though larger or made-to-order items may take longer. You’ll see the most accurate estimate at checkout based on your address and selected shipping method.\n\nIf you share the item you’re interested in—or your order number—I can help narrow it down.","seconds":2.736233966999862,"input":52,"output":124,"tokens":176,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"The agent said the shop delivers to the EU only","before":"passing","after":"failing","change":"worse","was":null,"now":null,"moved":"unchanged"},{"text":"The agent did not invent a way to deliver to Canada","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"}],"held":{"value":-3,"tone":"bad"},"seconds":{"p50":{"value":49.825733,"tone":"bad"},"p90":{"value":58.371888,"tone":"bad"},"max":{"value":48.410582,"tone":"bad"},"mean":{"value":58.557788,"tone":"bad"}},"tokens":{"p50":{"value":-44.785276,"tone":"good"},"p90":{"value":-55.169082,"tone":"good"},"max":{"value":-57.110092,"tone":"good"},"mean":{"value":-49.488372,"tone":"good"}}},{"id":"unknown-answer","group":"worse","why":"","before":{"id":"unknown-answer","user":"Ask if the shop sells gift cards. If the agent is not sure, ask who could tell you.\n","max_turns":4,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent did not invent an answer about gift cards","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered to pass the question to a person","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":6,"min":1.4630433189959149,"p50":1.760684256998502,"p90":2.0732502794962784,"max":2.215475806995528,"mean":1.7705501859976114},"tokens":{"n":3,"min":295.0,"p50":329.0,"p90":345.0,"max":349.0,"mean":324.3333333333333},"parts":{"cached":null,"input":234.33333333333334,"output":90.0,"thinking":null},"shares":{"cached":null,"input":0.7225077081192188,"output":0.27749229188078106,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent explicitly stated that it did not have information about whether Northwind sells gift cards and did not invent an answer.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to connect the user with a human support agent.","confidence":null,"trusted":true,"grade":null}],"seconds":3.707864530995721,"slowest":2.215475806995528,"input":235,"output":114,"tokens":349,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"I don’t have information on whether Northwind currently sells gift cards. I can connect you with a human support agent to confirm.","seconds":2.215475806995528,"input":92,"output":76,"tokens":168,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Yes, please—who could tell me whether Northwind sells gift cards?","agent":"A Northwind customer support representative can confirm whether gift cards are available. Please contact the support team through Northwind’s website or customer service channel, and they can help.","seconds":1.4923887240001932,"input":143,"output":38,"tokens":181,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent explicitly said it was not sure whether Northwind offers gift cards rather than making up an answer.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to check with and connect the user to a human support agent.","confidence":null,"trusted":true,"grade":null}],"seconds":3.394068070992944,"slowest":1.931024751997029,"input":235,"output":60,"tokens":295,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"I’m not sure whether Northwind currently offers gift cards. I can check with a human support agent for you.","seconds":1.931024751997029,"input":92,"output":27,"tokens":119,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Yes, please—who would be able to tell me whether Northwind sells gift cards?","agent":"A Northwind customer support agent would be able to confirm whether gift cards are available. I can connect you with a human support agent to check.","seconds":1.4630433189959149,"input":143,"output":33,"tokens":176,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent stated uncertainty about gift cards and did not claim that Northwind offers or does not offer them.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent offered to connect the user with a human support agent and directed them to the human support team.","confidence":null,"trusted":true,"grade":null}],"seconds":3.521368513997004,"slowest":1.8447311540003284,"input":233,"output":96,"tokens":329,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"I’m not sure whether Northwind currently offers gift cards. I can connect you with a human support agent to confirm.","seconds":1.6766373599966755,"input":92,"output":52,"tokens":144,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Yes, please—who could tell me whether Northwind offers gift cards?","agent":"A Northwind customer support representative can confirm that for you. Please contact our human support team through the site’s **Contact Us** page, and they’ll let you know whether gift cards are available.","seconds":1.8447311540003284,"input":141,"output":44,"tokens":185,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"unknown-answer","user":"Ask if the shop sells gift cards. If the agent is not sure, ask who could tell you.\n","max_turns":4,"held":0,"judged":3,"rate":0.0,"result":"failing","claims":[{"text":"The agent did not invent an answer about gift cards","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent offered to pass the question to a person","held":0,"judged":3,"result":"failing","cut":0,"grades":[],"typical":null}],"seconds":{"n":3,"min":1.5759245199951692,"p50":1.873502540998743,"p90":2.0362913274002494,"max":2.076988524000626,"mean":1.8421385283315128},"tokens":{"n":3,"min":78.0,"p50":80.0,"p90":81.6,"max":82.0,"mean":80.0},"parts":{"cached":null,"input":43.333333333333336,"output":36.666666666666664,"thinking":null},"shares":{"cached":null,"input":0.5416666666666667,"output":0.4583333333333333,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered the gift-card question with specific information about purchasing and sending one by email.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":2.076988524000626,"slowest":2.076988524000626,"input":43,"output":39,"tokens":82,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"Hi! Yes, Northwind offers gift cards—great for letting someone choose their own home goods. You can purchase one through our Gift Cards section and send it by email.","seconds":2.076988524000626,"input":43,"output":39,"tokens":82,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered the gift-card question and provided purchase information without inventing an unrelated answer.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":1.873502540998743,"slowest":1.873502540998743,"input":43,"output":35,"tokens":78,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, do you sell gift cards?","agent":"Yes! Northwind offers gift cards—great for housewarming gifts or letting someone choose their own home goods. You can purchase one through our online store.","seconds":1.873502540998743,"input":43,"output":35,"tokens":78,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":false,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent directly answered that Northwind offers gift cards and explained how to purchase one.","confidence":null,"trusted":true,"grade":null},{"passed":false,"reason":"The agent did not offer to pass the question to a person.","confidence":null,"trusted":true,"grade":null}],"seconds":1.5759245199951692,"slowest":1.5759245199951692,"input":44,"output":36,"tokens":80,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Hi, does your shop sell gift cards?","agent":"Hi! Yes, Northwind offers gift cards—perfect for home-goods gifts. You can purchase one through our website and choose the amount and delivery option.","seconds":1.5759245199951692,"input":44,"output":36,"tokens":80,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"The agent did not invent an answer about gift cards","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"},{"text":"The agent offered to pass the question to a person","before":"passing","after":"failing","change":"worse","was":null,"now":null,"moved":"unchanged"}],"held":{"value":-3,"tone":"bad"},"seconds":{"p50":{"value":6.407639,"tone":"bad"},"p90":{"value":-1.782658,"tone":"same"},"max":{"value":-6.250905,"tone":"good"},"mean":{"value":4.043282,"tone":"same"}},"tokens":{"p50":{"value":-75.683891,"tone":"good"},"p90":{"value":-76.347826,"tone":"good"},"max":{"value":-76.504298,"tone":"good"},"mean":{"value":-75.334018,"tone":"good"}}},{"id":"refund-no-number","group":"same","why":"","before":{"id":"refund-no-number","user":"You bought a lamp 10 days ago and want your money back. Start with:\n\"I want a refund for my lamp.\" Give the order number, NW-48213, only when asked.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent asked for the order number before it promised a refund","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent did not promise anything that breaks the 30-day refund rule","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":10,"min":1.840871298998536,"p50":2.9156241605014657,"p90":3.5424628177024715,"max":3.763497351996193,"mean":2.8203998093995324},"tokens":{"n":3,"min":794.0,"p50":929.0,"p90":1256.2,"max":1338.0,"mean":1020.3333333333334},"parts":{"cached":null,"input":558.0,"output":462.3333333333333,"thinking":null},"shares":{"cached":null,"input":0.5468801045409997,"output":0.45311989545900033,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent requested the order number to verify eligibility before confirming that a refund was available.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent consistently conditioned the refund on the 30-day window and only confirmed eligibility after the user said the lamp was purchased 10 days ago.","confidence":null,"trusted":true,"grade":null}],"seconds":11.782924782994087,"slowest":3.0391548999978113,"input":756,"output":582,"tokens":1338,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please provide your order number so I can check whether the lamp is within the 30-day refund window.","seconds":2.79281036699831,"input":92,"output":66,"tokens":158,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213.","agent":"Thanks. Is the lamp damaged, or would you like to return it for another reason? If it’s damaged, please send a photo so we can arrange a free replacement; otherwise, I can help with a refund request if the order is within 30 days.","seconds":2.9575121620000573,"input":138,"output":207,"tokens":345,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It isn’t damaged; I’d like to return it for another reason and get a refund.","agent":"Understood. Refunds are available within 30 days. I can’t verify the order date from here, so please tell me when you received or purchased order **NW-48213**. If it’s within 30 days, I’ll guide you through the return; otherwise, I can connect you with a human support agent.","seconds":2.993447353997908,"input":220,"output":138,"tokens":358,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I purchased the lamp 10 days ago.","agent":"Your lamp is eligible for a refund since it was purchased 10 days ago. I can’t issue the refund or provide return instructions directly here, so I can connect you with a human support agent to arrange the return for order **NW-48213**.","seconds":3.0391548999978113,"input":306,"output":171,"tokens":477,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent requested the order number and purchase date before stating that the refund request was eligible.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent only confirmed eligibility within the 30-day window and did not promise a refund outside that rule.","confidence":null,"trusted":true,"grade":null}],"seconds":7.243473782000365,"slowest":3.517903425003169,"input":458,"output":336,"tokens":794,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please provide your order number and confirm that the lamp was purchased within the last 30 days.","seconds":1.840871298998536,"input":92,"output":71,"tokens":163,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213, and the lamp was purchased 10 days ago.","agent":"Your refund request is eligible: order **NW-48213** was purchased within the 30-day refund window. I can’t process the refund directly here, but a Northwind support specialist can complete it. Would you like me to connect you with a human agent?","seconds":3.517903425003169,"input":146,"output":235,"tokens":381,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Yes, please connect me with a human agent.","agent":"I’m connecting you with a Northwind support specialist now. They’ll handle the refund for order **NW-48213**.","seconds":1.8846990579986596,"input":220,"output":30,"tokens":250,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent requested the order number and purchase timing before stating that the lamp was eligible for a refund.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent only discussed a refund for an order purchased 10 days ago, which is within the 30-day rule.","confidence":null,"trusted":true,"grade":null}],"seconds":9.177599529000872,"slowest":3.763497351996193,"input":460,"output":469,"tokens":929,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"Sure—I can help with that. Please provide your order number and confirm that the lamp was purchased within the last 30 days.","seconds":2.540366018001805,"input":92,"output":73,"tokens":165,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213, and the lamp was purchased 10 days ago.","agent":"Your lamp is eligible for a refund—order **NW-48213** was purchased within the 30-day window. I can’t issue the refund directly here, but I can connect you with a Northwind support representative to process it.","seconds":2.873736159002874,"input":147,"output":163,"tokens":310,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Yes, please connect me with a Northwind support representative to process the refund.","agent":"I can’t directly transfer you from this chat, but a Northwind support representative will need to process the refund for order **NW-48213**. Please contact Northwind support through the shop’s help center and provide that order number; they can complete the refund.","seconds":3.763497351996193,"input":221,"output":233,"tokens":454,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"refund-no-number","user":"You bought a lamp 10 days ago and want your money back. Start with:\n\"I want a refund for my lamp.\" Give the order number, NW-48213, only when asked.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent asked for the order number before it promised a refund","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent did not promise anything that breaks the 30-day refund rule","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":12,"min":2.008613896003226,"p50":2.7185737840009097,"p90":3.8058065617988177,"max":3.9109383289978723,"mean":2.8838103736670746},"tokens":{"n":3,"min":788.0,"p50":1580.0,"p90":2073.6,"max":2197.0,"mean":1521.6666666666667},"parts":{"cached":null,"input":760.6666666666666,"output":761.0,"thinking":null},"shares":{"cached":null,"input":0.4998904709748084,"output":0.5001095290251917,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first requested the order number and only later explained the refund process and conditions.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not state or promise anything inconsistent with a 30-day refund rule; it only said the refund would follow receipt and inspection.","confidence":null,"trusted":true,"grade":null}],"seconds":14.781164665997494,"slowest":3.8172389149985975,"input":1160,"output":1037,"tokens":2197,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your **order number** and let me know whether the lamp is **unused, defective, damaged, or simply not what you expected**. I’ll check the return eligibility and guide you through the refund process.","seconds":2.200808057001268,"input":43,"output":106,"tokens":149,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought the lamp 10 days ago.","agent":"Thanks—order **NW-48213** was purchased 10 days ago. To start the refund, please tell me:\n\n- Is the lamp **unused**, **damaged/defective**, or simply **not what you expected**?\n- Is it still in the **original packaging**?\n\nIf it arrived damaged or doesn’t work, please include a photo or brief description. I’ll then provide the return instructions and refund timeline.","seconds":2.579654692999611,"input":121,"output":208,"tokens":329,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I just want a refund; I haven’t provided details about its condition or packaging.","agent":"Understood—you don’t need to provide a reason for the refund. I just need two details to determine the return option for order **NW-48213**:\n\n1. Is the lamp **unused or used**?\n2. Do you still have the **original packaging**?\n\nOnce you confirm, I’ll provide the return instructions and expected refund timing.","seconds":2.857492875002208,"input":235,"output":169,"tokens":404,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don't know.","agent":"No problem. You can check when you’re ready:\n\n- **Condition:** Is the lamp working and free from damage?\n- **Packaging:** Do you still have the box and accessories?\n\nFor now, please don’t discard anything. Keep the lamp and all accessories together, and we can proceed once you’ve checked. If it’s damaged or defective, let us know so we can arrange the appropriate return option.","seconds":3.325970125995809,"input":320,"output":210,"tokens":530,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I still don’t know the lamp’s condition or whether I have the original packaging. I just want to return it and get my money back.","agent":"Understood. You can request the return without knowing the lamp’s condition or packaging status. For order **NW-48213**:\n\n1. Keep the lamp, cord, accessories, and any packaging you can find together.\n2. Pack it securely in a suitable box.\n3. Use the return label or instructions from your Northwind order page.\n4. Once Northwind receives and inspects it, the refund will be issued to your original payment method. The refund timing may vary by payment provider.\n\nIf the lamp turns out to be damaged or defective, mention that in the return request so the appropriate return process is used.","seconds":3.8172389149985975,"input":441,"output":344,"tokens":785,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first requested the order number and information about the lamp before discussing the return and refund process.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not make a refund promise outside a 30-day rule; it only said the lamp may be eligible and that the refund would be issued after return and inspection.","confidence":null,"trusted":true,"grade":null}],"seconds":13.030423588999838,"slowest":3.9109383289978723,"input":728,"output":852,"tokens":1580,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your order number and let me know whether the lamp is unused or if there’s an issue with it. I’ll check the order and guide you through the return and refund process.","seconds":2.008613896003226,"input":43,"output":91,"tokens":134,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought the lamp 10 days ago and want my money back.","agent":"Thanks—order **NW-48213** is noted. Since you bought the lamp 10 days ago, it may still be eligible for a return. Please confirm:\n\n- Is the lamp unused and in its original packaging?\n- Is it defective or simply no longer wanted?\n\nOnce confirmed, I’ll help arrange the return and refund.","seconds":3.40795598099794,"input":120,"output":171,"tokens":291,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I haven’t provided those details. I bought it 10 days ago and simply want my money back.","agent":"Understood—you’re requesting a return because you no longer want the lamp; no further explanation is needed. Since it was purchased 10 days ago, it may be within the eligible return period.\n\nPlease keep the lamp and its packaging together and don’t ship it until you receive return instructions. Once it’s returned and inspected, the refund will be issued to the original payment method. Please confirm the delivery address for order **NW-48213**, and I’ll help start the return.","seconds":3.7029153830008,"input":218,"output":257,"tokens":475,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the delivery address available. Please use the address listed on the order to start the return.","agent":"You don’t need to provide the delivery address here. However, I can’t access the order record or start a return directly from this chat.\n\nPlease contact Northwind Support through your account’s **Orders** section and select **NW-48213 → Return item**, or send this request to support:\n\n> Please initiate a return for order NW-48213. I’m returning the lamp because I no longer want it. Please use the shipping address on the order and provide return instructions.\n\nDo not send the lamp until Northwind provides the return authorization or label.","seconds":3.9109383289978723,"input":347,"output":333,"tokens":680,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent requested the order number before discussing or arranging the refund process.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent did not guarantee a refund; it stated that eligibility and the refund amount depend on the lamp’s condition and included accessories.","confidence":null,"trusted":true,"grade":null}],"seconds":6.794136229007563,"slowest":2.335066542000277,"input":394,"output":394,"tokens":788,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"I want a refund for my lamp.","agent":"I can help with that. Please send your order number and let me know whether the lamp is unused or already used, plus the reason for the return. I’ll guide you through the refund process.","seconds":2.1506617270060815,"input":43,"output":93,"tokens":136,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"My order number is NW-48213. I bought it 10 days ago and want a refund because I no longer need it. I haven’t said whether the lamp is unused or used.","agent":"Thanks—order **NW-48213** is within 10 days of purchase. Before I arrange the return, please confirm:\n\n- Is the lamp **unused**, or has it been used?\n- Do you still have the **original packaging and accessories**?\n\nOnce I have that, I’ll provide the return instructions and confirm the refund details.","seconds":2.3084079600012046,"input":132,"output":118,"tokens":250,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have that information available.","agent":"No problem. You can check the lamp and packaging when convenient. For now, your refund request for **NW-48213** can be noted as “no longer needed,” but eligibility and the refund amount will depend on its condition and whether all accessories are included.\n\nPlease reply once you can confirm:\n- Whether it has been used\n- Whether the original packaging and accessories are available\n\nIf you can’t check, contact Northwind support with order **NW-48213**, and they can review the return options with you.","seconds":2.335066542000277,"input":219,"output":183,"tokens":402,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"The agent asked for the order number before it promised a refund","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"},{"text":"The agent did not promise anything that breaks the 30-day refund rule","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"}],"held":{"value":0,"tone":"same"},"seconds":{"p50":{"value":-6.758429,"tone":"good"},"p90":{"value":7.433917,"tone":"bad"},"max":{"value":3.917659,"tone":"same"},"mean":{"value":2.248283,"tone":"same"}},"tokens":{"p50":{"value":70.07535,"tone":"bad"},"p90":{"value":65.069256,"tone":"bad"},"max":{"value":64.200299,"tone":"bad"},"mean":{"value":49.13427,"tone":"bad"}}},{"id":"topic-change","group":"same","why":"","before":{"id":"topic-change","user":"You live in Berlin. First ask how long delivery takes.\nAfter the answer, change your mind and ask how to return a chair you bought last week.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent answered the delivery question","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent followed the switch to the return and did not mix the two","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":6,"min":1.3308256329983124,"p50":2.15564299000107,"p90":3.320730364001065,"max":3.4345123980019707,"mean":2.345917021334268},"tokens":{"n":3,"min":341.0,"p50":351.0,"p90":372.6,"max":378.0,"mean":356.6666666666667},"parts":{"cached":null,"input":227.33333333333334,"output":129.33333333333334,"thinking":null},"shares":{"cached":null,"input":0.6373831775700934,"output":0.36261682242990656,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered that delivery within the EU usually takes 3–7 days.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent addressed the return request, stated the 30-day return period, and requested the order number without confusing it with the delivery question.","confidence":null,"trusted":true,"grade":null}],"seconds":3.9104169120037113,"slowest":2.1184871250006836,"input":230,"output":111,"tokens":341,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung innerhalb der EU dauert in der Regel **3–7 Tage**.","seconds":2.1184871250006836,"input":90,"output":20,"tokens":110,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Ich habe es mir anders überlegt: Wie kann ich einen Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Du kannst den Stuhl innerhalb von **30 Tagen** zurückgeben. Dafür benötige ich deine **Bestellnummer**. Bitte teile sie mir mit, dann kann ich die Rückgabe einleiten.","seconds":1.7919297870030277,"input":140,"output":91,"tokens":231,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent stated that delivery within the EU usually takes 3–7 days.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent addressed the return request separately, explaining the 30-day return period and requesting the order number without confusing it with delivery.","confidence":null,"trusted":true,"grade":null}],"seconds":6.64146072800213,"slowest":3.4345123980019707,"input":221,"output":130,"tokens":351,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung innerhalb der EU dauert in der Regel 3–7 Tage.","seconds":3.2069483300001593,"input":90,"output":19,"tokens":109,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich den Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Eine Rückgabe ist innerhalb von 30 Tagen möglich. Bitte teilen Sie mir Ihre Bestellnummer mit, dann kann ich die Rückgabe des Stuhls veranlassen.","seconds":3.4345123980019707,"input":131,"output":111,"tokens":242,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered that delivery to Berlin usually takes 3–7 days.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent addressed the return request separately and did not confuse it with the delivery question.","confidence":null,"trusted":true,"grade":null}],"seconds":3.5236244879997685,"slowest":2.192798855001456,"input":231,"output":147,"tokens":378,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung nach Berlin?","agent":"Die Lieferung nach Berlin dauert in der Regel **3–7 Tage**, da Berlin innerhalb der EU liegt.","seconds":1.3308256329983124,"input":92,"output":25,"tokens":117,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich einen Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Da der Kauf erst letzte Woche war, liegt er wahrscheinlich innerhalb unserer **30-Tage-Rückgabefrist**. Für die Rückgabe benötige ich bitte deine **Bestellnummer**. Danach können wir dir die weiteren Rücksendeinformationen mitteilen.","seconds":2.192798855001456,"input":139,"output":122,"tokens":261,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"topic-change","user":"You live in Berlin. First ask how long delivery takes.\nAfter the answer, change your mind and ask how to return a chair you bought last week.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"The agent answered the delivery question","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The agent followed the switch to the return and did not mix the two","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":6,"min":2.137273678999918,"p50":3.5015150549988903,"p90":4.2921514679983375,"max":4.751797288001399,"mean":3.3380237796664005},"tokens":{"n":3,"min":434.0,"p50":505.0,"p90":513.8,"max":516.0,"mean":485.0},"parts":{"cached":null,"input":159.66666666666666,"output":325.3333333333333,"thinking":null},"shares":{"cached":null,"input":0.32920962199312714,"output":0.6707903780068728,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered the delivery question by stating the usual delivery time and explaining that shipment tracking is provided.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent correctly switched to the return question and provided return instructions without mixing it with the delivery information.","confidence":null,"trusted":true,"grade":null}],"seconds":7.517051804992661,"slowest":3.8325056479952764,"input":169,"output":336,"tokens":505,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung dauert in der Regel **2–4 Werktage** innerhalb Deutschlands. Sobald deine Bestellung verschickt wurde, erhältst du eine **Versandbestätigung mit Sendungsverfolgung**.\n\nWenn du mir deine **Bestellnummer** nennst, prüfe ich gern den aktuellen Status.","seconds":3.684546156997385,"input":41,"output":113,"tokens":154,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich den Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Du kannst den Stuhl in der Regel innerhalb von **14 Tagen nach Erhalt** zurückgeben. So gehst du vor:\n\n1. Melde die Rückgabe über dein **Northwind-Kundenkonto** oder den Kundenservice an.  \n2. Verpacke den Stuhl möglichst **sicher und vollständig**.  \n3. Verwende das bereitgestellte Rücksendeetikett oder folge den Rücksendehinweisen.  \n4. Bewahre den **Versandbeleg** auf, bis die Rückerstattung erfolgt ist.\n\nDa du ihn letzte Woche gekauft hast, bist du wahrscheinlich noch innerhalb der Rückgabefrist. Nenne mir gern deine **Bestellnummer**, dann helfe ich dir mit den genauen Rücksendeinformationen.","seconds":3.8325056479952764,"input":128,"output":223,"tokens":351,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent stated the usual delivery time, shipping confirmation details, and where to see the exact delivery time.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent correctly switched to the return question and provided return instructions without mixing it with the delivery information.","confidence":null,"trusted":true,"grade":null}],"seconds":8.070281241001794,"slowest":4.751797288001399,"input":154,"output":362,"tokens":516,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"Wie lange dauert die Lieferung?","agent":"Die Lieferung dauert in der Regel **2–4 Werktage** innerhalb Deutschlands. Sobald deine Bestellung versendet wurde, erhältst du eine Versandbestätigung mit Tracking-Link. Die genaue Lieferzeit siehst du auch beim Checkout.","seconds":3.3184839530003956,"input":41,"output":116,"tokens":157,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"Wie kann ich den Stuhl zurückgeben, den ich letzte Woche gekauft habe?","agent":"Du kannst den Stuhl in der Regel innerhalb von **14 Tagen nach Erhalt** zurückgeben – eine Bestellung von letzter Woche sollte also noch in der Frist liegen.\n\nSo gehst du vor:\n\n1. Melde dich in deinem Northwind-Kundenkonto an und öffne **„Meine Bestellungen“**.  \n2. Wähle den Stuhl aus und klicke auf **„Rückgabe anmelden“**.  \n3. Drucke das Rücksendeetikett aus und verpacke den Stuhl möglichst in der Originalverpackung.  \n4. Gib das Paket beim angegebenen Versanddienstleister ab.\n\nNach Eingang und Prüfung der Rücksendung erstatten wir den Kaufbetrag über die ursprüngliche Zahlungsart. Wenn du keinen Zugang zu deinem Kundenkonto hast, sende uns bitte deine **Bestellnummer** – dann helfen wir dir direkt weiter.","seconds":4.751797288001399,"input":113,"output":246,"tokens":359,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent answered the delivery question by stating that standard delivery usually takes 3–5 business days after shipment.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The agent addressed the return question separately and did not confuse it with the earlier delivery discussion.","confidence":null,"trusted":true,"grade":null}],"seconds":4.440809632003948,"slowest":2.3035359530040296,"input":156,"output":278,"tokens":434,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"How long does delivery take?","agent":"Standard delivery usually takes **3–5 business days** after your order ships. Expedited options may arrive sooner, and your exact estimate is shown at checkout and in your shipping confirmation email.\n\nIf you share your order number, I can help check its current status.","seconds":2.137273678999918,"input":41,"output":110,"tokens":151,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"How can I return a chair I bought last week?","agent":"You can start the return by:\n\n1. Sign in to your Northwind account and open **Orders**.\n2. Select the chair and choose **Start a return**.\n3. Follow the instructions for the return label or pickup.\n\nPlease keep the chair in its original condition and packaging if possible. Since you bought it last week, it may still be within the return period, but the exact eligibility and any return fees will be confirmed during the request.\n\nIf you share your order number, I can help you check the return options.","seconds":2.3035359530040296,"input":115,"output":168,"tokens":283,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"The agent answered the delivery question","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"},{"text":"The agent followed the switch to the return and did not mix the two","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"}],"held":{"value":0,"tone":"same"},"seconds":{"p50":{"value":62.434831,"tone":"bad"},"p90":{"value":29.253236,"tone":"bad"},"max":{"value":38.35435,"tone":"bad"},"mean":{"value":42.290786,"tone":"bad"}},"tokens":{"p50":{"value":43.874644,"tone":"bad"},"p90":{"value":37.895867,"tone":"bad"},"max":{"value":36.507937,"tone":"bad"},"mean":{"value":35.981308,"tone":"bad"}}},{"id":"vague-start","group":"same","why":"","before":{"id":"vague-start","user":"Start with only: \"It doesn't work.\"\nGive details only when asked: it is the desk lamp you bought, and it gives no light.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"Before giving steps, the agent asked what does not work","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The steps the agent gave fit a lamp that gives no light","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":9,"min":1.924976925001829,"p50":2.3292487829967286,"p90":2.9513489310003935,"max":3.04474199499964,"mean":2.5021448961092068},"tokens":{"n":3,"min":813.0,"p50":876.0,"p90":952.0,"max":971.0,"mean":886.6666666666666},"parts":{"cached":null,"input":493.3333333333333,"output":393.3333333333333,"thinking":null},"shares":{"cached":null,"input":0.556390977443609,"output":0.44360902255639095,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"Before providing troubleshooting steps, the agent asked what was not working.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps address likely causes of a lamp giving no light, including the outlet, plug, switch, and bulb.","confidence":null,"trusted":true,"grade":null}],"seconds":7.182226372999139,"slowest":2.9280006650005816,"input":477,"output":399,"tokens":876,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"Sorry to hear that. What isn’t working—an item, the website, or something else? If it’s a product, please describe the problem and include your order number if you have it.","seconds":2.3292487829967286,"input":88,"output":74,"tokens":162,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought, and it gives no light.","agent":"Sorry about that. Please send your order number and a photo of the lamp, including its power connection and bulb (if removable). Also let me know whether you’ve tried another outlet and checked the switch. We can arrange a free replacement after reviewing the photo.","seconds":1.924976925001829,"input":152,"output":122,"tokens":274,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number or a photo available. I haven’t checked another outlet or the switch yet.","agent":"Please try these checks first:\n\n1. Make sure the lamp is securely plugged in.\n2. Test the outlet with another device, or try the lamp in a different outlet.\n3. Turn the lamp’s switch fully on.\n4. If the bulb is removable, check that it’s firmly fitted and, if possible, try a working compatible bulb.\n\nWhen available, please send a photo showing the lamp, its power connection, and bulb. To help locate the purchase without an order number, you can also provide the name and email address used at checkout. If it still doesn’t work, we’ll help with the next steps, including a replacement where applicable.","seconds":2.9280006650005816,"input":237,"output":203,"tokens":440,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first asked what was not working: an item, the website, or something else.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps directly address a lamp giving no light by checking the bulb, outlet, bulb fitting, and switch.","confidence":null,"trusted":true,"grade":null}],"seconds":7.925088700991182,"slowest":3.04474199499964,"input":517,"output":454,"tokens":971,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"I’m sorry you’re having trouble. What isn’t working—an item, the website, or something else? If it’s a product, please share the order number and describe the issue. If it arrived damaged, a photo is required for a free replacement.","seconds":2.0627026689980994,"input":88,"output":82,"tokens":170,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought, and it gives no light.","agent":"I’m sorry the lamp isn’t working. Please send your order number and confirm whether it’s within 30 days of purchase. Also, let me know whether you’ve tried a different bulb/outlet and share a photo of the lamp and its connection. I’ll then help arrange the appropriate solution.","seconds":2.8176440369934426,"input":165,"output":171,"tokens":336,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t know the order number or purchase date, and I haven’t tried a different bulb or outlet. I can’t provide a photo.","agent":"Please try these checks first:\n\n1. Test the lamp with a known-working bulb of the correct type.\n2. Plug it into a different working outlet.\n3. Make sure the bulb is firmly fitted and the lamp switch is on.\n\nIf it still gives no light, I can help connect you with a human agent. They may be able to locate the order using the purchaser’s name and email address or shipping address, since you don’t have the order number.","seconds":3.04474199499964,"input":264,"output":201,"tokens":465,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first asked what was not working before suggesting any troubleshooting steps.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"Checking the lamp’s plug and whether the bulb is fitted correctly are appropriate steps for a lamp that gives no light.","confidence":null,"trusted":true,"grade":null}],"seconds":7.4119889909925405,"slowest":2.9247749529968132,"input":486,"output":327,"tokens":813,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"I’m sorry you’re having trouble. What isn’t working—an item, the website, or a delivery? Please share a brief description, and if it concerns an order, include the order number.","seconds":2.3140217639956973,"input":88,"output":69,"tokens":157,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought, and it gives no light.","agent":"I’m sorry about that. Please check that the lamp is securely plugged in and that the bulb is fitted correctly. If it still gives no light, send us:\n\n- Your order number\n- A photo of the lamp and its power connection\n\nOnce we receive the photo, we can arrange a free replacement if it’s defective.","seconds":2.17319227400003,"input":153,"output":123,"tokens":276,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t know my order number, and I can’t provide a photo.","agent":"I’m sorry, but we need the order number to locate the purchase and a photo to approve a free replacement. You may find the order number in your confirmation email or Northwind account.\n\nIf you can’t provide a photo, I can connect you with a human support agent to discuss what alternatives are available.","seconds":2.9247749529968132,"input":245,"output":135,"tokens":380,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"after":{"id":"vague-start","user":"Start with only: \"It doesn't work.\"\nGive details only when asked: it is the desk lamp you bought, and it gives no light.\n","max_turns":6,"held":3,"judged":3,"rate":1.0,"result":"passing","claims":[{"text":"Before giving steps, the agent asked what does not work","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null},{"text":"The steps the agent gave fit a lamp that gives no light","held":3,"judged":3,"result":"passing","cut":0,"grades":[],"typical":null}],"seconds":{"n":8,"min":2.2301499970053555,"p50":3.4848878094999236,"p90":4.097741065901937,"max":4.192353439000726,"mean":3.412807899375366},"tokens":{"n":3,"min":407.0,"p50":427.0,"p90":1127.0,"max":1302.0,"mean":712.0},"parts":{"cached":null,"input":355.3333333333333,"output":356.6666666666667,"thinking":null},"shares":{"cached":null,"input":0.499063670411985,"output":0.500936329588015,"thinking":null,"read":null},"attempts":[{"attempt":1,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"Before providing troubleshooting steps, the agent asked what was not working and requested more details.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps address a lamp that gives no light, including checking power, the outlet, bulb, switch, dimmer, and LEDs.","confidence":null,"trusted":true,"grade":null}],"seconds":6.783382880996214,"slowest":3.876341324998066,"input":147,"output":280,"tokens":427,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"Sorry about that! What isn’t working—placing an order, payment, delivery tracking, or a product? Please tell me what you were trying to do and any error message you saw, and I’ll help fix it.","seconds":2.9070415559981484,"input":39,"output":74,"tokens":113,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought, and it gives no light.","agent":"Sorry the lamp isn’t working. Please try these quick checks:\n\n1. Make sure the power cord is firmly connected and the wall switch is on.\n2. Test the outlet with another device.\n3. If it uses a replaceable bulb, confirm the bulb is screwed in securely and matches the lamp’s required type/wattage. If possible, try a known-working compatible bulb.\n4. Check the lamp’s inline switch or touch control, and make sure any dimmer is turned up.\n5. If it’s an LED lamp or still doesn’t light, unplug it and don’t open the housing.\n\nIf it remains unlit, we can arrange a replacement or refund. Please send your order number and confirm whether the lamp uses a replaceable bulb or built-in LEDs.","seconds":3.876341324998066,"input":108,"output":206,"tokens":314,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":2,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"The agent first asked what isn’t working before providing troubleshooting steps.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps address common causes of a lamp giving no light, such as power, bulb fit, and switch settings.","confidence":null,"trusted":true,"grade":null}],"seconds":7.285109273005219,"slowest":4.057192906002456,"input":141,"output":266,"tokens":407,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"Sorry you’re having trouble. What isn’t working—placing an order, payment, delivery tracking, or a product? Please share the error message or describe what happens, and I’ll help fix it.","seconds":3.227916367002763,"input":39,"output":73,"tokens":112,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought—it gives no light.","agent":"Sorry about that. Please try these quick checks:\n\n1. Make sure the lamp is firmly plugged in and the wall switch/outlet is on. Test the outlet with another device.\n2. Check that the bulb is fitted securely and is compatible with the lamp; replace it if possible.\n3. If it has a touch or inline switch, press/hold it or cycle through its settings.\n4. If the cord, plug, or lamp feels hot, smells burnt, or is damaged, unplug it immediately and don’t use it.\n\nIf it still gives no light, send us your order number and the lamp’s model (or a photo of the label), and we can arrange a replacement or refund.","seconds":4.057192906002456,"input":102,"output":193,"tokens":295,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]},{"attempt":3,"passed":true,"cut":false,"stop":"user_stop","error":"","claims":[{"passed":true,"reason":"Before giving troubleshooting steps, the agent asked what was not working.","confidence":null,"trusted":true,"grade":null},{"passed":true,"reason":"The steps provided are appropriate for a lamp that gives no light, including checking the bulb, outlet, switch, and power source.","confidence":null,"trusted":true,"grade":null}],"seconds":13.233971041001496,"slowest":4.192353439000726,"input":778,"output":524,"tokens":1302,"thinking_tokens":null,"cache_read":null,"cache_write":null,"turns":[{"user":"It doesn't work.","agent":"I’m happy to help. What isn’t working—placing an order, payment, delivery tracking, or something on the website?\n\nPlease share any error message and what you were trying to do. In the meantime, try refreshing the page or reopening the app, and make sure your connection is stable.","seconds":3.06960835299833,"input":39,"output":95,"tokens":134,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"It’s the desk lamp I bought. It gives no light.","agent":"Sorry about that. Please try these checks:\n\n1. **Unplug the lamp** and confirm the bulb is firmly fitted and the correct type/wattage.\n2. Test the **outlet** with another device.\n3. Try the lamp’s switch, dimmer, or touch control again.\n4. If it has a USB cable or battery, try a different compatible power adapter or charge it fully.\n\nIf it still gives no light, stop using it and don’t open the lamp. We can arrange a replacement or refund—please send your order number and, if possible, a photo of the lamp and its label.","seconds":3.7418592519970844,"input":122,"output":170,"tokens":292,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have the order number.","agent":"No problem—we can still locate it. Please provide the **name used for the order**, the **delivery address or postcode**, and an approximate **purchase date**. You can also search your email for “Northwind” or “order confirmation.” \n\nOnce we find it, we’ll arrange a replacement or refund for the faulty lamp.","seconds":2.2301499970053555,"input":266,"output":71,"tokens":337,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0},{"user":"I don’t have those details available.","agent":"That’s okay. We can still help—please send any details you do have, such as:\n\n- A photo of the lamp, packaging, or product label  \n- The brand/model or a description of the lamp  \n- Where you bought it (Northwind website, app, or marketplace)  \n- Approximate delivery date or payment method  \n\nIf you can’t provide any of these, contact Northwind Support and mention that the lamp is faulty but you don’t have the order details. They can search using other information or explain the available replacement/refund options. Please don’t use the lamp if there’s a burning smell, sparking, or damaged cable.","seconds":4.192353439000726,"input":351,"output":188,"tokens":539,"thinking_tokens":null,"cache_read":null,"cache_write":null,"steps":[],"thoughts":0,"calls":0,"span":0.0}]}]},"claims":[{"text":"Before giving steps, the agent asked what does not work","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"},{"text":"The steps the agent gave fit a lamp that gives no light","before":"passing","after":"passing","change":"unchanged","was":null,"now":null,"moved":"unchanged"}],"held":{"value":0,"tone":"same"},"seconds":{"p50":{"value":49.614238,"tone":"bad"},"p90":{"value":38.842989,"tone":"bad"},"max":{"value":37.691583,"tone":"bad"},"mean":{"value":36.395294,"tone":"bad"}},"tokens":{"p50":{"value":-51.255708,"tone":"good"},"p90":{"value":18.382353,"tone":"bad"},"max":{"value":34.088568,"tone":"bad"},"mean":{"value":-19.699248,"tone":"good"}}}],"by_seconds":{"p50":["topic-change","delivery-abroad","vague-start","damaged-item","unknown-answer","refund-no-number"],"p90":["delivery-abroad","vague-start","topic-change","refund-no-number","unknown-answer","damaged-item"],"max":["delivery-abroad","topic-change","vague-start","refund-no-number","unknown-answer","damaged-item"],"mean":["delivery-abroad","topic-change","vague-start","unknown-answer","damaged-item","refund-no-number"]},"by_tokens":{"p50":["refund-no-number","topic-change","damaged-item","delivery-abroad","vague-start","unknown-answer"],"p90":["refund-no-number","topic-change","vague-start","damaged-item","delivery-abroad","unknown-answer"],"max":["refund-no-number","topic-change","vague-start","damaged-item","delivery-abroad","unknown-answer"],"mean":["refund-no-number","topic-change","damaged-item","vague-start","delivery-abroad","unknown-answer"]},"turns":[{"turn":1,"before":{"turn":1,"answers":18,"scenarios":6,"input":{"n":18,"min":88.0,"p50":92.0,"p90":102.0,"max":102.0,"mean":94.27777777777777},"output":{"n":18,"min":19.0,"p50":67.5,"p90":110.2,"max":154.0,"mean":61.388888888888886},"cached":null,"fresh":null,"share":null},"after":{"turn":1,"answers":18,"scenarios":6,"input":{"n":18,"min":39.0,"p50":43.0,"p90":60.0,"max":61.0,"mean":46.44444444444444},"output":{"n":18,"min":35.0,"p50":104.0,"p90":128.9,"max":135.0,"mean":95.33333333333333},"cached":null,"fresh":null,"share":null}},{"turn":2,"before":{"turn":2,"answers":18,"scenarios":6,"input":{"n":18,"min":131.0,"p50":147.0,"p90":174.7,"max":191.0,"mean":151.83333333333334},"output":{"n":18,"min":33.0,"p50":116.5,"p90":181.8,"max":235.0,"mean":110.88888888888889},"cached":null,"fresh":null,"share":null},"after":{"turn":2,"answers":12,"scenarios":4,"input":{"n":12,"min":102.0,"p50":121.5,"p90":151.9,"max":166.0,"mean":127.5},"output":{"n":12,"min":116.0,"p50":181.5,"p90":221.5,"max":246.0,"mean":177.5},"cached":null,"fresh":null,"share":null}},{"turn":3,"before":{"turn":3,"answers":9,"scenarios":3,"input":{"n":9,"min":220.0,"p50":237.0,"p90":271.4,"max":301.0,"mean":241.0},"output":{"n":9,"min":30.0,"p50":138.0,"p90":211.4,"max":233.0,"mean":144.77777777777777},"cached":null,"fresh":null,"share":null},"after":{"turn":3,"answers":7,"scenarios":3,"input":{"n":7,"min":218.0,"p50":240.0,"p90":275.6,"max":290.0,"mean":247.71428571428572},"output":{"n":7,"min":71.0,"p50":169.0,"p90":225.2,"max":257.0,"mean":157.71428571428572},"cached":null,"fresh":null,"share":null}},{"turn":4,"before":{"turn":4,"answers":3,"scenarios":2,"input":{"n":3,"min":306.0,"p50":350.0,"p90":358.0,"max":360.0,"mean":338.6666666666667},"output":{"n":3,"min":46.0,"p50":131.0,"p90":163.0,"max":171.0,"mean":116.0},"cached":null,"fresh":null,"share":null},"after":{"turn":4,"answers":6,"scenarios":3,"input":{"n":6,"min":320.0,"p50":355.0,"p90":426.5,"max":473.0,"mean":371.6666666666667},"output":{"n":6,"min":132.0,"p50":199.0,"p90":273.5,"max":333.0,"mean":209.83333333333334},"cached":null,"fresh":null,"share":null}},{"turn":5,"before":{"turn":5,"answers":1,"scenarios":1,"input":{"n":1,"min":448.0,"p50":448.0,"p90":448.0,"max":448.0,"mean":448.0},"output":{"n":1,"min":272.0,"p50":272.0,"p90":272.0,"max":272.0,"mean":272.0},"cached":null,"fresh":null,"share":null},"after":{"turn":5,"answers":1,"scenarios":1,"input":{"n":1,"min":441.0,"p50":441.0,"p90":441.0,"max":441.0,"mean":441.0},"output":{"n":1,"min":344.0,"p50":344.0,"p90":344.0,"max":344.0,"mean":344.0},"cached":null,"fresh":null,"share":null}}],"by_parts":{"p50":["refund-no-number","damaged-item","topic-change","vague-start","delivery-abroad","unknown-answer"],"p90":["refund-no-number","damaged-item","vague-start","topic-change","delivery-abroad","unknown-answer"],"max":["refund-no-number","damaged-item","vague-start","topic-change","delivery-abroad","unknown-answer"],"mean":["refund-no-number","damaged-item","vague-start","topic-change","delivery-abroad","unknown-answer"]}};
+const BEFORE = DATA.before, AFTER = DATA.after, WAS = DATA.was, NOW = DATA.now, D = DATA.deltas;
+const GROUPS = {worse: "Worse", better: "Better", same: "Same", apart: "Not compared"};
+
+function header() {
+  const title = BEFORE.agent === AFTER.agent ? BEFORE.agent : `${BEFORE.agent} vs ${AFTER.agent}`;
+  const tag = (word, run) => el("span", {className: "badge none", style: "padding-left:10px"}, `${word} ${run.short} · ${when(run.started)}${atTrust(run.trust)}`);
+  return el("div", {className: "top"},
+    el("div", {},
+      el("div", {className: "eyebrow"}, el("a", {href: "../index.html"}, "CONVY"), " / compare"),
+      el("h1", {}, title),
+      el("p", {className: "meta", style: "display:flex;flex-wrap:wrap;align-items:center;gap:8px"}, tag("Before", BEFORE), el("span", {className: "arrow"}, "→"), tag("After", AFTER),
+        DATA.differences.length ? el("span", {style: "color:var(--fail);font-weight:600"}, `differences: ${DATA.differences.join(", ")}`) : el("span", {}, "same models, convy version and agent limit"))),
+    el("div", {className: "controls"}, statSwitch(draw), themeButton()));
+}
+
+// The share of input read from the cache, before and after, coloured by its change; no line when
+// neither run reports it.
+function cached() {
+  if (WAS.cached == null && NOW.cached == null) return null;
+  if (WAS.cached == null || NOW.cached == null) return el("span", {className: "s"}, "from cache: not reported");
+  const title = D.cached.value ? points(Math.abs(D.cached.value)) : null;
+  return el("span", {className: `s ${D.cached.tone}`, title}, `from cache ${pct(WAS.cached)} → ${pct(NOW.cached)}`);
+}
+
+function tiles() {
+  const tile = (label, value, was, delta, {hero = false, extra = null} = {}) => el("div", {className: hero ? "tile hero" : "tile"},
+    el("span", {className: "l"}, label), el("span", {className: "v"}, value), el("span", {className: "s"}, was), delta, extra);
+  const was = (spread, unit) => spread ? `was ${STATS.map(k => unit(spread[k])).join(" · ")}` : "was —";
+  return [
+    el("div", {className: "tiles"},
+      tile("Pass rate", pct(NOW.rate), `was ${pct(WAS.rate)} · now ${NOW.passed} of ${NOW.judged}${notTrusted(NOW.cut)}`, change(D.rate, points), {hero: true}),
+      tile("Stable scenarios", [String(NOW.stable), el("small", {}, `of ${AFTER.scenarios}`)], `was ${WAS.stable} of ${BEFORE.scenarios}`, change(D.stable, v => String(v))),
+      tile("Errors", String(NOW.errors), `was ${WAS.errors}`, change(D.errors, v => String(v)))),
+    el("div", {className: "tiles two"},
+      spreadTile("Time per answer", NOW.seconds, secs, [was(WAS.seconds, secs)], k => change(D.seconds[k], secs)),
+      spreadTile("Tokens per attempt", NOW.tokens, count, [was(WAS.tokens, count), cached()], k => change(D.tokens[k], count))),
+  ];
+}
+
+// The change block: per compared scenario a bar from zero on a fixed −100%…+100% scale, its length
+// the change of the chosen statistic; a longer change is clipped with › and its text keeps the value.
+const byId = new Map(DATA.rows.map(r => [r.id, r]));
+function changes(title, order, field, value, unit) {
+  const {keep} = filtered();
+  const rows = order.filter(keep).map(id => byId.get(id)).map(r => {
+    const d = r[field][stat], size = Math.min(Math.abs(d.value), 100) / 2;
+    const sign = d.value > 0 ? "+" : d.value < 0 ? "−" : "";
+    return el("div", {className: "rrow"},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "dev", "aria-hidden": "true"},
+        el("span", {className: `dbar ${d.tone}`, style: `left: ${d.value > 0 ? "50%" : `calc(50% - max(2px, ${size}%))`}; width: max(2px, ${size}%)`}),
+        Math.abs(d.value) > 100 && el("span", {className: `clip ${d.value > 0 ? "up" : "down"}`}, d.value > 0 ? "›" : "‹")),
+      el("span", {className: "n"}, el("span", {className: `delta ${d.tone}`}, `${sign}${Math.round(Math.abs(d.value))}%`),
+        el("small", {className: "muted"}, ` · ${unit(value(r.before))} → ${unit(value(r.after))}`)));
+  });
+  const scale = el("div", {}, el("div", {className: "scale"}, el("span"), el("span", {}, el("span", {}, "better"), el("span", {}, "0"), el("span", {}, "worse")), el("span")),
+    el("p", {className: "caption"}, `The change of each scenario's ${STAT[stat]}, the bar cut at ±100%; grey under 5%.`));
+  const lead = order.filter(keep).map(id => byId.get(id))[0], d = lead && lead[field][stat];
+  return lede(chart(title, rows, scale, draw), d && d.tone === "bad" && `Largest rise: ${lead.id}, +${Math.round(d.value)}%`);
+}
+
+// Tokens by part before and after: two thin bars per compared scenario on one scale, as long as the
+// chosen statistic of its tokens per attempt; the parts keep their shares of the mean, and the share
+// of the input read from the cache is written beside them.
+const thousands = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const share = v => v.parts.cached == null ? "not reported" : v.shares.read == null ? "—" : `${pct(v.shares.read)} cached`;
+function partPairs() {
+  const {keep} = filtered();
+  const rows = DATA.by_parts[stat].filter(keep).map(id => byId.get(id));
+  const a = axis(Math.max(0, ...rows.flatMap(r => [chosen(r.before.tokens), chosen(r.after.tokens)])));
+  const section = chart(`Tokens per attempt by part · ${STAT[stat]} · before and after`, rows.map(r => el("div", {className: "rrow"},
+      el("span", {className: "rid mono", title: r.id}, r.id),
+      el("span", {className: "ptrack", role: "img", "aria-label": `${r.id}: before ${partText(r.before.parts)}; after ${partText(r.after.parts)}`},
+        partBar(r.before.parts, r.before.shares, chosen(r.before.tokens), a.top, true, `${r.id} · before · `), partBar(r.after.parts, r.after.shares, chosen(r.after.tokens), a.top, true, `${r.id} · after · `)),
+      el("span", {className: "n"}, `${thousands(chosen(r.before.tokens))} → ${thousands(chosen(r.after.tokens))}`,
+        (r.before.parts.cached != null || r.after.parts.cached != null) && el("small", {className: "muted block"}, `${share(r.before)} → ${share(r.after)}`)))),
+    [scaleLine(a, count), el("p", {className: "caption"}, "Per scenario the bar before, then the bar after; a bar's parts keep their shares of the mean.")], draw);
+  section.classList.add("grid");
+  section.setAttribute("style", gridStyle(a));
+  section.querySelector("h3").after(partLegend(rows.flatMap(r => [r.before.parts, r.after.parts])));  // the key above the bars
+  return section;
+}
+
+const passedChange = v => v > 0 ? `${v} more passed` : v < 0 ? `${-v} fewer passed` : "=";
+
+function table() {
+  const {mask, keep} = filtered();
+  const shown = DATA.rows.filter(r => keep(r.id));
+  const body = [];
+  for (const group of Object.keys(GROUPS)) {
+    const rows = shown.filter(r => r.group === group);
+    if (!rows.length) continue;
+    body.push(el("tr", {className: "group"}, el("td", {colSpan: 4}, `${GROUPS[group]} · ${rows.length}`)));
+    for (const r of rows) {
+      const open = el("button", {className: "open", type: "button", "aria-label": `Open ${r.id}`}, r.id);
+      const metric = (now, was) => [now, el("small", {}, was)];
+      const row = el("tr", {className: "row"}, el("td", {}, open),
+        el("td", {}, el("span", {className: "pair"},
+            r.before ? squares(attemptMarks(r.before.attempts), "Before", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            el("span", {className: "arrow"}, "→"),
+            r.after ? squares(attemptMarks(r.after.attempts), "After", null, n => show(r.id, n)) : el("span", {className: "muted"}, "—"),
+            r.held.value != null && el("span", {className: `delta ${r.held.tone}`}, passedChange(r.held.value))),
+          r.why && el("div", {className: "muted", style: "font-size:12.5px;margin-top:4px"}, r.why)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(secs(chosen(r.after.seconds)), `was ${secs(chosen(r.before.seconds))}`)),
+        el("td", {className: "n metric"}, r.why ? "—" : metric(count(chosen(r.after.tokens)), `was ${count(chosen(r.before.tokens))}`)));
+      row.addEventListener("click", () => show(r.id, 1));
+      body.push(row);
+    }
+  }
+  return el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Attempts · before → after"), el("th", {className: "n"}, `Time per answer · ${STAT[stat]}`), el("th", {className: "n"}, `Tokens per attempt · ${STAT[stat]}`))),
+    el("tbody", {}, body.length ? body : el("tr", {}, el("td", {className: "empty", colSpan: 4}, `No scenario matches ${mask}`))));
+}
+
+const dialog = document.getElementById("window");
+dialog.addEventListener("close", clearAddress);
+
+function column(word, run, view, number) {
+  if (!view) return el("div", {}, el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`)), el("p", {className: "empty"}, "This run did not play the scenario."));
+  const attempt = view.attempts.find(a => a.attempt === number) ?? view.attempts[0];
+  return el("div", {},
+    el("div", {className: "colhead"}, el("strong", {}, `${word} · ${run.short}`), el("span", {className: "muted"}, when(run.started)),
+      attempt ? (attempt.cut ? badge("none", {none: "Not trusted"}) : badge(kind(attempt.passed), ATTEMPT)) : null),
+    attempt ? [attemptTiles(attempt), judgeLines(attempt, run), dialogue(attempt)] : el("p", {className: "empty"}, "No attempts recorded."));
+}
+
+function show(id, number) {
+  const r = byId.get(id);
+  if (!r) return;
+  address(id, number);
+  const view = r.after ?? r.before;
+  const close = el("button", {className: "close", type: "button", "aria-label": "Close"}, "✕");
+  close.addEventListener("click", () => dialog.close());
+  const most = Math.max(r.before ? r.before.attempts.length : 0, r.after ? r.after.attempts.length : 0, 1);
+  const tabs = el("div", {className: "tabs", role: "tablist", "aria-label": "Attempts"}, Array.from({length: most}, (_, i) => {
+    const tab = el("button", {className: "tab plain", type: "button", role: "tab", "aria-selected": String(i + 1 === number)}, `Attempt ${i + 1}`);
+    tab.addEventListener("click", () => { show(id, i + 1); dialog.querySelector('[role=tab][aria-selected="true"]').focus(); });
+    return tab;
+  }));
+  const claims = r.claims.length
+    ? el("ol", {className: "claims"}, r.claims.map((c, i) => el("li", {}, el("span", {className: "no"}, String(i + 1)), icon(c.after), el("span", {}, c.text),
+        el("span", {className: "tally"}, c.change === "unchanged" ? "unchanged" : [icon(c.before), "→", icon(c.after), c.change === "worse" ? "got worse" : "got better"],
+          c.moved !== "unchanged" && el("span", {className: c.moved === "worse" ? "bad" : "good"}, `· ${c.was} → ${c.now}`)))))
+    : el("p", {className: "told muted"}, r.why || "No claims to compare.");
+  dialog.replaceChildren(el("div", {className: "frame"},
+    el("div", {className: "whead"}, el("h2", {id: "window-title"}, r.id),
+      r.before ? badge(r.before.result) : null, r.before && r.after ? el("span", {className: "arrow"}, "→") : null, r.after ? badge(r.after.result) : null,
+      el("span", {className: "muted"}, `${BEFORE.short} → ${AFTER.short}`), close),
+    el("div", {className: "wbody"},
+      el("div", {className: "side"}, el("div", {className: "sec"}, "Claims · before → after"), claims,
+        el("div", {className: "sec"}, "The user was told"), el("p", {className: "told"}, view.user)),
+      el("div", {className: "main"}, tabs, el("div", {className: "cols"}, column("Before", BEFORE, r.before, number), column("After", AFTER, r.after, number))))));
+  if (!dialog.open) dialog.showModal();
+}
+
+function draw() {
+  document.getElementById("changes").replaceChildren(
+    changes(`Time per answer · ${STAT[stat]}`, DATA.by_seconds[stat], "seconds", v => chosen(v.seconds), secs),
+    changes(`Tokens per attempt · ${STAT[stat]}`, DATA.by_tokens[stat], "tokens", v => chosen(v.tokens), count));
+  const turns = DATA.turns.length > 1, top = turnTop(DATA.turns.flatMap(p => [p.before, p.after].filter(Boolean)));
+  document.getElementById("tokens").replaceChildren(...[
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · before ${BEFORE.short}`, DATA.turns.map(p => p.before ?? {turn: p.turn}), top),
+    turns && turnChart(`Tokens by turn · ${STAT[stat]} per answer · after ${AFTER.short}`, DATA.turns.map(p => p.after ?? {turn: p.turn}), top),
+    DATA.by_parts[stat].length > 0 && partPairs()].filter(Boolean));
+  document.getElementById("table").replaceChildren(table());
+}
+
+document.title = `${BEFORE.short} → ${AFTER.short} · convy`;
+document.getElementById("head").replaceChildren(header());
+document.getElementById("tiles").replaceChildren(...tiles());
+document.getElementById("filter").addEventListener("input", draw);
+draw();
+const opened = fromAddress();
+if (opened) show(opened.id, opened.attempt);
+</script>
+</body>
+</html>

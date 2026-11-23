@@ -27,8 +27,8 @@ class Demo:
         site's root leading to the newer run and to the comparison: the README links those."""
         older, newer = self.runs()
         before, after = (run.rpartition("_")[2] for run in (older, newer))
-        self.convy("report")
         self.convy(f"compare {before} {after}")
+        self.convy("report")
         results = self.folder / "results"
         lead = {
             "report.html": f"shop_bot/{newer}/report.html",
