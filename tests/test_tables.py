@@ -612,13 +612,15 @@ def seconds_per_answer(tables: Tables) -> float:
 
 
 def tokens_per_attempt(tables: Tables) -> float:
-    """Tokens per attempt: the mean, over the attempts that report them, of the sum of their
-    answers' input and output."""
+    """Tokens per attempt: the mean of complete recorded answer totals."""
     tokens: defaultdict[tuple[str, int], int] = defaultdict(int)
+    missing = set()
     for a in tables.answers().rows:
         if a.input is not None and a.output is not None:
             tokens[a.scenario, a.attempt] += a.input + a.output
-    return mean(tokens.values())
+        else:
+            missing.add((a.scenario, a.attempt))
+    return mean(value for key, value in tokens.items() if key not in missing)
 
 
 def cache_share(tables: Tables) -> float:
@@ -737,10 +739,17 @@ def test_the_time_per_answer_is_the_mean_of_the_answers_seconds():
     assert seconds_per_answer(NUMBERS_TABLES) == seconds.mean == 1.75
 
 
-def test_the_tokens_per_attempt_are_the_mean_over_the_attempts_that_report_them():
-    tokens = NUMBERS_PAGE.metrics.tokens
+@pytest.mark.parametrize("partial", [False, True])
+def test_exported_tokens_reproduce_the_mean_of_complete_tasks(partial):
+    first, *rest = NUMBERS.outcomes
+    if partial:
+        first = msgspec.structs.replace(
+            first, transcript=first.transcript.with_turn(answered(NoUsage(), 1.0))
+        )
+    run = msgspec.structs.replace(NUMBERS, outcomes=(first, *rest))
+    tokens = Report(run).page().metrics.tokens
     assert tokens is not None
-    assert tokens_per_attempt(NUMBERS_TABLES) == tokens.mean == 430 / 3
+    assert tokens_per_attempt(Tables((run,))) == tokens.mean == (160 if partial else 430 / 3)
 
 
 def test_the_cache_share_is_over_the_answers_that_report_a_cache_read():
