@@ -1,7 +1,7 @@
 import asyncio
 import math
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -37,7 +37,7 @@ class Slow:
         self.closing = closing
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         await asyncio.sleep(self.opening)
         try:
             yield EchoConversation()
