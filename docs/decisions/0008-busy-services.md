@@ -1,68 +1,43 @@
-# 8. A busy service is reported by its caller and waited for by convy
+# 8. Retry requests that a busy service refused
 
 **Status:** Accepted
 
 ## Context
 
-Hosted models limit requests per minute, so a run meets "429 Too Many Requests" often. convy
-retried only inside `JsonConnection`: four tries with fixed pauses of 2, 4 and 8 seconds, or the
-service's `Retry-After`. Measured against a judge limited to 2 requests per second, 60 attempts:
-
-- `Retry-After: 1` used up the four tries in about 3 seconds: 20 attempts had no verdict;
-- every request that got a 429 came back at the same moment: up to 163 answers of 429 for 60
-  decisions;
-- an agent, model or judge of one's own got no retry at all, and a busy agent service failed the
-  attempt and lowered the agent's pass rate.
-
-A limit on requests at once ([0007](0007-participant-limits.md)) does not prevent this: with
-quick answers one request at a time can still exceed a limit per minute.
-
-The common advice is to wait at least as long as `Retry-After` asks, add a small random delay, back
-off exponentially with jitter when the service says nothing, and cap both the tries and the total
-time ([OpenAI, Rate limits](https://developers.openai.com/api/docs/guides/rate-limits);
-[AWS, Exponential Backoff And Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)).
+The original HTTP client tried each request four times, with fixed delays or the server's
+`Retry-After` value. In a test of 60 attempts against a judge limited to two requests per
+second, 20 attempts ended without a verdict. Requests retried together and caused another wave
+of refusals. Custom agents and models had no equivalent retry handling.
 
 ## Decision
 
-- **The caller reports, convy decides.** Only the code that sent a request knows whether the
-  service refused it before acting on it. An `Agent`, `Model` or `Judge` raises `Busy` then, with
-  the wait the service asked for; `JsonConnection` does it for 429 and 503, and retries
-  nothing itself. Anything else is a failure as before. A service that cannot be reached is not
-  busy but gone, often at a wrong address: it fails at once rather than after two minutes of
-  waiting.
-- **One `Patience` for every participant.** It tries a busy service again within `seconds` of
-  the first try, 120 by default, so that a limit per minute resets twice: after at least the
-  asked wait plus a little more, or, without one, after a random wait up to a window that doubles
-  from 1 to 30 seconds. When the asked wait is longer than the time left, it gives up at once.
-- **A busy service gets fewer requests at once.** Each time a participant's service says it is
-  busy, the participant sends half as many requests at once, down to one, and one more again after
-  as many answers, up to its limit: the limit of [0007](0007-participant-limits.md) is a ceiling,
-  and convy finds the pace the service keeps up with, as promptfoo
-  ([Rate Limits](https://www.promptfoo.dev/docs/configuration/rate-limits/)) and the adaptive
-  mode of the AWS SDKs ([Retry behavior](https://docs.aws.amazon.com/general/latest/gr/api-retries.html))
-  do. A request holds no place while it waits.
-- **An agent whose service stays busy is not judged:** the attempt has no verdict, stops as
-  `agent_busy`, and is left out of the pass rate. A model or judge that stays busy is a failure of
-  convy's model, as before.
-- **Waiting is not answering:** the time per answer and the turn's time limit count only the try
-  that got the answer.
+An agent, model or judge raises `Busy` when its service refused a request before acting on it.
+The built-in JSON client reports HTTP 429 and 503 this way. Connection failures and errors that
+may have occurred after processing are ordinary failures. Retrying those could repeat an
+action the agent already took.
 
-## Alternatives
+Each participant has a retry budget, `Patience.seconds` (120 seconds by default). The budget
+starts at the first refusal. If the server asks for more time than remains, convy gives up.
+Otherwise it waits for the requested delay plus a small random interval, up to the remaining
+budget. Without a requested delay, it picks a random wait from a window that doubles from
+1 second to a maximum of 30. Random delays spread retries across time.
+[OpenAI rate limits](https://developers.openai.com/api/docs/guides/rate-limits) ·
+[AWS backoff and jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
 
-- **Pause all of a participant's requests until the asked moment.** Tried first: the requests
-  then went out together when the pause ended and collected their 429s again, and a run without
-  `Retry-After` took 4.7 times as long.
-- **Fix the retries in `JsonConnection` only.** Classes of one's own would still get none.
-- **Retry any failure.** An agent may have acted on a message before it failed, so it would get it
-  twice; and a wrong key or a broken answer would only be retried in vain.
-- **A limit on requests per minute,** set per API. It avoids 429 instead of answering it, but needs
-  the limit known in advance and cannot see a limit on tokens. It can come later, set like the
-  limits of [0007](0007-participant-limits.md).
+A refusal during a request halves the participant's concurrency, down to one. After as many
+successes as its current limit, convy allows one more, up to the
+[configured maximum](0007-participant-limits.md). User and judge requests release their slots
+between tries. An open agent conversation retains its slot. Answer time covers the individual
+turn and excludes the wait before a retry.
 
-## Consequences
+## Alternatives and consequences
 
-- An agent, model or judge of one's own gets the same handling by raising `Busy`.
-- `JsonEndpoint` loses `pauses`: a breaking change of the alpha.
-- Opening and closing a conversation are not retried; a busy service there ends the attempt without
-  a verdict and leaves the agent fewer places.
-- `seconds` is set only from Python for now.
+- Pausing every request for the same interval caused bursts when the pause ended. In one test
+  without `Retry-After`, this took 4.7 times as long as using separate delays.
+- Retrying only in the HTTP client would exclude custom implementations.
+  [Decision 9](0009-requests-per-minute.md) added pacing for services with a known rate limit.
+- If an agent remains busy, the attempt ends as `agent_busy` and receives no verdict.
+  A simulated user or judge that remains busy produces a model failure, also without a verdict.
+- Opening and closing a conversation are each tried once. A refusal at either point ends the
+  attempt without a verdict.
+- The change removed `JsonEndpoint.pauses`. Python callers can configure `Patience`.

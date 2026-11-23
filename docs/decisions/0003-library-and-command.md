@@ -1,26 +1,17 @@
-# 3. One package: a library and a command
+# 3. Ship the library and command in one package
 
 **Status:** Accepted
 
-## Context
-
-Agent files import convy's classes, so convy has to be installed where they run. Connecting an agent
-and running scenarios should still be one command.
-
 ## Decision
 
-Publish one package, `convy`, with the library and the `convy` command (`init`, `run`, `report`). The
-command is a thin shell over the library. A user keeps agents, scenarios, the models convy uses and results in
-a project of their own; `convy init` creates one from a template. A team can instead add convy as a
-development dependency of its agent's repository and run it in CI.
+Install `convy` in the project that defines the agents. The command uses the same library that
+agent files import. `convy init` copies the project template. A team can also use convy as a
+development dependency in an existing repository.
 
-## Alternatives
+## Alternatives and consequences
 
-- **A command only, through `uvx`.** Agent files could not import convy.
-- **A repository to clone.** Users would edit a copy of convy and lose updates.
-- **Two packages, library and command.** Two releases to keep in step for no gain.
+An isolated CLI installation would leave the agent's environment without the library.
+Asking users to clone and edit convy would make upgrades harder. Separate CLI and library
+packages would require coordinating two releases.
 
-## Consequences
-
-- Same model as pytest: a tool installed into the project it works on.
-- Scenario files live in `scenarios/`, not `tests/`, so they are not confused with a project's tests.
+The project's evaluation scenarios live in `scenarios/`, separate from its own test suite.

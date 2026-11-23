@@ -7,15 +7,14 @@
 
 <h3>Did the new build make your agent worse?</h3>
 
-<p>A simulated user talks to your agent through its API, a judge checks every claim,<br>
-and convy shows what passed, what it cost and what changed.</p>
+<p>A simulated user talks to your agent through its API.<br>
+A judge checks the dialogue against the claims in your scenario.</p>
 
 [![PyPI](https://img.shields.io/pypi/v/convy)](https://pypi.org/project/convy/)
 [![Python](https://img.shields.io/pypi/pyversions/convy)](https://pypi.org/project/convy/)
 [![CI](https://github.com/deyna256/convy/actions/workflows/ci.yml/badge.svg)](https://github.com/deyna256/convy/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/deyna256/convy/blob/main/LICENSE)
 
-[Live report](https://deyna256.github.io/convy/report.html) ·
 [Quick start](https://github.com/deyna256/convy#quick-start) ·
 [Docs](https://github.com/deyna256/convy/tree/main/docs) ·
 [Changelog](https://github.com/deyna256/convy/blob/main/CHANGELOG.md)
@@ -32,28 +31,29 @@ and convy shows what passed, what it cost and what changed.</p>
   <a href="https://deyna256.github.io/convy/compare.html"><b>See the historical comparison →</b></a>
 </p>
 
-## Why convy
+## What convy measures
 
-You change a prompt, a model or a tool. Does the agent still behave in a real conversation? convy
-answers that, and nothing more.
-
-- **Any agent behind an API.** A JSON API takes a few lines of settings. Anything else takes two
-  small classes. convy needs neither the agent's code nor its model.
-- **Real conversations.** The simulated user asks vague questions, changes its mind and gives
-  details late. The judge checks plain-language claims about the dialogue.
-- **Numbers you can act on.** Pass rate over repeated attempts, the agent's tokens and its answer
-  time. Compare runs in one table and open the dialogue behind a failed scenario.
-- **Small.** Four dependencies. No platform, no account, no containers.
+A scenario gives the simulated user a task and lists the claims a judge should check.
+Run each scenario several times to see which attempts pass, how long the agent takes to answer,
+and how many tokens and tool calls it reports. Open a failed attempt to read the dialogue
+alongside the judge's decisions.
 
 ## Quick start
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create a project.
 
 ```sh
 uvx convy init my-bench              # a project with examples
 cd my-bench
 uv run convy run echo --smoke        # check convy itself: free, no models called
-cp .env.example .env                 # add the address and key of your model gateway
-uv run convy run echo                # a real run with the simulated user and the judge
+cp .env.example .env
 ```
+
+The commands above install the published release. To try the features described on `main`,
+run `uv add --editable /path/to/convy` in `my-bench`, using the path to your local checkout.
+
+Set `GW_BASE_URL` and `GW_API_KEY` in `.env` for your OpenAI-compatible gateway.
+Check the model names in `models.py`, then run `uv run convy run echo` to play the scenarios.
 
 Open `results/index.html` in a browser to see the runs. Each one links to its own
 `results/<agent>/<run>/report.html` with the judge’s decisions and the dialogues.
@@ -71,7 +71,7 @@ my-bench/
 
 ## Write a scenario
 
-A scenario says who the user is, what they want, and what must be true of the dialogue:
+A scenario says who the user is, what they want, and what the judge should check:
 
 ```yaml
 id: clarify-backup
@@ -85,7 +85,7 @@ judge:
   - The final script copies ~/photos to /mnt/backup and runs once a day
 ```
 
-The judge decides each claim on its own and says why. The report shows which claim failed, in which
+The judge marks each claim as passed or failed and can give a reason. The report shows which claim failed, in which
 attempt, next to the dialogue. More in
 [Scenarios](https://github.com/deyna256/convy/blob/main/docs/scenarios.md).
 
@@ -126,33 +126,24 @@ In CI, identify the baseline and candidate by run ID or unique suffix.
 uv run convy compare 7ad8 5e85 --fail-on-regression   # before, then after
 ```
 
-With both runs loaded, this exits with 3 for a supported regression or an unavailable verdict.
+With both runs loaded, exit code 3 means the check found evidence of a regression
+or could not compare the runs.
 See [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) and
 [CI exit codes](https://github.com/deyna256/convy/blob/main/docs/runs.md#fail-ci-when-the-pass-rate-regresses).
 
 ## convy and other tools
 
-Checked against their docs on 8 October 2026.
-
-- [**Scenario**](https://github.com/langwatch/scenario) by LangWatch also has a simulated user and a
-  judge. You write scenarios as code in Python, TypeScript or Go and run them with pytest or vitest.
-  Pick it if you want scenarios next to your tests, or to script a dialogue step by step.
-- [**promptfoo**](https://www.promptfoo.dev/docs/providers/simulated-user/) tests prompts, models
-  and agents, and does red teaming. Its simulated user is one provider among many. Pick it if you
-  need a wide toolkit.
-- [**deepeval**](https://deepeval.com/docs/conversation-simulator) has a conversation simulator you
-  call from Python, and many ready metrics. Pick it if you want those metrics.
-
-convy does one job. It checks a running agent through its API, with scenarios in YAML, repeated
-attempts and a verdict per claim. The results workspace and each run’s report open offline.
+convy uses YAML scenarios and writes offline reports. For scenarios written in code, see
+[LangWatch Scenario](https://github.com/langwatch/scenario). If you already use an evaluation
+framework, see [promptfoo’s simulated user](https://www.promptfoo.dev/docs/providers/simulated-user/)
+or [DeepEval’s conversation simulator](https://deepeval.com/docs/conversation-simulator).
 
 ## Status
 
-convy is in alpha. The Python API and the format of runs may change before 1.0. Every change is in
-the [changelog](https://github.com/deyna256/convy/blob/main/CHANGELOG.md).
+convy is in alpha. The Python API and the format of runs may change before 1.0. See the
+[changelog](https://github.com/deyna256/convy/blob/main/CHANGELOG.md).
 
-`convy run` runs `models.py` and `agents/*.py`. Treat a project like its tests: run only what you
-trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SECURITY.md).
+`convy run` executes project Python files, including the selected agent. Run projects you trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SECURITY.md).
 
 ## Documentation
 
@@ -165,7 +156,7 @@ trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SEC
 | [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) | runs workspace, scenario details, two-run CLI comparison |
 | [Results as data](https://github.com/deyna256/convy/blob/main/docs/results.md) | a run as tables, convy export, pandas |
 | [Run from Python](https://github.com/deyna256/convy/blob/main/docs/python.md) | the library behind the command |
-| [The shop demo](https://github.com/deyna256/convy/tree/main/examples/shop) | the bot behind the live report |
+| [The shop demo](https://github.com/deyna256/convy/tree/main/examples/shop) | the bot behind the recorded demo |
 | [Architecture](https://github.com/deyna256/convy/blob/main/ARCHITECTURE.md) | for people who change convy's code |
 
 ## Contributing

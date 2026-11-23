@@ -1,46 +1,37 @@
-# 9. A participant can keep to a limit of requests per minute
+# 9. Set a request rate for each participant
 
 **Status:** Accepted
 
 ## Context
 
-convy limits a participant's requests under way at once ([0007](0007-participant-limits.md)) and
-waits for a busy service ([0008](0008-busy-services.md)), but not how many requests it sends per
-minute. A service that answers quickly can be sent far more than its limit even one request at a
-time: a judge limited to 2 requests per second that answers in 0.05 s met 275 to 562 answers of 429
-for 60 decisions. None was lost, but each reached the service.
-
-Hosted models publish their limits per minute, and may enforce them over shorter times: "a rate of
-60 requests per minute (RPM) might be enforced as 1 request per second. Short bursts of requests can
-exceed the limit" ([Anthropic, Rate limits](https://platform.claude.com/docs/en/api/rate-limits)).
+[Concurrency limits](0007-participant-limits.md) and [retries](0008-busy-services.md) alone
+could not prevent frequent refusals. In a test, a judge that allowed two requests per second
+answered in 0.05 seconds. Even one client could send requests too quickly. A provider may also
+enforce a per-minute limit over shorter intervals. [Anthropic rate limits](https://platform.claude.com/docs/en/api/rate-limits)
 
 ## Decision
 
-- **A limit per minute for each participant,** set next to its limit at once: `agent_per_minute`,
-  `user_per_minute` and `judge_per_minute` under `[tool.convy]`, `per_minute` in an agent's own
-  table, and `CONVY_*` variables over them. 0, the default, is no limit.
-- **Requests are spaced evenly,** one every 60 / limit seconds, with no burst, since a limit per
-  minute may be enforced per second.
-- **Every try counts,** a try again after `Busy` too. The wait for its turn counts neither in the
-  time per answer nor against `--turn-timeout`, like the wait for a place.
-- **Patience counts from the first refusal,** not from the first try as in
-  [0008](0008-busy-services.md), so that a request waiting for its turn or a place keeps all of it.
-- **The workspace compares the recorded limits per minute** as part of the evaluation settings
-  ([0014](0014-runs-workspace.md)). `convy resume` reports changes to the agent’s limit per
-  minute and its concurrency limit because both affect load.
+Each participant can have a requests-per-minute limit. Zero (the default) disables pacing.
+The scheduler assigns requests start times separated by `60 / limit` seconds. Every try,
+including a retry after `Busy`, gets its own start time. Waiting for that time does not count
+toward the agent's recorded answer time or `--turn-timeout`.
 
-## Alternatives
+The retry budget starts at the first refusal. The initial wait for a slot or scheduled start
+time therefore leaves the full budget available. See [busy services](0008-busy-services.md).
 
-- **A token bucket that allows a burst.** Faster at the start of a run, but a burst is what a
-  service enforcing its limit per second refuses.
-- **A limit per API key,** set on `JsonEndpoint`. It fits a key shared by the user and the judge,
-  but only for convy's own classes, and as code, not a setting.
-- **Limits on tokens per minute.** A request's tokens are known only after its answer, so convy
-  cannot keep to them in advance; `Busy` handles them.
+Configure `agent_per_minute`, `user_per_minute` and `judge_per_minute` alongside the concurrency
+limits. An agent-specific table can override `per_minute`. The workspace compares the initial
+limits recorded in each run. Resume warns about a change to either of the agent's limits.
+See [Runs](../runs.md#how-much-runs-at-once) and [the workspace decision](0014-runs-workspace.md).
 
-## Consequences
+## Alternatives and consequences
 
-- A limit set a little below the provider's meets no 429: against the judge above, 108 a minute
-  met none and 120, the service's own limit, met about 20, since delays on the way bring two
-  requests closer. An unknown limit is still found through `Busy`.
-- The user and the judge on one key each need their share of its limit.
+- Allowing a burst of requests at the start of a minute can exceed the provider's per-second limit.
+- Per-key limits in the HTTP client would exclude custom participants. If the simulated user
+  and judge share a key, divide its allowance between them.
+- The client learns token usage after a request. It can respond to a token-limit refusal with
+  `Busy`, but cannot schedule requests by exact token count in advance.
+
+In the two-requests-per-second test, 108 requests per minute produced no refusals. At the
+advertised limit of 120, about 20 requests were refused. Network delays can bring arrivals
+closer together even when the client spaces their start times.

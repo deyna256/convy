@@ -1,60 +1,37 @@
-# 6. The judge is an interface its owner implements
+# 6. Let projects supply their own judge
 
 **Status:** Accepted
 
 ## Context
 
-The judge said only "pass" or "fail" for each claim. A clear verdict and a guess counted the same in
-the pass rate, in Passing, Flaky and Failing, and in the comparison of two builds. In the demo, "The
-agent offered a free replacement" failed on one answer and passed on similar ones: the claim was
-unclear and the judge guessed.
+In the shop demo, the same replacement offer received different verdicts on similar answers.
+A yes/no decision alone could not tell users when the judge was unsure.
 
-How sure a judge is cannot be measured well in one way that fits everyone:
-
-- A model's own word on how sure it is barely works. In
-  [Trust or Escalate](https://arxiv.org/abs/2407.18370) (ICLR 2025), stated confidence of GPT-4
-  separates right from wrong verdicts with an AUROC of 0.55, close to a coin. Probabilities of the
-  answer tokens do better (0.64–0.73) but are still too sure, and not every gateway gives them.
-  Asking many times and counting agreement was weak too. The best method there needs examples
-  labelled by people.
-- Every source agrees that a confidence you can rely on needs a check against people's labels on
-  your own data.
-- Models built to decide rather than to write, such as Jev by TypeSafe AI, return a probability per
-  statement, cheaply and steadily. They give no reason, and their calibration is not published.
+A model's stated confidence can be a poor guide to whether its verdict is correct. In
+[Trust or Escalate](https://arxiv.org/abs/2407.18370), token probabilities were more informative,
+but some gateways do not expose them. Teams that rely on confidence need to check their judge's
+scores against human decisions on their own examples.
 
 ## Decision
 
-- **The judge is an interface,** like the agent ([0002](0002-agent-interface.md)): an object with a
-  `name` and `async decide(transcript, claims)` that returns one `Claim` per claim. It gets only
-  what was said ([0010](0010-answer-steps.md)). convy ships
-  `ChatJudge`, a chat model with a prompt, which does not say how sure it is.
-- **A decision may carry a `Confidence` from 0 to 1, or `NoConfidence`.** convy does not check that
-  the number is calibrated; that is the judge's owner's job.
-- **A run has a `trust` level,** recorded in `run.json` like `k`. Confidence is part of claim
-  acceptance, as described in [decision 12](0012-claim-scoring.md), rather than a filter that
-  removes uncertain decisions from the sample. A decision with no confidence is trusted.
-- **Raw decisions and confidence are kept;** `trust` only reads them.
+A judge has a `name` and an async `decide(transcript, claims)` method. It returns one `Claim`
+per claim text, with an optional reason and confidence from 0 to 1. The built-in
+`ChatJudge(model)` asks a chat model to evaluate the dialogue and does not report confidence.
+convy [removes answer steps](0010-answer-steps.md) before calling any judge.
 
-## Alternatives
+Each run records its confidence threshold, `trust`. A positive decision below that threshold
+fails the claim. A missing confidence value leaves the yes/no decision unchanged. The journal
+keeps the judge's original decisions. See [attempt scoring](0012-claim-scoring.md).
 
-- **A built-in confidence:** the model's own word, token probabilities, or asking many times. Each
-  is either unreliable or works only with some models; picking one would make it convy's promise.
-- **A built-in Jev judge.** A closed service in early access, without reasons for its decisions.
-  Anyone can write it as their own judge.
-- **`trust` applied when pages are built** (`convy report --trust`), not recorded in the run. Then
-  the pages depend on the last command: `convy run` rebuilds every page. Since `trust` decides what
-  a run measured, it belongs to the run.
-- **A slider on the page.** Every number would have to be computed in the browser, a second copy of
-  `report.py` without tests.
-- **Exclude unsure decisions.** This changes the denominator and can reward a run for uncertain
-  judgments. Keeping them as failed claims makes insufficient evidence visible; its cost is that
-  a strict or poorly calibrated judge can reduce the result.
+## Alternatives and consequences
 
-## Consequences
+- A built-in confidence estimate or an integration with a particular scoring service would tie
+  all projects to one method. The judge interface lets each project choose and test its own.
+- Setting `trust` on the report command or with a slider would let the same saved run show
+  different results. Storing it in the run makes those results reproducible.
+- Dropping uncertain decisions would change how many claims count. Counting them as failures
+  means that a strict confidence threshold can lower a run's score.
 
-- `models.py` says `judge=ChatJudge(model)`.
-- A judge is user code: any error, or an answer that is not one `Claim` per claim, is a failure of
-  convy's model, and the attempt has no verdict.
-- A high `trust` can reduce claim completion without removing attempts from the pass rate.
-- Two runs with different `trust` retain their own results, but cannot establish a statistically
-  supported quality improvement or regression; resource measurements remain available.
+A judge that fails or returns invalid decisions leaves the attempt without a verdict. Runs with
+different confidence thresholds retain their own scores. The CLI declines a regression verdict
+for that comparison.

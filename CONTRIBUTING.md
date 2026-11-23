@@ -16,15 +16,8 @@ that describes the problem or intended change.
 
 Report a security vulnerability privately, as the [security policy](SECURITY.md) describes, not in an issue.
 
-Use the [issue template](.github/ISSUE_TEMPLATE/issue.md), which has these sections:
-
-- **Problem:** explain what happens today and what is missing or wrong. For a bug, include reproduction
-  steps, expected and actual behaviour, and the versions of Python and `convy`, and the kind of agent
-  and models in use.
-- **Why it matters:** describe the effect on users or development. Explain why the work is useful
-  without repeating the problem.
-- **Done when:** list observable results that will make the task complete, including the tests or
-  checks needed to verify them.
+Use the [issue template](.github/ISSUE_TEMPLATE/issue.md) to describe the problem, its impact and
+how someone can tell it is fixed. For bugs, include steps to reproduce the problem.
 
 Keep the issue self-contained. Add examples, relevant links and scope limits when useful. Separate
 agreed behaviour from proposals; do not invent implementation details to fill out the description.
@@ -43,40 +36,17 @@ git switch main
 git switch -c 1
 ```
 
-Use `1`, not `issue-1`, `feature/1` or a descriptive suffix. Keep the branch focused on its issue.
-
-Work without an issue — repository setup, a typo, a dependency bump — uses a short descriptive branch
-name instead, such as `changelog-typo`.
+Keep the branch focused on its issue. For work without an issue, use a short descriptive name
+such as `changelog-typo`.
 
 ## Commits
 
-For issue work, use one line in this format:
+Write one line in English, starting with the issue number and an action, for example
+`#1: test that a missing reply path fails the turn`. For work without an issue, omit the
+number, as in `add the pull request template`.
 
-```text
-#<issue number>: <change>
-```
-
-Examples:
-
-```text
-#1: add the agent contract test
-#1: test that a missing reply path fails the turn
-```
-
-Use a short English description that starts with an action, such as `add`, `fix` or `test`. Describe
-the change, not the work session. Put longer explanations in the issue or pull request.
-
-Work without an issue uses the same one line without the number:
-
-```text
-add the pull request template
-```
-
-Do not add a commit body, co-author lines, sign-off trailers or any other [signature](#no-signatures).
-Git still records the normal author and committer metadata. Keep unrelated changes out of the commit and
-inspect the staged diff before committing.
-
-Add the [changelog fragment](#changelog) in the same commit as the change it describes.
+Keep each commit focused. Inspect the staged diff and include the [changelog fragment](#changelog)
+with the change it describes. Omit the commit body and [signatures](#no-signatures).
 
 ## Checks
 
@@ -93,8 +63,7 @@ Use the commands in the [Justfile](Justfile):
 | `just changelog` | shows the next release's changelog entry, changing nothing |
 | `just release-notes` | moves the fragments into CHANGELOG.md; the Release workflow runs it |
 
-Run `just format` first and `just lint` after it. `just format` fixes what it can; whatever `just lint`
-still reports needs a person.
+Run `just format`, then `just lint`. Fix any remaining issues.
 
 Run the relevant checks before submitting changes. Documentation-only changes need link and formatting
 checks, not tests.
@@ -142,31 +111,23 @@ entry will look like.
 
 ## Releases
 
-Releases are made by hand, from the Actions tab:
+Maintainers start releases from the Actions tab.
 
 1. Raise the version with `uv version X.Y.Z` (it updates `pyproject.toml` and `uv.lock`), set the
    same version in `src/convy/template/pyproject.toml`, so that new projects install it, and merge
    that change to `main`. A test fails if the two differ.
-2. Run the **Release** workflow on `main`. It runs the CI checks, moves the fragments from
-   `changelog.d/` into [CHANGELOG.md](CHANGELOG.md) with `just release-notes` and commits that to
-   `main`, then builds the packages from that commit, signs where they came from and creates a GitHub
-   release whose text is the version's changelog entry. It refuses another branch, a version that is
-   already released, and a release with no fragments in `changelog.d/`.
-3. Run the **Publish** workflow with the release's tag, for example `v0.1.0`. It uploads the release's
-   packages to PyPI unchanged. It uses PyPI trusted publishing, so no PyPI token is stored anywhere.
+2. Run **Release** on `main`. It checks the code and commits the release notes, then builds the
+   packages, records how they were built and creates a GitHub release. It requires changelog
+   fragments and a version that has not been released.
+3. Run **Publish** with the release tag, for example `v0.1.0`. It uploads those packages to PyPI
+   using trusted publishing.
 
 ## Pull requests
 
-Use the [pull request template](.github/pull_request_template.md) with these sections:
-
-- **Problem:** explain what is missing or wrong and why the change is needed.
-- **Changes:** describe the resulting behaviour and the decisions needed to review it.
-- **Validation:** state which checks passed or could not run, and what behaviour the tests cover.
-
-Keep each section short and avoid repeating the issue or listing every changed file. Add sections only
-when needed, such as migration steps or breaking changes. Link the issue; use `Closes #<number>` when
-the PR completes it. Update the description and affected documentation when the code changes. Do not
-[sign](#no-signatures) the description.
+Use the [pull request template](.github/pull_request_template.md). Explain the problem, the
+change and how you checked it. Include migration steps for breaking changes. Link the issue
+with `Closes #<number>` when the PR completes it. Keep the description and docs current as you
+revise the code.
 
 Open the pull request as a draft while the work is in progress. When it is ready, mark it ready for review
 and request a review from [@deyna256](https://github.com/deyna256) or another maintainer. Do this again after you address
@@ -174,8 +135,8 @@ the review's findings, so the reviewer knows the pull request is ready for anoth
 
 ## Reviews
 
-Review the change as submitted, against the issue and the [review checklist](#review-checklist). State facts: what the code does, what follows
-from it, and what you ran. Do not restate the diff or guess at intent; ask instead.
+Review the change against the issue and the [review checklist](#review-checklist). Explain what
+happens, why it matters and how you checked it.
 
 Put every code-anchored finding in an inline comment on the line it concerns and keep the review body
 for the verdict and for anything that spans files. Mark a finding that is not blocking with one of

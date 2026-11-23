@@ -13,14 +13,15 @@ Use one offline workspace at `results/index.html`. The table, metric groups, res
 plot and scenario matrix share a filtered set of runs. Store summary data and link each scenario
 to its run report for decisions and transcripts. This keeps dialogue text in one place.
 
-Show each run’s original pass rate and measured resource coverage. Choosing a reference adds an
-observed whole-run difference only for complete runs measured under matching recorded conditions.
+Show each run’s pass rate and how many answers or tasks contributed to each resource metric.
+Choosing a reference shows the difference in pass rates, in percentage points, when both runs
+are complete and their recorded settings match.
 The [workspace guide](../report.md#runs-workspace) defines those conditions. A snapshot describes
 the recorded evaluation. Remote services and code imported by `models.py` can change between runs.
 
-Keep the two-run statistical check in `convy compare` so CI can test a baseline and candidate
-with its existing exit codes. The browser shows descriptive differences and the command prints its
-verdict.
+Keep the statistical check in `convy compare`. CI can use `--fail-on-regression` to get a
+failing exit code.
+The browser shows the observed difference without assigning a statistical verdict.
 
 ### How to compare the measurements
 
@@ -31,20 +32,20 @@ exploring the tradeoff between quality and resource use.
 [Table guidance](https://analysisfunction.civilservice.gov.uk/policy-store/data-visualisation-tables/),
 [scatter plot guidance](https://www.itl.nist.gov/div898/handbook/eda/section3/scatterp.htm).
 
-| Metric | What the sources establish | What convy shows and why |
-| --- | --- | --- |
-| Attempt quality | One successful trial and consistent success across trials answer different evaluation questions. [Anthropic's guide to agent evals](https://www.anthropic.com/research/demystifying-evals-for-ai-agents) | Show the observed pass rate with passed and counted attempts. Use the scatter plot to see how much time or how many tokens each run used at that rate. |
-| Repeated scenarios | Replaying the same task can reveal inconsistent outcomes. [τ-bench](https://arxiv.org/abs/2406.12045) | Count mixed-result scenarios and those that passed every planned attempt. Group scenarios by their observed pass rates, giving each scenario one vote. A single trial gives no evidence about repeatability. |
-| Progress and coverage | Completeness can differ across records and across fields within a record. [UK Government Data Quality Framework](https://www.gov.uk/government/publications/the-government-data-quality-framework/the-government-data-quality-framework) | Show recorded/planned attempts and measured/recorded answers or tasks separately. A run can finish with only half its answers reporting usage. Keep measured zeroes and mark unavailable statistics. |
-| Errors | A failure count needs the number of attempts to put it in proportion. [Prometheus instrumentation guidance](https://prometheus.io/docs/practices/instrumentation/#failures) | Compare counts by cause alongside recorded attempts. Agent failures count against quality. Busy services and evaluation-model errors leave attempts without a verdict. |
-| Time and total tokens | A mean can conceal slow requests in the tail. GenAI instrumentation also records token usage as a distribution. [Google SRE](https://sre.google/sre-book/monitoring-distributed-systems/#worrying-about-your-tail-or-instrumentation-and-performance-Yms9Ck), [OpenTelemetry token metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-token-metrics.md) | Align median, P90, extremes, mean and sample size for the same unit in every run. Summing the answers within each attempt first gives the distribution of task totals. |
-| Token composition | Cached input and reasoning output belong inside their respective totals. A percentage breakdown conveys composition, while absolute amounts convey scale. [OpenTelemetry GenAI attributes](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md), [Statistics Canada chart guidance](https://www150.statcan.gc.ca/n1/pub/89-26-0005/892600052022001-eng.htm) | Pair each part's share with tokens per measured answer. Show cache and thinking coverage so a smaller reported part can be distinguished from less instrumentation. |
-| Tool invocations | OpenTelemetry distinguishes executing a named tool from asking a model for a response. [Execute tool](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/execute-tool.md), [Client inference](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md) | Compare calls per task across attempts whose answer traces are complete. Include observed zeroes. This keeps a run with missing traces from appearing more efficient. |
-| Named calls | Trace spans measure individual operations and can nest or overlap. [OpenTelemetry traces](https://opentelemetry.io/docs/concepts/signals/traces/) | Align the same call name across runs. Its share of all recorded call seconds identifies where instrumented work went. Its seconds per answer show the magnitude. Inspect the run report for individual calls. |
+| Metric | Why display it this way |
+| --- | --- |
+| Attempt quality | Pair the pass rate with the number of passes and counted attempts. [Anthropic's guide to agent evals](https://www.anthropic.com/research/demystifying-evals-for-ai-agents) |
+| Repeated scenarios | Count mixed results and scenarios that passed every planned attempt. One attempt alone gives no evidence of repeatability. [τ-bench](https://arxiv.org/abs/2406.12045) |
+| Progress and coverage | Separate recorded/planned attempts from measured/recorded answers or tasks. Missing data and zero have different meanings. [UK Government Data Quality Framework](https://www.gov.uk/government/publications/the-government-data-quality-framework/the-government-data-quality-framework) |
+| Errors | Compare errors by cause alongside the number of recorded attempts. [Prometheus instrumentation guidance](https://prometheus.io/docs/practices/instrumentation/#failures) |
+| Time and total tokens | Show the mean, median, 90th percentile, minimum, maximum and sample size. For task totals, sum each task’s answers before comparing tasks. [Google SRE](https://sre.google/sre-book/monitoring-distributed-systems/#worrying-about-your-tail-or-instrumentation-and-performance-Yms9Ck) · [OpenTelemetry token metrics](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-token-metrics.md) |
+| Token composition | Show token shares alongside tokens per measured answer. Include how often the agent reported cached and thinking tokens. [OpenTelemetry GenAI attributes](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/registry/attributes/gen-ai.md) |
+| Tool invocations | Include failed tasks and measured zeroes. A task needs complete traces for a tool count. [Execute tool](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/execute-tool.md) · [Client inference](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/client-inference.md) |
+| Named calls | Compare calls with the same name. Calls can overlap, so show their share of recorded call seconds and their seconds per answer. [OpenTelemetry traces](https://opentelemetry.io/docs/concepts/signals/traces/) |
 
 ## Alternatives and consequences
 
 - A separate pair page duplicates reports and requires selecting two runs before seeing a tradeoff.
-- Recomputing each pair’s rates on its shared scenarios would give one run different pass rates
-  depending on the chosen reference. Preserving whole-run rates leaves a visible gap when suites
-  differ, while scenario-level evidence remains available in the individual reports.
+- Recomputing each pair’s rates on its shared scenarios would change a run’s displayed rate
+  whenever the reference changed. Keeping the original rate lets users inspect a different
+  suite in its own report.

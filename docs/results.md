@@ -1,22 +1,9 @@
 # Results as data
 
-Every run is kept whole in its folder. Read it from Python as a `Run`, as flat tables for pandas or
-polars, or export the tables as files for any other tool.
+Read saved runs in Python with `Runs`. Use `Tables` to analyze their records in pandas or
+Polars, or export CSV and JSON Lines files for other tools.
 
 ## A run is the result
-
-A `Run` holds everything a run did:
-
-- `spec`: what it played and with what — the agent and its `version`, the user's and the judge's
-  models, `k`, `trust`, `claim_threshold`, the limits, the convy version, and a copy of every
-  scenario with its claims;
-- `status`: `Running`, `Finished` or `Interrupted`, with the time it ended;
-- `outcomes`: one per attempt, with its dialogue, each answer's time, tokens and steps, and the
-  judge's decisions;
-- `format`: the format its folder was written in, and `unreadable`: how many attempt lines could not
-  be read.
-
-Read the runs of a results folder, or one run by its id or its random part:
 
 ```python
 from pathlib import Path
@@ -25,29 +12,38 @@ from convy import Runs
 
 runs = Runs(Path("results"))
 for run in runs:
-    print(run.spec.id, len(run.outcomes))
-run = runs.run("7ad8")
+    print(run.spec.agent, run.spec.id, len(run.outcomes))
 ```
 
-`Runs` reads only the current run format. Earlier formats are unsupported and are not converted;
-see [run format compatibility](runs.md#run-format-compatibility). Reading does not change the
-saved files.
+Use `runs.run("7ad8")` to select a run by full ID or unique suffix. Each `Run` has:
+
+- `spec` — the agent, build, models, saved scenarios and run settings.
+- `status` — `Running`, `Finished` or `Interrupted`. Finished and interrupted runs have an end time.
+- `outcomes` — recorded attempts with dialogues, answer times, reported tokens, steps and verdicts.
+- `path`, `format` and `unreadable` — the run folder relative to `results/`, the file format
+  version and the number of unreadable attempt lines.
+
+Iteration skips unreadable runs and individual unreadable attempts. Reading leaves the files
+untouched. See [supported run formats](runs.md#run-format-compatibility).
 
 ## Tables
 
-`Tables` gives runs as seven flat tables, one for each kind of object a run holds:
-
 ```python
+from pathlib import Path
+
 import pandas as pd
 
 from convy import Runs, Tables
 
 tables = Tables(tuple(Runs(Path("results"))))
-answers = pd.DataFrame(tables.answers().records())
+table = tables.answers()
+answers = pd.DataFrame(table.records(), columns=table.row.__struct_fields__)
 ```
 
-Give it a tuple, not a generator: each table reads the runs again. The tables compute nothing and
-drop nothing. The keys come first:
+Each table reads the tuple of runs independently. A table's `rows` are typed records;
+`records()` returns dictionaries and keeps datetimes. The example uses the row type to keep
+the columns even when there are no answers. Use `csv()` or `jsonl()` for serialized text.
+Iterating over `tables` yields the seven tables below.
 
 | table | keys | columns |
 |---|---|---|
@@ -59,75 +55,46 @@ drop nothing. The keys come first:
 | `answers` | `run`, `scenario`, `attempt`, `turn` | `message`, `answer`, `seconds`, `steps_complete`, `input`, `output`, `thinking`, `cache_read`, `cache_write` |
 | `steps` | `run`, `scenario`, `attempt`, `turn`, `step` | `kind` (`thought` or `call`), `call_kind` (`model` or `tool`, `None` for a thought), `text`, `name`, `started`, `seconds`, `input`, `output`, `thinking`, `cache_read`, `cache_write`, `sent`, `received` |
 
-- `run` is the run's id, `scenario` the scenario's id, `attempt` the attempt's number; an
-  unfinished run may skip numbers. `claim`, `turn` and `step` count from 1, as on the report.
-  Scenario ids are unique in scenario files; a run made in Python with repeated ids gives repeated
-  keys.
-- Runs come by start time; in a run, scenarios and claims in the run's order, attempts by scenario
-  then number, and decisions, answers and steps in their order.
-- `None` is a value the agent or the judge did not give, or one that does not apply: a thought has
-  no `name`, an attempt with a verdict no `error`. `""` is text given
-  empty. A run still running has no `ended`.
-- A key means one thing in every table. A value of two grains — `started`, `seconds`, the tokens —
-  keeps its name in both tables, so join on the keys and pick the columns you need.
+Claims, turns, steps and attempts are numbered from 1. An unfinished run can have gaps in attempt
+numbers. Runs are sorted by start time, scenarios follow their saved order, and attempts within
+each scenario are sorted by number. A missing value is `None`, including fields that do not apply
+to the row. An empty string is a reported value.
 
-Each table has a `name`, the type of its rows in `row`, so an empty table still knows its columns,
-and its `rows`. `records()` gives the rows as dicts, with times as `datetime`; `csv()` and `jsonl()`
-give the table as a file's text. Iterating `tables` gives the seven tables in the order above.
+When joining tables, include all shared key columns for the record you need. An attempt's key is
+`(run, scenario, attempt)`. Child rows carry the run ID but do not carry the agent or folder. If
+two runs share an ID, process their folders separately. Scenarios created through Python also
+need distinct IDs for these keys to be unique.
 
-`answers.steps_complete` and `steps.call_kind` preserve the [agent's reported facts](agents.md#steps).
-Tool counts are derived, not exported: use the [tool-invocation rule](report.md#tool-invocations)
-to distinguish complete measurements from partial traces.
-
-Other values are left out on purpose, since they are computed. With the tables as DataFrames, the
-random part of a run's id is:
-
-```python
-runs["short"] = runs["run"].str.rpartition("_")[2]
-```
-
-Whether an attempt passed is also computed. `decisions.passed` is the **raw judge decision**,
-not the effective result after confidence and required claims. Join decisions to the run's `trust`
-and `claim_threshold`, and to each claim's `required` flag; apply the
-[scoring rule](scenarios.md#passing-an-attempt). The [full example](#a-full-example) below does this
-and includes agent failures in the pass rate. Completion fractions and final attempt results are
-not stored as redundant columns.
+`decisions.passed` is the judge's raw yes/no answer. The [example below](#a-full-example)
+applies trust, required claims and the claim threshold to calculate the pass rate.
+`answers.steps_complete` and `steps.call_kind` let you [count tool calls](report.md#tool-invocations).
 
 ## Export
 
-`convy export` writes the tables as files for tools outside Python:
-
 ```sh
-uv run convy export 7ad8 5e85           # two runs, by id or random part
-uv run convy export results/shop_bot    # every run of an agent
-uv run convy export results             # every run
+uv run convy export 7ad8 5e85           # two runs by unique suffix
+uv run convy export results/shop_bot    # all runs of one agent
+uv run convy export results             # all runs
 ```
 
-A target is a folder inside `results/`, or else a run. It writes 14 files into `results/export/`:
-`runs.csv` and `runs.jsonl`, and so on for each table, replacing the files of an earlier export.
+Each export replaces the 14 files in `results/export/`, one CSV and one JSON Lines file per
+table. JSON Lines keeps missing values (`null`) distinct from empty strings (`""`). CSV leaves
+missing cells empty and quotes all reported values, including empty strings. Dates use ISO 8601.
+Check how your CSV reader handles empty strings and dates, or use JSON Lines to preserve the
+distinction.
 
-JSON Lines is the complete form: one JSON object a line, `null` for `None`, `""` kept. CSV is for
-spreadsheets: an empty cell for `None`, every other value quoted, and a value that is not text
-written as in JSON Lines: a list as JSON text, `true` and `false`, times in ISO form (`…Z` for
-UTC). Reading it back:
-
-- pandas and DuckDB read a quoted `""` as missing, the same as `None`; polars keeps it apart.
-- pandas keeps times as text; so does polars, unless you give `try_parse_dates=True`, which reads
-  them in UTC. DuckDB reads them as times in your local zone.
-
-An export that fails part way, say on a CSV open in Excel on Windows, can leave older files next to
-new ones: close it and export again. An agent named `export` shares the folder with the files.
+If an export stops partway through, the folder can contain a mix of old and new files. Close any
+open files and run the export again.
 
 ## How convy makes its numbers
 
-The report's rules — what counts in the pass rate and which scenario is stable — are in
-[The report](report.md#tiles). Its [measured population](report.md#measured-population) defines
-means and medians per answer and per task, including missing token measurements and
-[tool invocations](report.md#tool-invocations). Follow these rules and your numbers are convy's.
+See [the report tiles](report.md#tiles) for pass rates and
+[measured population](report.md#measured-population) for means, medians and coverage.
 
 ## A full example
 
-The pass rate of each run over time, computed as the report does, with pandas and matplotlib:
+Plot the pass rate of each run over time using pandas and matplotlib. Calculate each run
+separately so runs with the same ID stay distinct. A run with no counted attempts has no rate.
 
 ```python
 from pathlib import Path
@@ -137,53 +104,43 @@ import pandas as pd
 
 from convy import Runs, Tables
 
-tables = Tables(tuple(Runs(Path("results"))))
-runs = pd.DataFrame(tables.runs().records())
-attempts = pd.DataFrame(tables.attempts().records())
-decisions = pd.DataFrame(tables.decisions().records())
 
-claims = pd.DataFrame(tables.claims().records())
+def pass_rate(run):
+    tables = Tables((run,))
+    counted = sum(row.verdict != "no_verdict" for row in tables.attempts().rows)
+    if not counted:
+        return None
 
-# Raw decisions stay intact; derive effective claims and attempt results.
-decisions = decisions.merge(runs[["run", "trust", "claim_threshold"]], on="run")
-decisions = decisions.merge(
-    claims[["run", "scenario", "claim", "required"]], on=["run", "scenario", "claim"]
-)
-decisions["held"] = decisions["passed"] & (
-    decisions["confidence"].fillna(1.0) >= decisions["trust"]
-)
-decisions["required_failed"] = decisions["required"] & ~decisions["held"]
-keys = ["run", "scenario", "attempt"]
-verdicts = decisions.groupby(keys).agg(
-    held=("held", "sum"),
-    total=("held", "size"),
-    required_failed=("required_failed", "any"),
-    threshold=("claim_threshold", "first"),
-)
-verdicts["passed"] = ~verdicts["required_failed"] & (
-    verdicts["held"] / verdicts["total"] >= verdicts["threshold"]
-)
-attempts = attempts.join(verdicts[["passed"]], on=keys)
-attempts["counted"] = attempts["verdict"].isin(["verdict", "failed"])
-attempts["passed"] = attempts["verdict"].eq("verdict") & attempts["passed"].eq(True)
+    decisions = pd.DataFrame(tables.decisions().records())
+    if decisions.empty:
+        return 0.0  # Every counted attempt was an agent failure.
 
-rate = attempts[attempts["counted"]].groupby("run")["passed"].mean().rename("rate")
-by_time = runs.join(rate, on="run").sort_values("started")
-plt.plot(by_time["started"], by_time["rate"] * 100, marker="o")
-plt.ylabel("pass rate, %")
+    claims = pd.DataFrame(tables.claims().records())
+    decisions = decisions.merge(claims, on=["scenario", "claim", "run"], validate="many_to_one")
+    decisions["held"] = decisions["passed"] & (
+        decisions["confidence"].isna() | (decisions["confidence"] >= run.spec.trust)
+    )
+    decisions["required_failed"] = decisions["required"] & ~decisions["held"]
+    attempts = decisions.groupby(["scenario", "attempt"])
+    enough_claims = attempts["held"].mean() >= run.spec.claim_threshold
+    passed = enough_claims & ~attempts["required_failed"].any()
+    return 100 * passed.sum() / counted
+
+
+points = [(run.spec.started, pass_rate(run)) for run in Runs(Path("results"))]
+series = pd.DataFrame(points, columns=["started", "percent"]).sort_values("started")
+plt.plot(series["started"], series["percent"], marker="o")
+plt.ylabel("Pass rate (%)")
 plt.savefig("pass-rate.png")
 ```
 
 ## Careful with an export
 
-An export holds the dialogues' text: share it as carefully as `results/`. A cell that starts with
-`=`, `+`, `-` or `@` may run as a formula when a spreadsheet opens the CSV. convy keeps the text as
-the agent gave it.
+Exports contain the dialogue text. Share them with the same care as the original runs.
+Spreadsheet software may interpret a cell starting with `=`, `+`, `-` or `@` as a formula.
 
 ## Columns are kept
 
-A new convy version may add columns. Renaming or removing one is a breaking change, and the
-changelog says so; see [why](decisions/0011-run-as-data.md).
-
-Removing ordered claim scales removes `grades` and `threshold` from `claims`, and `grade` from
-`decisions`. Update consumers of those columns; new exports contain yes/no decisions only.
+convy may add columns. A rename or removal is a breaking change documented in the changelog.
+If you used ordered claim scales, remove references to `claims.grades`, `claims.threshold` and
+`decisions.grade`. Current exports contain yes/no decisions. See [the table format decision](decisions/0011-run-as-data.md).

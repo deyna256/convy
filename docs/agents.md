@@ -1,13 +1,11 @@
 # Connect an agent
 
-convy talks to your agent as a user would: it sends a message and waits for the answer. It does not
-need the agent's code or its model. Each agent is one file in `agents/`. Its name is the file name
-without `.py`, such as `support_bot`. A name cannot be a path: no `/`, no `..`, and on Windows
-no `\`.
+convy sends messages to your agent and reads its replies. Put the adapter in `agents/<name>.py`.
+For example, `agents/support_bot.py` is available as `convy run support_bot`.
 
 ## An agent with a JSON API
 
-Settings are enough. Add `agents/support_bot.py`:
+Define a `JsonAgent` in `agents/support_bot.py`.
 
 ```python
 from pydantic import SecretStr
@@ -30,15 +28,15 @@ agent = JsonAgent(
 )
 ```
 
-On every turn convy sends `body`. It puts the user's message in place of `{text}`, and an id that
-stays the same for the whole conversation in place of `{session}`. If your agent does not remember
-the dialogue, put `"{history}"` where it expects the list of messages. `reply` is a path
-in the JSON answer, and `tokens` says where its tokens are; see [Tokens](#tokens).
+On each turn, `JsonAgent` fills in the request body. `{text}` expands to the current message.
+`{session}` expands to an ID shared by all turns in this conversation. For an API that expects
+the full message list, use `"{history}"` as the entire JSON value. `reply` locates the answer
+text in the response. Optional [token paths](#tokens) locate usage counts.
 
-Files of the project can import each other, as in a script run from its folder. Put shared settings
-in one module, like `gateway.py` in a new project (`from gateway import gateway`).
+Project files can import shared settings from a module such as `gateway.py` in the project root.
 
-Check the connection. The agent answers for real; nothing else is called:
+Check the connection with a real request to the agent. Smoke mode uses local fakes for the
+simulated user and judge.
 
 ```sh
 uv run convy run support_bot --smoke
@@ -46,8 +44,8 @@ uv run convy run support_bot --smoke
 
 ## An agent with its own protocol
 
-Streaming, a two-step login or any other protocol takes two small classes in the same file: an agent
-that opens a conversation, and a conversation that answers a message.
+For streaming, login, or a custom client, define an agent that opens a conversation and a
+conversation that answers messages.
 
 ```python
 from contextlib import asynccontextmanager
@@ -83,14 +81,14 @@ class SupportChat:
 agent = SupportBot()
 ```
 
-You do not need to catch errors in `answer`. Any exception fails the turn, and convy writes it into
-the dialogue. The text of the exception goes into the run's folder and the report, so keep keys out
-of it. `Env`'s own errors never show the values they read.
+An exception from `answer` normally fails the turn. convy records the error message in the
+dialogue and report, so keep secrets out of exceptions.
 
 ## A busy service
 
-When the service refuses a message because it is busy, such as with "429 Too Many Requests", raise
-`Busy`, and pass the seconds the service asks to wait, if it says:
+Raise `Busy` only when the service refused the request **before processing it**. convy may
+send the same message again. If you know the requested delay, pass it in seconds as
+`Busy(message, retry_after=seconds)`.
 
 ```python
 from convy import Busy
@@ -99,12 +97,11 @@ if response.status_code == 429:
     raise Busy("429")
 ```
 
-convy then sends the message again, for up to 2 minutes after the first refusal, and the wait counts
-neither in the time per answer nor against `--turn-timeout`. While the service is busy, convy also
-opens fewer conversations at once. If it stays busy, the attempt has no verdict and is left out of
-the pass rate: convy sent too much, the agent did nothing wrong. Raise `Busy` only when the service
-did not act on the message, or the agent may get it twice. A model or a judge of your own raises
-`Busy` the same way; `JsonAgent` and `OpenAiModel` do it on 429 and 503.
+On a busy turn, convy retries and reduces the number of concurrent conversations. The default
+retry budget is two minutes from the first refusal. Waiting between tries adds nothing to
+the reported answer time or the turn timeout. If the agent stays busy, the attempt gets no
+verdict and is excluded from the pass rate. Custom models and judges can also raise `Busy`.
+`JsonAgent` and `OpenAiModel` do this automatically for HTTP 429 and 503.
 
 ## A client without async
 
@@ -144,23 +141,24 @@ class SupportChat:
 agent = SupportBot()
 ```
 
-When a turn runs out of time, convy stops waiting. But a thread cannot be stopped: the call goes on
-until it returns. Give the client its own timeout if it has one.
+When a turn times out, the blocking call continues in its thread. Set a timeout on the client
+itself if it supports one.
 
 ## Tokens
 
-An answer's `Usage` has its input and output tokens, and the parts of them you can report:
+Return `Answer(text)` if the agent has no token counts. To report usage, include the input
+and output totals and any breakdown you have.
 
 ```python
 Usage(input=1200, output=300, thinking=200, cache_read=1000, cache_write=150)
 ```
 
-`input` is every token the model read, those read from or written to its cache included; `output`
-every token it wrote, thinking included. A count you do not give, or that is missing from the
-answer, shows as not reported, not as 0; `thinking=0` says none was spent. Leave a count out or
-write `NotReported()`; `None` is refused.
+`input` includes all input tokens, including cache reads and writes. `output` includes
+thinking tokens. Omit an optional count (or use `NotReported()`) if it is unknown. Use zero
+only for a measured zero.
 
-A `JsonAgent` reads them with `TokenPaths`. OpenAI counts them as convy does:
+With a `JsonAgent`, set `TokenPaths` to the fields in your API's response. For example,
+for an OpenAI-style response:
 
 ```python
 tokens = TokenPaths(
@@ -171,7 +169,8 @@ tokens = TokenPaths(
 )
 ```
 
-A tuple of paths adds their values. Anthropic's `input_tokens` leaves the cache out, so add it:
+If your API reports cache usage separately from ordinary input tokens, give a tuple of paths
+to add together. For example:
 
 ```python
 tokens = TokenPaths(
@@ -187,14 +186,12 @@ tokens = TokenPaths(
 )
 ```
 
-The path of `input` and of `output`, or the first of their tuple, must be in the answer, so a typo
-fails the turn at once. The other paths may be missing or `null`: providers leave them out when
-there is nothing to count.
+The first path for each of `input` and `output` must resolve to an integer. Additional paths
+and optional fields can be missing or null.
 
 ## Tokens counted from the start
 
-Some agents report only the tokens spent so far, not those of one answer. Read the counter before
-and after the turn. The difference is the turn's tokens:
+If the API reports a running total, subtract the count before a turn from the count after it.
 
 ```python
 import httpx2
@@ -219,19 +216,14 @@ class SupportChat:
         return usage["input_tokens"], usage["output_tokens"]
 ```
 
-The counter must belong to the conversation. A counter shared by conversations that run at the same
-time mixes their tokens. Give such an agent a limit of 1, `parallel = 1` under
-`[tool.convy.agents.<agent>]`; see [How much runs at once](runs.md#how-much-runs-at-once).
-
-## No tokens at all
-
-If your agent does not report tokens, the report shows time and results without them. To get them,
-add them to the agent's answer, or read them from the model gateway the agent uses.
+Use a per-conversation counter. If several conversations share one counter, their usage can
+overlap. Set `parallel = 1` under `[tool.convy.agents.<agent>]` and make sure no other client
+uses the same counter during the run. See [Run limits](runs.md#how-much-runs-at-once).
 
 ## Steps
 
-An answer can say how the agent got there: what it thought and what it called, in order. The
-report shows the steps next to the answer; the simulated user and the judge never see them.
+Use `steps` to show thoughts and calls in order alongside the answer. convy removes these
+steps before passing the dialogue to the simulated user or judge.
 
 ```python
 from datetime import UTC, datetime
@@ -276,19 +268,14 @@ enable [tool invocations per task](report.md#tool-invocations); partial steps re
 
 ### Thinking
 
-The agent's thinking is a `Thought`. Its tokens go in `Usage`: `thinking` is the part of `output`
-spent on thinking. OpenAI and Anthropic report it that way, so pass their numbers as they are. If a
-provider counts thinking apart from the answer, as Gemini does, add the two: `output` is the
-answer's tokens plus the thinking's.
-
-A thinking count you do not give shows as not reported; see [Tokens](#tokens).
+Record a reported thought as `Thought(text)`. Include thinking tokens in the output total.
+If your provider counts them separately, add the visible output and thinking counts.
 
 ```python
 return Answer(text, Usage(input=120, output=300, thinking=200), steps=(Thought(thought),))
 ```
 
-convy does not guess where an agent keeps its thinking; your `answer` knows. An agent that sends it
-in a field of its own:
+When the agent returns thinking in a separate field, keep it out of the visible answer.
 
 ```python
     async def answer(self, message: Message) -> Answer:
@@ -298,25 +285,11 @@ in a field of its own:
         return Answer(data["content"], steps=(Thought(thought),) if thought else ())
 ```
 
-An agent that puts it inside the text, as some open models do with `<think>…</think>`:
-
-```python
-    async def answer(self, message: Message) -> Answer:
-        response = await self.http.post("/chat", json={"text": message.text})
-        text = response.raise_for_status().json()["text"].strip()
-        thought, mark, said = text.partition("</think>")  # some models leave out the opening tag
-        if not mark:  # cut off while thinking, or no thinking at all
-            thought, said = (text, "") if text.startswith("<think>") else ("", text)
-        thought = thought.removeprefix("<think>").strip()
-        return Answer(said.strip(), steps=(Thought(thought),) if thought else ())
-```
-
 ## Corporate certificates
 
-An agent or a gateway behind a corporate certificate authority takes `Tls` in its endpoint. `ca` is
-an extra root certificate; `cert` and `key` are a client certificate. Declare the paths in your
-`Env` as pydantic's `FilePath`. Then a wrong path stops convy before the run (`error: …`, exit
-code 2) instead of failing every attempt:
+Use `Tls(ca=...)` to trust an additional root certificate. For client authentication, supply
+`cert` and `key`. Declare the paths as pydantic `FilePath` settings so a missing file fails
+the configuration check before the run.
 
 ```python
 from pydantic import FilePath
@@ -335,10 +308,10 @@ agent = JsonAgent(
 )
 ```
 
-`FilePath` does not expand `~`, so write the full path. A file that exists but is damaged shows only
-when convy connects. Check the agent with `--smoke`.
+Use a full path. `FilePath` does not expand `~`. Use `--smoke` to check that the certificate
+works when the agent connects.
 
 ## convy's own models
 
-convy talks to the agent, not to its model, so it does not need to know which model the agent uses.
-Only convy's own models are set in `models.py`: the one that plays the user and the judge.
+Configure the simulated user and the judge in `models.py`. The agent's model belongs in
+the agent's own configuration. See [The judge](judge.md) for an example.

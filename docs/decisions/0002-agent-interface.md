@@ -1,32 +1,27 @@
-# 2. The agent's owner implements the agent interface
+# 2. Connect agents through a conversation interface
 
 **Status:** Accepted
 
 ## Context
 
-Agents come with every kind of API: JSON over HTTP with or without memory, streaming, two-step logins,
-custom protocols. convy must connect all of them without knowing their code or model.
+An agent might accept JSON over HTTP, stream responses, or require a multi-step login.
+Teams need to test an existing service without deploying a wrapper for convy.
 
 ## Decision
 
-An agent is any object with `conversation()`, which opens an async context giving a `Conversation`
-with `async answer(Message) -> Answer`. The agent's owner writes `agents/<name>.py` with an `agent` object.
-For the common case — JSON over HTTP — the library ships `JsonAgent`, configured with a URL, a body
-template and paths to the reply and token counts, so no code is needed. Anything else is two small
-classes in the same file.
+The owner exports an `agent` object from `agents/<name>.py`. Its `conversation()` method opens an
+async context manager. The conversation's `answer(message)` method takes a `Message` and returns
+an `Answer` when awaited.
 
-## Alternatives
+For a JSON API, configure `JsonAgent` with an endpoint, a request body template and paths to
+the reply and token counts. For other protocols, implement the same interface. Opening and closing
+the conversation gives the adapter a place to log in, reuse its client and release resources.
 
-- **A fixed HTTP contract** that agents must serve. One adapter in convy, but every team has to deploy
-  a wrapper service before it can test.
-- **A YAML mapping only.** No code for simple APIs, but streaming and logins do not fit, and a second
-  mechanism is needed anyway.
-- **A function `send(session, history, text)`.** Simple, but it leaves lifecycle (login, client
-  reuse, cleanup) to globals; a conversation object holds that state where it belongs.
+## Alternatives and consequences
 
-## Consequences
+A fixed HTTP contract would require changes to existing services. A YAML mapping could describe
+simple requests but would still need an extension for streaming and logins. A single send
+function would leave the caller responsible for session state and cleanup.
 
-- One way to connect any agent; `JsonAgent` is just one implementation of it.
-- Agent files are Python and run in convy's process: they are trusted code (see the
-  [security policy](../../SECURITY.md)).
-- The library ships fakes of the interface, so owners can test their own agent classes.
+Agent files execute in convy's process and must come from a trusted source. convy also ships
+working fakes for tests. See the [security policy](../../SECURITY.md).

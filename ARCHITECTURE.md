@@ -1,215 +1,131 @@
 # Architecture
 
-This document is for people who change convy's code. It describes how the code is laid out and the
-rules that hold everywhere in it. How to use convy is in the [README](README.md) and [docs/](docs/);
-why the main choices were made is in [docs/decisions](docs/decisions/).
+## How a run works
 
-## Bird's eye view
-
-convy plays scenarios against an agent. For each attempt it opens a conversation with the agent, lets a
-simulated user talk to it, and asks a judge whether each of the scenario's claims holds. The simulated
-user and the judge are models; the agent is anything that implements a small interface. A run has a
-folder of its own: its specification and status in `run.json`, each attempt in `attempts.jsonl` as soon
-as it ends. The report is built from the runs.
+Each YAML scenario describes a user, a task and a list of claims to check. For each attempt,
+convy opens a fresh conversation. A simulated user talks to the agent. After the conversation
+closes, a judge checks each claim against the dialogue.
 
 ```text
-convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome ──▶ SimulatedUser ⇄ Conversation (agent)
-                   │                                         └─▶ Judge
-                   └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
-                                                        ├─▶ Comparison ──▶ CLI regression verdict
-                                                        ├─▶ Index ──▶ results/index.html
-                                                        └─▶ Tables ──▶ results/export/
+convy run → RunJournal.play → Bench.run → Scenario.outcome
+                                              ├─ SimulatedUser ⇄ Conversation
+                                              └─ Judge
 ```
+
+Each run has a folder under `results/<agent>/<run>/`. The journal writes the configuration and
+status to `run.json` and appends each completed attempt to `attempts.jsonl`. Reports, comparisons
+and exports read those files and can run offline.
 
 ## Code map
 
-All code is in `src/convy/`.
+The library lives in `src/convy/`. Its public Python API consists of the names in `convy.__all__`
+and the `convy.fakes` module. See [Run from Python](docs/python.md) for a working example.
 
-| module | what is there |
+| Module | Responsibility |
 |---|---|
-| `agent.py` | the agent interface — `Agent`, `Conversation`, `Message`, `Answer`, `Usage`, `NoUsage`, an answer's steps `Thought` and `Call`, `Reported`, `NotReported`, `AgentFailure` — and its wrappers `TimeLimited` and `QueuedAgent` |
-| `busy.py` | `Busy`, which an agent, model or judge raises when its service refused a request unprocessed; `Patience`, how long a participant waits for a busy service; `Places`, a participant's requests at once and per minute, fewer at once while its service is busy, which sends and retries them as its patience allows |
-| `http.py` | `JsonEndpoint` (JSON over HTTP, raising `Busy` on 429 and 503) and `JsonConnection`, its open connection that a conversation keeps for all its turns; `Tls`, `HttpFailure`, and `JsonAgent`, an agent configured with a URL and a body template, and `TokenPaths`, where it finds an answer's tokens |
-| `model.py` | the model interface `Model`, `OpenAiModel`, `ModelFailure`, `Models`, which holds the simulated user's model and the judge, and `Contained`, which turns any error of the simulated user's model into `ModelFailure`; `PatientModel` |
-| `env.py` | `Env`, the base class for settings read from `.env` and the environment |
-| `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; its yes/no decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence`, and the attempts without them, `Failed` and `NoVerdict` |
-| `scenario.py` | `Scenario` (read from YAML), its `Requirement` definitions and computed `Score`, and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
-| `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
-| `report.py`, `pages/` | `Runs` reads saved runs. `Summary` builds run and scenario metrics, including each resource’s `Spread` and the pass counts in a `Tally`. `Report` renders a single run and `Index` renders the runs workspace. `Template` embeds the data and shared page assets. `Comparison` supplies the two-run CLI verdict. |
-| `tables.py` | a consumer of runs: `Tables`, a run's seven tables, and `Table`, one of them with its rows as records, CSV and JSON Lines; the row types |
-| `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
-| `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`, `ExportCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
-| `template/` | the project that `convy init` copies |
-
-`convy run` runs `models.py` once per agent, so each agent gets fresh models; code at the top level
-of `models.py` runs that many times.
-
-A user's project holds the files convy loads: `models.py`, `agents/*.py`, `scenarios/*.yaml`, `.env`,
-and `results/`, which convy writes. Other modules in it, such as the template's `gateway.py`, are what
-those files import.
-
-The public API is `convy.__all__` and the module `convy.fakes`; with them a run can be made from
-Python as well as from the command. Everything else may change without notice.
+| `cli.py` | Parse commands, print progress and errors, and set exit codes. |
+| `project.py`, `env.py` | Load project files and settings, identify the agent build, and write reports and exports. |
+| `template/` | Files copied by `convy init`. |
+| `agent.py`, `http.py` | Define conversations, answers, token counts and calls. Connect JSON APIs and apply time limits. |
+| `model.py`, `dialog.py` | Run the simulated user and judge, record the dialogue and validate judge decisions. |
+| `scenario.py` | Load YAML scenarios, play one attempt and score its claims. |
+| `bench.py`, `busy.py` | Schedule attempts, limit and retry requests, and record the run. |
+| `report.py`, `pages/` | Read journals, calculate metrics, build HTML pages and check for regressions. |
+| `tables.py` | Export runs as seven related tables, in memory, CSV or JSON Lines. |
+| `fakes.py` | Provide working agents, models, judges and a journal for tests and examples. |
 
 ## Invariants
 
-convy follows the ideas of *Elegant Objects* by Yegor Bugayenko, in idiomatic Python. These rules hold
-in all of `src/convy/`.
+convy follows Yegor Bugayenko's *Elegant Objects* with the Python conventions below.
 
-1. **A class stands for a thing in the problem, not an action:** an agent, a conversation, a scenario,
-   a judge, a journal. There are no `*Manager`, `*Runner` or `*Parser` classes, no static methods and
-   no module-level functions with logic. The one function is `main` in `cli.py`, the command's entry
-   point.
-2. **Objects do not change after construction.** Classes are `msgspec.Struct` with `frozen=True`. A
-   constructor stores its arguments and may reject a value the object cannot represent (ValueError);
-   it never does work — no I/O, no computing, no calls to other objects. The check is in
-   `__post_init__`, which msgspec also calls on decoding, so a scenario file gets it too; a check that
-   depends on the situation, such as whether a certificate file exists, stays in the method that needs
-   it.
-3. **An interface (`typing.Protocol`) exists only where there are two implementations or more.** There
-   are five: `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
-4. **New behaviour is a wrapper, not a flag or a subclass.** `TimeLimited(agent, 600)` is the same agent
-   with a time limit on opening a conversation, on each turn, and on closing. Only exceptions
-   inherit, from `Exception`.
-5. **"No value" is an empty object, not `None`:** `NoUsage`, `NotReported`, `NoReason`, `NoVerdict`.
-   It is stored and read like the real value, with no type checks: msgspec tags it
-   (`{"type": "no_usage"}`) and restores the right class. `None` is allowed only for an optional
-   constructor argument that was not given, and for `null` in a type that mirrors outside JSON
-   (rule 7).
-6. **Domain objects become JSON in one place, the run's folder.** Objects have no `json()` or
-   `to_dict()` methods. `RunJournal` writes with `msgspec.json.encode`; `Runs` reads back with
-   `msgspec.json.decode`. The report's pages embed data of their own: `Summary` builds the view records
-   for the browser from the runs; `Template` encodes them. Rows of `Tables` are not domain objects
-   either but data for outside: `Table` gives them as records, CSV and JSON Lines, and
-   `Project.export` writes them. Domain objects still have no such methods.
-7. **Outside data becomes the domain's types where it enters; only those types travel inside.**
-   Each entry turns what comes in into convy's own types at once. Scenarios: `yamlrocks`, then
-   `msgspec.convert` into `ScenarioInput`, whose strings and requirement records become a `Scenario`.
-   The run's folder: `msgspec.json.decode` into `RunFile` and
-   `Outcome`, with unsupported formats rejected before decoding their contents. An agent's answer:
-   encoded and decoded with `msgspec.json` as the run's folder will, so a wrong one fails its turn
-   instead of the run. A model's reply: read into the shape of an OpenAI chat completion. The judge
-   model's reply: each decision read as a yes/no result. A judge's own answer: `Checked` encodes and
-   decodes it as the run's folder will, and wants one `Claim` per claim; a judge gets only what was
-   said.
-   `[tool.convy]` of `pyproject.toml`: `msgspec.toml.decode` into `Pyproject`. The environment and the command line:
-   pydantic-settings; the `CONVY_*` variables are then checked by msgspec as `Settings`. Past the
-   entry nothing checks a type by hand: no raw dicts and no `isinstance` on what came in. A type
-   that mirrors outside JSON may hold `None` for its `null`, and is turned into domain types at
-   once. JSON of no fixed shape, a `JsonAgent`'s body template and paths, which the user sets, is
-   walked with `match`, and what is taken from it is converted on the spot. Pydantic is used only
-   for settings; every other class is msgspec.
-8. **Every interface has a fake** in `fakes.py`, part of the public API. A fake is a simple working
-   object, not a mock. Fakes get no methods that exist only for tests; a fake may keep what it collected
-   in public fields (`outcomes`, `peak`).
-9. **The library does not print or log.** It returns what the command needs to show, such as
-   `Runs.broken()`. Only `cli.py` prints and picks the exit code.
-10. **Types are checked on data, never on behaviour.** `match` reads data: the closed unions —
-    `Message | Finished`, `Usage | NoUsage`, `Thought | Call`, `Reported | NotReported`,
-    `int | NotReported` (a count of `Usage`),
-    `Reason | NoReason`, `Verdict | Failed | NoVerdict`, a run's status —
-    and records such as `Outcome`. Data from outside is read into such types where it enters
-    (rule 7), so this holds for it too.
-    Objects with behaviour are called through their interface, not checked for type. There are two
-    exceptions, both where convy meets the outside: `Project` checks the type of what a project file
-    defines (`isinstance(models, Models)`), as outside data is checked where it enters; and `main`
-    checks that stdout and stderr are text streams before it sets them to UTF-8.
+1. **Name classes after things in the problem.** Examples include a conversation, judge or journal.
+   Avoid generic managers, runners and parsers. Keep logic in instance methods. The CLI entry
+   point, `main`, is the one module-level function with application logic. Avoid static methods.
+2. **Keep domain records immutable.** Use `msgspec.Struct` with `frozen=True` and public fields.
+   Constructors store arguments. Use `__post_init__` to reject values a record cannot represent.
+   The check also runs when msgspec decodes a record. Put I/O and checks that depend on the
+   environment, such as opening a certificate file, in the method that needs them.
+3. **Add a protocol when at least two implementations need it.** The five protocols are
+   `Agent`, `Conversation`, `Model`, `Journal` and `Judge`.
+4. **Add behaviour by wrapping an object.** For example, `TimeLimited(agent, 600)` puts a time
+   limit on opening, answering and closing. It implements the same interface as the wrapped agent.
+   Avoid behaviour switches and implementation inheritance. Exception classes inherit from
+   `Exception`. Use `async with` for the lifetime of a conversation.
+5. **Give missing domain values explicit types.** Examples include `NoUsage`, `NotReported`,
+   `NoReason` and `NoVerdict`. msgspec tags these records so a reader can restore their types.
+   Use `None` for an omitted optional argument, an external JSON null or a missing value in
+   report and export data.
+6. **Keep storage separate from domain objects.** `RunJournal` writes journal records and
+   `Runs` reads them. Keep serialization methods off domain records. Pages and tables have
+   their own output formats.
+7. **Validate data where it enters convy.** Decode YAML, journals, HTTP replies and settings
+   into typed records. Validate agent answers and custom judge decisions against their journal
+   types. A judge must return one decision per claim. Use pydantic for settings and msgspec for
+   domain records. Handle variable JSON shapes inside the HTTP adapter.
+8. **Give each protocol a working fake.** Keep fakes in `convy.fakes` and use them through the
+   same interface as the real implementation. A fake can expose what it observed, such as peak
+   concurrency. Avoid methods added solely for test setup or inspection.
+9. **Keep output in the CLI.** Library methods return data. Only the CLI prints messages and
+   chooses the process exit code.
+10. **Inspect data and call behaviour through its interface.** Use `match` for records and
+    tagged alternatives such as `Verdict`, `Failed` and `NoVerdict`. Check the objects a project
+    file supplies when loading it. The CLI also checks the type of an output stream before
+    configuring its encoding.
 
-**Where convy departs from *Elegant Objects*:**
-
-- **Data has public fields.** `Message`, `Usage`, `Answer`, `Turn`, `Verdict`, `Outcome` and `RunSpec`
-  are immutable records with public fields; accessor methods would be noise in Python.
-- **A conversation is opened with `async with`**, Python's usual "open, use, close".
-- **Four kinds of objects change inside:** a conversation (its session and history), fakes (they
-  count), `MemoryJournal`, and `Places` (a participant's requests under way and the places it
-  allows; a bench makes new ones for every run). They are plain classes, not frozen `Struct`s, and
-  their state never leaves them.
-- **The report's page data uses `None`** (`null` in JSON) for numbers nobody reported: it is data for
-  the browser, not part of the domain; and so do the tables' rows: a value the agent or the judge
-  did not give, or one that does not apply to the row, is `None`, a missing value for pandas,
-  polars and CSV.
+Conversations keep session state. Fakes, the in-memory journal and the request limiter also
+keep mutable state. Each bench run gets its own limiters.
 
 ## The report
 
-`Scenario.score` owns [attempt scoring](docs/scenarios.md#passing-an-attempt), using
-`Claim.holds(trust)` for effective decisions. The CLI and report use this same calculation; raw
-judge decisions remain unchanged in the journal and exports. Tool counts are derived from explicit
-call kinds and trace completeness ([decision 13](docs/decisions/0013-tool-invocations.md));
-[the report](docs/report.md#measured-population) defines their population and coverage.
-`report.py` builds the metric and scenario records for both pages. The index carries the run and
-scenario summaries and links to the detailed report, where claims and dialogues live. Filtering
-selects the same runs in the table, scatter plot and matrix. The optional reference and the CLI
-regression gate answer different questions. See [decision 14](docs/decisions/0014-runs-workspace.md).
+`Scenario.score` applies the required-claim rule, confidence check and claim threshold for the
+CLI and both report pages. Journals and exports keep the judge's original decisions.
+[Scoring rules](docs/scenarios.md#passing-an-attempt)
 
-Each page embeds its own data, styles and scripts and works offline. Shared assets in `pages/`
-include `base.css`, `base.js` and `icon.svg`. The run report also uses `window.css` and
-`window.js` for the scenario window. Scripts add data as text. The run report renders agent
-Markdown with a small set of DOM nodes.
+`Summary` calculates the numbers for the run report and the index. The index stores summaries
+and links to the detailed report for individual attempts and dialogues. Each HTML page embeds
+its own data, scripts and styles. Page data is internal because convy writes it alongside the code
+that reads it. The journal format and export columns are public contracts.
+[Reports](docs/report.md) · [Run format](docs/decisions/0005-runs.md) · [Export columns](docs/results.md)
 
-The view records are internal and have no version: one convy version writes the template and the data
-into one file, and a page written earlier keeps working on its own. The durable formats are the
-run's folder and the tables' columns: a column may be added, and renaming or removing one is a
-breaking change; see [decision 5](docs/decisions/0005-runs.md) and
-[decision 11](docs/decisions/0011-run-as-data.md).
+## Concurrency and retries
 
-## Cross-cutting concerns
+`Bench.run` schedules attempts with `asyncio.TaskGroup`. It gives the agent, simulated user and
+judge separate instances of `Places`. The agent holds a place while a conversation is open.
+The simulated user and judge hold a place for one request attempt. The judge runs after the
+agent releases its place. Use monotonic time for durations and the event loop's clock for
+request scheduling.
 
-**Concurrency.** Conversations run at the same time, so the whole path is `async`: `asyncio.timeout`
-for time limits, `asyncio.TaskGroup` for concurrent work, and `Places` per participant for how much
-it does at once ([decision 7](docs/decisions/0007-participant-limits.md)), fewer while its service
-is busy ([decision 8](docs/decisions/0008-busy-services.md)), and how often it sends ([decision
-9](docs/decisions/0009-requests-per-minute.md)). `Bench.run` makes them in the event loop that waits
-for them and hands them to `QueuedAgent`, `PatientModel` and `PatientJudge`: the agent's place is
-held while a conversation is open, the user's and the judge's for one try of a request, so none is
-held while waiting for a busy service, and the judge decides after the agent's is let go. Nothing
-blocks the event loop except the run's append of one short line per attempt and the rewrite of its
-small `run.json`. Durations are measured with `time.monotonic`; `Places` keeps its moments in the
-event loop's time, which its sleeps follow. One process plays a run's folder at a time:
-`RunJournal.play` holds `run.lock`, which the system frees when the process ends, however it ends;
-taking it does not wait. Ctrl+C makes `asyncio.run` cancel the bench; `RunJournal.play` marks the
-run `interrupted` on that, or on any other error, and re-raises it.
+A service raises `Busy` when it refused a request before processing it. The HTTP adapter does
+this for 429 and 503. `Places` retries eligible requests within the participant's patience
+budget and reduces concurrency after a refusal. A read timeout can occur after the service
+acted, so convy treats it as a failure. [Limits](docs/decisions/0007-participant-limits.md) ·
+[Retries](docs/decisions/0008-busy-services.md) · [Requests per minute](docs/decisions/0009-requests-per-minute.md)
 
-**Failure.** Four kinds, one rule each:
+`RunJournal.play` takes a nonblocking lock on `run.lock` where the filesystem supports it.
+If another process holds it, the CLI reports `RunInUse`. The OS releases the lock when the
+process exits. If a running attempt is interrupted, the journal keeps completed attempts.
+[Resuming a run](docs/runs.md)
 
-- `AgentFailure` — the agent failed: the dialogue ends and the attempt is `Failed` without asking the
-  judge, so a broken agent cannot pass on what it said before.
-- `Busy` — a service refused a request before acting on it. The participant's `Patience` waits and
-  sends it again; when it gives up, an agent's attempt has `NoVerdict` and stops as `agent_busy`,
-  and a model's or a judge's `Busy` is a `ModelFailure`
-  ([decision 8](docs/decisions/0008-busy-services.md)).
-- `ModelFailure` — the simulated user's or the judge's model failed, stayed busy, or gave an answer
-  convy cannot use: an empty message, or a judge's answer without one decision per claim whose
-  `"pass"` is `true` or `false`; or raised any other error, which `Contained` (the user's model)
-  turns into `ModelFailure`; or a judge that raised any error, or gave an answer that is not one
-  valid `Claim` per claim, which `Checked` turns into `ModelFailure`. The attempt has `NoVerdict`
-  and is left out of the pass rate.
-- Configuration errors — raised while loading the project, or a run that cannot be resumed or that
-  another process is playing (`RunInUse`), before any request: the command prints them and exits
-  with code 2.
+## Errors
 
-`except Exception` appears in four places: in `scenario.py` around the agent's code — opening a
-conversation, a turn, closing it — because a bug there must not stop a run; in `Contained`
-(`model.py`) around the simulated user's model's `reply`, so a bug in it is a `ModelFailure`, not
-the agent's failure or a crashed run; in `Checked` (`dialog.py`) around a judge's `decide`, for the
-same reason; and in `cli.py` around loading the project, where any error is a configuration error.
+| What happened | Result |
+|---|---|
+| The agent failed to open, answer or close | Record a failed attempt. It counts against the pass rate. |
+| The agent's service stayed busy | Record `NoVerdict` with stop reason `agent_busy`. Exclude the attempt from the pass rate. |
+| The simulated user's model failed or the judge failed to return valid decisions | Record `NoVerdict` with stop reason `model_failure`. Exclude the attempt from the pass rate. |
+| The CLI could not load the project or resume the requested run | Report the error and exit with code 2. |
 
-**Retries** live only in `Places`, one for each participant of a run. Only a request whose service
-refused it unprocessed is repeated, which its caller reports by raising `Busy`, so an agent never
-gets the same message twice: `JsonConnection` raises it for 429 and 503, while a 500, 502, 504 or a
-read timeout may come after the service acted on the request, and a connection that could not be
-made means no service at all, so each is a failure.
+Catch exceptions at the boundary that knows whose code failed. `Scenario` handles agent errors,
+`Contained` handles exceptions from the simulated user's model, and `Checked` handles errors from
+the judge. The CLI handles errors while loading project code.
 
-**Secrets.** Keys are `SecretStr` and never printed. A settings error is shown by field and message
-only, because pydantic's own text includes every value it read; `Env` also sets
-`hide_input_in_errors`, since an agent that reads its settings in `conversation()` fails with that
-error into the run's folder; an HTTP error shows the URL without
-its query, which may hold a key. Models are written to runs by `name` only,
-never as objects, because an object holds request headers with keys.
+## Project code and secrets
 
-**Trust.** `convy run` imports the project's Python files and runs them in its own process; see the
-[security policy](SECURITY.md). The other way round, nothing an agent says is trusted: the report shows
-dialogues only as text, never as HTML.
+A regular CLI run loads `models.py` once per agent. The smoke check uses built-in models.
+Project modules run in the convy process and can import other files in their project.
 
-**Dependencies.** httpx2, msgspec, yamlrocks and pydantic-settings; why these is in
-[decision 4](docs/decisions/0004-dependencies.md). Adding a runtime dependency needs an ADR.
+Use `SecretStr` for API keys. Report settings errors by field and message, and omit URL query
+strings from diagnostics. Save model names in the journal. Treat agent replies as untrusted
+text when rendering HTML. [Security policy](SECURITY.md)
+
+Adding a runtime dependency requires an [architecture decision](docs/decisions/0004-dependencies.md).

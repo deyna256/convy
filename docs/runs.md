@@ -1,7 +1,7 @@
 # Runs
 
-A run is one `convy run` of one agent: the scenarios it played, `k` attempts each. Every run has a
-folder of its own:
+A run tests one agent on a set of scenarios, with `k` attempts per scenario. If you name several
+agents in one command, each gets its own run folder.
 
 ```text
 results/
@@ -15,22 +15,16 @@ results/
         └── attempts.jsonl              # a line per attempt
 ```
 
-Each attempt is written as soon as it ends, so a stopped run loses nothing.
-
-`run.json` keeps a copy of every scenario as it was played. It also keeps the agent's `version`, the
-convy version, the model names, the settings (`k`, `trust`, `claim_threshold` and the rest), and fingerprints of
-`agents/<agent>.py` and `models.py`. So a run describes itself: editing a scenario later does not
-change what an old run means.
+convy writes each completed attempt to `attempts.jsonl`. The scenario definitions, model names,
+agent and convy versions, limits, scoring settings, and hashes of `agents/<agent>.py` and
+`models.py` are saved in `run.json`. A later edit to a scenario leaves old results unchanged.
 
 ## Run format compatibility
 
-The current run format is 9, which records explicit call kinds and answer trace completeness.
-Earlier formats cannot be resumed, exported or rebuilt with this version of convy. There are no
-converters or migration commands. Start new runs after updating Python `Call` constructors with
-a [call kind](agents.md#steps) and any graded scenarios to [plain claims](scenarios.md).
-
-Reading or rejecting an unsupported run leaves its files untouched. Its existing standalone HTML
-report still opens; to rebuild or resume it, use the convy version that wrote it.
+The current run format is 9. Older standalone HTML reports still open. To resume, rebuild, or
+export an older run, use a convy version that supports its format. To start fresh with this
+version, give each Python `Call` a [kind](agents.md#steps) and replace graded scenarios with
+[yes/no claims](scenarios.md).
 
 ## Stop and resume
 
@@ -43,44 +37,29 @@ interrupted: 12 of 30 attempts recorded
 resume with: convy resume a3f9
 ```
 
-`convy resume` takes the run's id or its random part. It plays the missing attempts with the run's
-settings: the same scenarios and required flags, `k`, `--turn-timeout`, `--trust` and
-`--claim-threshold`. Scoring settings cannot be overridden on resume. The
-[limits](#how-much-runs-at-once) are the project's current ones, so a run that hit rate limits can
-go on slower. When the agent's limit changed, convy says so: the run's answer times then mix two
-loads.
+`convy resume` accepts the full run ID or its unique random suffix. It uses the saved
+scenarios, attempt count, timeout, and scoring settings. It skips recorded attempts, including
+errors, and starts any missing attempts from the beginning.
 
-It refuses, and says why, if the agent's file, `models.py`, the agent's `version`, a model name or
-the convy version has changed. The run would no longer measure one thing. It checks the files and
-the convy version first, before it runs any of your code, so a `models.py` that no longer loads does
-not hide the reason. It cannot see a change in a module the agent or `models.py` imports, such as
-`gateway.py`, or in the service behind the agent.
+Resume checks the installed convy version and the two file hashes before loading project code.
+It also checks the agent version and model names. If any differ, use the original versions or
+start a new run. Changes in imported modules such as `gateway.py` and changes to remote services
+can go undetected.
 
-The simulated user's and the judge's instructions are part of convy, so a new version of convy may
-play or judge differently. After an upgrade an unfinished run cannot be resumed: finish it with the
-convy it started on (for example `uv add convy==0.2.0`) or start a new run. The convy version is
-part of the evaluation setup in the [runs workspace](report.md#runs-workspace).
-
-Attempts that ended in an error are recorded and are not played again.
-
-While a run is played, its process holds `run.lock`. `convy resume` refuses a run another process
-is still playing, before it plays anything; once that process has ended, however it ended, the run
-resumes. On Windows the lock can stay a few seconds after a crash; run `convy resume` again. The
-lock is kept by one machine: a results folder synced between machines, for example by Dropbox or
-git, does not carry it, so a run played on another machine is not seen.
+A process running a journal holds its `run.lock`. If another process holds the lock, resume
+exits with code 2. After a crash on Windows, the lock may take a few seconds to clear.
+Syncing a results folder between machines does not share the lock.
 
 ## How much runs at once
 
-Each participant has its own limit on work at the same time. While a participant's service says it
-is busy, convy sends fewer requests at once, and goes back up to the limit as the service answers;
-see [A busy service](agents.md#a-busy-service).
+Each participant has a separate concurrency limit, with a default of 4.
 
-- the agent: conversations open at once. A conversation holds its place from opening to closing;
-  the judge decides after it has let the place go.
-- the simulated user: messages at once.
-- the judge: decisions at once.
+- **Agent** — open conversations. Each conversation holds a place until it closes.
+- **Simulated user** — requests for the next message.
+- **Judge** — requests to judge completed dialogues. The agent's place is free by then.
 
-Set them in the project's `pyproject.toml`. A limit not given is 4:
+convy reduces concurrency while a service is busy and raises it again as requests succeed.
+Set the limits in the project's `pyproject.toml`.
 
 ```toml
 [tool.convy]
@@ -92,31 +71,23 @@ judge_parallel = 2     # decisions of the judge at once
 parallel = 20          # conversations at once with this agent, instead of agent_parallel
 ```
 
-To change a limit for one run or on one machine, such as in CI, set a variable: `CONVY_` and the
-key in capitals. An agent's own limit is `CONVY_AGENTS__<AGENT>__PARALLEL`, or `__PER_MINUTE`:
+Use environment variables to override a setting, for example in CI.
 
 ```sh
 CONVY_JUDGE_PARALLEL=1 uv run convy run support_bot
 CONVY_AGENTS__SUPPORT_BOT__PARALLEL=5 uv run convy run support_bot
 ```
 
-The environment wins over `.env` in the project's folder, and both win over `pyproject.toml`. A key
-convy does not know in `[tool.convy]` is an error. Agent names are matched in any case, so
-`Support_Bot` and `CONVY_AGENTS__SUPPORT_BOT__PARALLEL` mean one agent.
+Process environment variables take precedence over the project's `.env`, then
+`pyproject.toml`. Agent names are case-insensitive. An unknown key under `[tool.convy]` in
+`pyproject.toml` is an error.
 
-Hosted models also limit requests per minute. Give a participant that limit, and convy sends its
-requests no faster, spaced evenly, since a limit per minute may be enforced per second; 0, the
-default, is no limit. The two limits do not overlap: one is how many requests are under way, the
-other how often one starts, and the slower of them sets the pace. So leave a limit per minute
-enough places: at 120 a minute, 2 a second, and 3 seconds per answer, 6 requests are under way,
-and 4 places would hold the pace to 80 a minute.
+Concurrency limits the number of requests in progress. To also limit how often requests start,
+set a requests-per-minute limit. The default is 0 (unlimited). For example, sustaining 120
+requests per minute at 3 seconds per request requires at least 6 concurrent requests.
 
-Set it a little below the provider's limit, such as 90%: at the limit itself, small delays on the
-way bring two requests closer and the service refuses one. It counts requests, not tokens: a limit
-on tokens is met by waiting, as for any busy service.
-
-The user and the judge on one key share its limit. The user writes each turn and the judge decides
-once per attempt, so the user needs most of it. For a key of 100 requests a minute:
+Leave some room below the provider's limit for network timing. If the user and judge share a
+key, split its allowance between them. For example, with 100 requests per minute available:
 
 ```toml
 [tool.convy]
@@ -125,40 +96,29 @@ user_per_minute = 70   # with the judge's 20, 90 of the key's 100
 judge_per_minute = 20
 ```
 
-The agent gets about as many messages as the user writes, so its own limit matters when it is
-lower, such as for a test service of 30 a minute:
+To override one agent's rate limit for a run:
 
 ```sh
 CONVY_AGENTS__SUPPORT_BOT__PER_MINUTE=27 uv run convy run support_bot
 ```
 
-The wait for a place or for its moment to send counts neither in the time per answer, nor against
-`--turn-timeout`, nor against the wait for a busy service. Keep the user's limits at least as high
-as the agent's: a conversation that waits for the user's message keeps its place. A run records the limits
-it started with. `convy resume` reports changes to the agent's limits, since load may affect
-answer time.
+Time spent waiting for a place or for the next request slot is excluded from answer times and
+the agent's turn timeout. Resume uses the project's current limits. If the agent limits change,
+convy warns that the run combines timings measured under different loads.
 
 ## Forget a run
 
-Delete its folder and run `convy report`.
+Delete its folder and run `convy report` to rebuild the index.
 
 ## Exit codes
 
-- `0`: every attempt finished, and each pass rate is at least `--fail-under`, if you gave it.
-- `1`: an attempt ended with an agent error, an agent's service that stayed busy, or a failure of
-  convy's models. For `convy resume`, an attempt it played. This wins over `3`: a run with errors
-  does not measure quality.
-- `2`: nothing ran: the project could not be loaded, the arguments are wrong, or the run cannot be
-  resumed, also when another process is playing it.
-- `3`: with `--fail-under`, a pass rate is below it, or no attempt was judged. With
-  `--fail-on-regression`, the command detects a regression or cannot assess it (see the CI check below).
-- `130`: the run was stopped with Ctrl+C. `convy resume` continues it.
-
-Failed scenarios do not change the exit code unless you give `--fail-under`. `convy compare` exits
-with `2` when it cannot find a run it names, else with `0` unless you give
-`--fail-on-regression`. `convy export` exits with `2` when it gets no target, a target names no
-run, several runs or no folder of runs inside `results/`, or the files cannot be written, else with
-`0`.
+| Code | Meaning |
+|---|---|
+| 0 | The command succeeded. A failed claim alone does not change the exit code. |
+| 1 | An attempt had an agent error, a persistently busy agent, or a model failure. For resume, only attempts played by that command count. This code takes precedence over 3. |
+| 2 | Invalid arguments, configuration, or run selection. Examples include a locked run, an ambiguous ID, or an export that cannot be written. |
+| 3 | A CI check failed. For `--fail-under`, a run scored below the threshold or had no counted attempts. For `--fail-on-regression`, see below. |
+| 130 | Ctrl+C interrupted the run. Resume it to play the remaining attempts. |
 
 In CI, fail the build when the pass rate is below 90%:
 
@@ -166,7 +126,7 @@ In CI, fail the build when the pass rate is below 90%:
 uv run convy run support_bot --fail-under 0.9
 ```
 
-convy prints each agent's pass rate against the bar, such as
+convy prints each agent's pass rate and the threshold, for example
 `support_bot: pass rate 449 of 500 (89.8%), below 90%`.
 
 ## Fail CI when the pass rate regresses
@@ -177,8 +137,9 @@ Compare a baseline run with the new build:
 uv run convy compare <before> <after> --fail-on-regression
 ```
 
-The command prints the verdict and names scenarios with lower observed rates when it can assess
-the runs. A supported regression exits with 3. An unfinished run, no unchanged scenario with
-counted attempts in both runs, or different `trust` or `claim_threshold` settings also exits
-with 3. Otherwise the check exits with 0. See [how the test works](report.md#compare-two-runs).
+The command prints a verdict and lists any comparable scenarios whose pass rate fell. It exits
+with 3 for a statistically supported regression, or if either run is unfinished, the scoring
+settings differ, or no unchanged scenario has counted attempts in both runs. Without the flag,
+`convy compare` prints the same verdict and exits with 0 for two readable, uniquely identified
+runs. See [how the test works](report.md#compare-two-runs).
 Use enough attempts and the same models and settings for a meaningful baseline.

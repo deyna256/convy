@@ -1,32 +1,29 @@
-# 13. Count tool invocations only from complete call traces
+# 13. Count tool calls from complete traces
 
 **Status:** Accepted
 
 ## Context
 
-A task can call the same tool repeatedly, retry a failed call, or call only a model. A trace's
-names and token usage cannot reliably distinguish these cases. Steps are optional, so an empty
-trace does not establish that no tools were called, and a partial trace would undercount them.
+An agent can call the same tool several times, retry a failed call, or call only a model.
+A call name or a token count cannot reliably distinguish a model from a tool. An empty list
+of steps could mean the agent made no calls or that it reported none.
 
 ## Decision
 
-Require each `Call` to declare `kind="model"` or `kind="tool"`. Keep completeness on the answer
-as `steps_complete`, false by default: the agent explicitly asserts that it reported every call.
-The [agent contract](../agents.md#steps) defines how to report these facts.
+Every `Call` declares `kind="model"` or `kind="tool"`. The answer sets `steps_complete=True`
+when it records every call. The flag defaults to false. See [Agent steps](../agents.md#steps).
 
-Derive tool counts in the report, following its [population and coverage rules](../report.md#tool-invocations).
-Store and export only call kinds and completeness, not redundant totals. Partial traces remain
-useful for inspection, but cannot supply a complete measurement. Strip both steps and completeness
-before passing an answer to a judge, as [decision 10](0010-answer-steps.md) requires.
+The journal and export store these fields. The report counts tool calls only for tasks with
+at least one recorded answer and complete traces for every answer. A complete trace with no
+tool calls counts as zero. Partial traces remain available for inspection. Before judging, convy removes the trace and clears the
+completeness flag, as described in [decision 10](0010-answer-steps.md). See [tool coverage](../report.md#tool-invocations).
 
 ## Alternatives and consequences
 
-- **Infer tools from names or token use.** Convenient, but model calls and tools can share either.
-- **Treat unreported steps as zero, or total partial traces.** This rewards missing instrumentation.
-- **Use only successful tasks.** This hides tool work spent on failures and ties resource metrics
-  to the judge's result.
+Inferring tools from names or tokens would misclassify calls. Counting partial traces would
+make agents that report fewer steps appear more efficient. Restricting the count to successful
+tasks would hide work spent on failures.
 
-The Python `Call` constructor changes, and format 9 rejects older runs under
-[decision 5](0005-runs.md). Completeness is the agent's assertion; convy cannot verify that its
-trace covers all internal work. Work while opening or closing a conversation is outside an
-answer's trace and this measurement.
+The measurement relies on the agent's account of work during each answer. It excludes work
+when opening or closing a conversation. The change added a required kind to the Python
+`Call` constructor and introduced [run format 9](0005-runs.md).

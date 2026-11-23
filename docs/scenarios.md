@@ -1,7 +1,7 @@
 # Scenarios
 
 A scenario says who the simulated user is, what they want, and what must be true of the dialogue.
-It is a YAML file in `scenarios/` or any folder under it, such as `scenarios/bank/cards/`.
+Save it as a `.yaml` file in `scenarios/` or any folder under it, such as `scenarios/bank/cards/`.
 
 ```yaml
 id: clarify-backup
@@ -18,8 +18,8 @@ judge:
 
 - `user` tells the simulated user who to be and what to want.
 - `judge` lists claims as text or mappings with `claim` and an optional boolean `required`.
-  A string is shorthand for `required: false`; at least one claim is needed.
-- `max_turns` is how many messages the user may send.
+  A plain string means the claim is optional. Include at least one claim.
+- `max_turns` sets the maximum number of user messages. Use a positive integer.
 - `id` must be unique across all folders.
 
 Write scenarios in any language. The simulated user speaks the language of its instructions.
@@ -27,14 +27,11 @@ Write scenarios in any language. The simulated user speaks the language of its i
 Each claim needs a yes/no answer. State the condition the dialogue must meet, and split independent
 requirements into separate claims so a failure has a clear reason.
 
-Ordered claim scales have been removed. Replace a mapping with `claim`, `grades` and `pass` with a
-plain statement of the condition that counts as passing. Such mappings are rejected; convy does not
-convert a scale into a yes/no condition for you.
+To update an older scenario with `grades` and `pass`, rewrite each graded claim as a yes/no statement.
 
 ## Passing an attempt
 
-The judge decides every claim independently and gives a reason. It receives the claim texts, not
-which ones are required or the passing threshold. convy then scores the attempt:
+The judge returns one decision per claim. convy applies the run settings to those decisions.
 
 1. A claim holds when the judge said it passed and its confidence is at least the run's `trust`.
    Missing confidence is accepted. Confidence below `trust` makes the claim fail, even if the raw
@@ -44,29 +41,22 @@ which ones are required or the passing threshold. convy then scores the attempt:
 3. The attempt passes when every required claim holds and completion is at least the run's
    `--claim-threshold` (1, or 100%, by default). The comparison uses the unrounded fraction.
 
-For ten claims and `--claim-threshold 0.8`, eight that hold are enough if every required claim
-holds. Nine that hold still fail if the remaining claim is required. With every claim required,
-all must hold regardless of the threshold. With no required claims, only completion decides.
-A threshold of 0 still requires every required claim to hold and never passes an agent failure.
+With ten claims and `--claim-threshold 0.8`, eight passes are enough if all required claims
+pass. Even nine passes are insufficient if the failed claim was required. At a threshold of
+zero, required claims must still pass.
 
-`--claim-threshold` accepts finite values from 0 to 1. It applies to each attempt in the run;
-`--trust` sets the confidence needed for one claim, while
-[`--fail-under`](runs.md#exit-codes) sets the fraction of passing attempts needed for CI.
+`--claim-threshold` accepts values from 0 to 1. It applies to **one attempt**.
+[`--fail-under`](runs.md#exit-codes) applies to the **run's pass rate**.
 
 ## Errors
 
-A valid verdict always produces a passing or failing attempt, even when all its decisions have
-low confidence. Genuine failures to obtain a verdict are different:
+- An agent error fails the attempt and counts against the pass rate. convy skips the judge.
+- If the agent's service stays [busy](agents.md#a-busy-service), the simulated user fails,
+  or the judge cannot return valid decisions, the attempt has no verdict. convy excludes it
+  from the pass rate.
 
-- If the agent fails a turn, the attempt fails. The judge is not asked.
-- If the agent's service stays busy, the attempt gets no verdict and does not count in the pass
-  rate. See [A busy service](agents.md#a-busy-service).
-- If one of convy's own models fails, the attempt gets no verdict and does not count in the pass
-  rate. That happens when a model does not answer, or the judge does not give one decision per
-  claim, or gives a decision whose `pass` is not `true` or `false`.
-
-Agent failures and attempts without a verdict have no measured claim completion percentage.
-Agent failures still count as failed attempts in [the pass rate](report.md#tiles).
+Neither outcome has a claim completion percentage. A valid verdict with low-confidence
+decisions still receives a score.
 
 ## Running
 
@@ -79,8 +69,8 @@ uv run convy run support_bot --trust 0.8           # fail claims below this conf
 uv run convy run support_bot --claim-threshold 0.8 # require 80% and every required claim
 ```
 
-`--turn-timeout` (600 by default) is the seconds the agent has to open a conversation, to answer
-each turn, and to close it. Taking longer fails the attempt as an agent error.
+`--turn-timeout` sets a separate time limit for opening a conversation, answering each message,
+and closing the conversation. The default is 600 seconds. A timeout counts as an agent error.
 
 How many conversations, messages and decisions run at once is set in the project's
 `pyproject.toml`; see [How much runs at once](runs.md#how-much-runs-at-once).

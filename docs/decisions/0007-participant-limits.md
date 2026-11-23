@@ -1,70 +1,38 @@
-# 7. Each participant has its own limit, set in the project's settings
+# 7. Set a separate concurrency limit for each participant
 
 **Status:** Accepted
 
 ## Context
 
-A run has three participants: the agent, the model that plays the user, and the judge. Each can sit
-behind its own API with its own capacity: an agent may take 50 conversations at once while the
-judge's gateway takes 2, or an agent may need exactly 1 because its conversations share a token
-counter.
-
-convy had one limit for all of them, `--parallel`, which held a place from the moment a
-conversation opened until the judge had decided. So the weakest API set the pace for all three, a
-place stayed taken while the judge worked, `convy run a b` played both agents with one limit, and
-`convy resume` could not go on slower after rate limits.
-
-Splitting an attempt into smaller tasks does not help: each step waits for the one before it, and
-asyncio already interleaves the steps of different conversations. What matters is what each limit
-holds.
-
-Other tools limit per model or per API: Inspect AI has `max_connections` per model and lets
-`eval_retry` lower it ([Model Concurrency](https://inspect.aisi.org.uk/models-concurrency.html)),
-promptfoo tracks limits per provider and key
-([Rate Limits](https://www.promptfoo.dev/docs/configuration/rate-limits/)). Settings like these
-usually live in a version-controlled file of the tool, with environment variables over it
-([Command Line Interface Guidelines](https://clig.dev/)); Locust reads `[tool.locust]` in
-`pyproject.toml`, then `LOCUST_*` variables
-([Configuration](https://locust.readthedocs.io/en/stable/configuration.html)).
+An agent may support 50 open conversations while its judge can handle only two requests at once.
+Another agent may need to run one conversation at a time because conversations share a token
+counter. The former `--parallel` flag held one slot from the start of the conversation until the
+judge finished. It forced all three participants to use the same limit.
 
 ## Decision
 
-- **Three limits, one per participant:** conversations open with the agent, messages of the
-  simulated user, decisions of the judge. The judge decides after the conversation has let its
-  place go, and the wait for a place counts neither in the answer time nor against the time limit.
-- **The limits are settings of the project, not flags and not code:** `[tool.convy]` in the
-  project's `pyproject.toml`, with `CONVY_*` variables over it, and a table of an agent's own. The
-  keys use underscores, so that a key and its variable have one name. How to set them is in
-  [Runs](../runs.md#how-much-runs-at-once); how they are read and checked is in
-  [ARCHITECTURE](../../ARCHITECTURE.md).
-- **`--parallel` is removed.** The command says where the limits are now.
-- **A run records each participant's limits.** Format compatibility is defined in
-  [decision 5](0005-runs.md).
-- **`convy resume` plays with the current limits.** They change how hard convy pushes, not what it
-  measures, so they are not fingerprinted. The command says when the agent's limit changed, since
-  the agent's load can change its answer time.
-- **The runs workspace checks the recorded limits** when comparing a run with a reference
-  ([0014](0014-runs-workspace.md)).
+Give the agent, simulated user and judge separate limits. An agent slot covers an open
+conversation. A user or judge slot covers one request attempt. Judging starts after the agent's
+conversation closes. Waiting for an agent slot consumes none of the agent's turn timeout.
 
-## Alternatives
+Set the limits in the project's `[tool.convy]` table. An agent can have its own settings, and
+environment variables can override file settings. See [Runs](../runs.md#how-much-runs-at-once).
+This follows practices used by [Inspect](https://inspect.aisi.org.uk/models-concurrency.html)
+for model limits and [Locust](https://locust.readthedocs.io/en/stable/configuration.html) for
+configuration.
 
-- **Keep one `--parallel`.** Simple, but the weakest API sets the pace for all.
-- **A flag per participant,** such as `--parallel bot=20`. Long commands, easy to forget in CI.
-  Flags can still be added later on top.
-- **Limits in the participants' code,** such as `parallel = 20` in `agents/bot.py`. Those files are
-  fingerprinted, so lowering a limit after rate limits would make a run impossible to resume.
-- **Limits only in `.env` and the environment.** `.env` is not kept in git, so a team cannot share
-  its limits.
-- **A limit that adapts to rate limits,** as in Inspect and promptfoo. More to build; retries on
-  429 and 503 already cover rate limits. It can come later.
+A run records its initial limits. Resume uses the project's current limits and warns if the
+agent's limit changed. The [workspace](0014-runs-workspace.md) checks the recorded limits before
+showing a difference from a reference run.
 
-## Consequences
+## Alternatives and consequences
 
-- The agent is played at its own pace while a slow judge works through a queue of finished
-  dialogues, which hold no conversation open.
-- A run resumed with another agent limit mixes two loads in its answer times; `run.json` keeps the
-  limits it started with.
-- An agent that must run alone can still be resumed with a higher limit by mistake; its own table
-  in `[tool.convy.agents]` is where the team sees its limit.
-- `--parallel`, and `parallel` in `Bench` and `RunSpec`, are gone: a breaking change of the alpha.
-- No dependency is added.
+- One limit per run makes a slow judge throttle an agent that could handle more conversations.
+  Separate CLI flags would make shared CI configurations harder to maintain.
+- Storing limits in an agent's Python file would change its fingerprint every time the team
+  adjusted its load, preventing resume. Environment-only settings would be hard to share.
+- [Decision 8](0008-busy-services.md) later added temporary reductions when a service reports
+  that it is busy. The configured concurrency remains the upper limit.
+
+The change removed `--parallel` and the `parallel` fields of `Bench` and `RunSpec`. If an agent
+resumes under a different load, its reported answer times span both loads.

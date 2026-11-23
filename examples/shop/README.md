@@ -1,41 +1,42 @@
 # The shop demo
 
-A support bot for a made-up shop, in two builds. Build 1.1 cut the prompt to save tokens and lost
-the shop's rules on the way. convy shows it got worse.
+Build 1.0 of a support bot follows the shop's refund, delivery and replacement policies.
+Build 1.1 shortened the prompt and lost those instructions. The demo records both builds
+answering the same scenarios.
 
-- [The 1.1 run's report](https://deyna256.github.io/convy/report.html)
-- [Historical comparison of 1.0 and 1.1](https://deyna256.github.io/convy/compare.html)
+- [Build 1.1 report](https://deyna256.github.io/convy/report.html)
+- [Historical comparison of builds 1.0 and 1.1](https://deyna256.github.io/convy/compare.html)
 
-The runs in `results/` are real historical recordings. Their standalone HTML pages still open,
-but their run format predates the current reader. Rebuilding them with the current convy requires
-new recordings. CI publishes the committed HTML pages, including the comparison page from the
-older release.
-`just demo-site` rebuilds pages only after new runs have been recorded in the supported format.
+The HTML in `results/` opens as saved. These recordings use an older journal format.
+GitHub Pages publishes their existing reports. To see the current report layout, record new runs.
 
 ## Run it yourself
 
-You need an OpenAI-compatible gateway. Copy `.env.example` to `.env` and fill it in.
+From the repository root, copy the example settings and fill in your OpenAI-compatible gateway
+URL and key.
 
 ```sh
 cd examples/shop
-SHOP_BOT_BUILD=1.0 uv run --project ../.. convy run shop_bot -k 3
-SHOP_BOT_BUILD=1.1 uv run --project ../.. convy run shop_bot -k 3
-uv run --project ../.. convy compare <1.0 run> <1.1 run>
+cp .env.example .env
 ```
 
-With fresh runs, open `results/index.html` for the runs workspace. The `compare` command prints
-the two-run verdict in the terminal.
-
-## Make the demo again
-
-From the repository's root:
+After editing `.env`, run both builds:
 
 ```sh
-just demo
+SHOP_BOT_BUILD=1.0 uv run --project ../.. convy run shop_bot -k 3
+SHOP_BOT_BUILD=1.1 uv run --project ../.. convy run shop_bot -k 3
 ```
 
-It asks first, then checks that `uv`, [vhs](https://github.com/charmbracelet/vhs#installation),
-`ttyd`, `ffmpeg` and `.env` are there. It plays build 1.0, records build 1.1 with `demo.tape`,
-records the comparison with `compare.tape`, and joins them into `docs/assets/demo.gif`. Then it
-builds the workspace and run reports. When publishing new recordings, update links to the
-historical demo alongside the runs, pages and GIF. The steps are in `demo.py`.
+Open `results/index.html` to compare the new runs. For a terminal verdict, use
+`uv run --project ../.. convy compare BASELINE CANDIDATE` with the two run IDs printed above.
+
+## Record the demo and GIF
+
+From the repository root, run `just demo`. This needs `uv`,
+[VHS](https://github.com/charmbracelet/vhs#installation), `ttyd`, `ffmpeg`, `ffprobe` and
+`examples/shop/.env`. After confirmation it replaces the demo results, calls the gateway for
+both builds, rebuilds the pages and writes `docs/assets/demo.gif`.
+
+If the demo folder already contains exactly two current-format runs, `just demo-site` rebuilds
+their pages without calling the gateway. If you publish new recordings, update the public links
+above and in the repository README.

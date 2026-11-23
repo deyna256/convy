@@ -1,39 +1,27 @@
-# 4. Runtime dependencies: httpx2, msgspec, yamlrocks, pydantic-settings
+# 4. Runtime dependencies
 
 **Status:** Accepted
 
-## Context
-
-convy needs an async HTTP client, immutable typed classes, YAML parsing with validation, and typed
-settings from the environment and the command line. Each dependency is a long-term cost.
-
 ## Decision
 
-- **[httpx2](https://pydantic.dev/docs/httpx2/)** for HTTP. It is Pydantic's continuation of httpx with
-  the same API, including `MockTransport` for tests. httpx itself has seen almost no maintenance since
-  November 2024 and closed its issue tracker in February 2026; the OpenAI SDK has moved to httpx2.
-- **[msgspec](https://msgspec.dev)** for every class: frozen `Struct`s, validation of scenarios with
-  `msgspec.convert`, and runs with `msgspec.json`. Tagged unions let `Usage | NoUsage` and
-  `Verdict | Failed | NoVerdict` be written and read back without type checks in convy's code.
-- **[yamlrocks](https://pypi.org/project/yamlrocks/)** for YAML. It implements YAML 1.2 (no `no` →
-  `False` surprise), is safe by default and passes the official YAML test suite. Only the scenario
-  loader calls it. While it is alpha, [the dependency range](../../pyproject.toml) excludes untested
-  minor releases.
-- **[pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)** for the
-  environment, `.env` and the command line. `SecretStr` keeps keys out of output.
+- **[httpx2](https://pydantic.dev/docs/httpx2/)** sends async HTTP requests. Its httpx-style
+  API includes `MockTransport` for testing requests without a server.
+- **[msgspec](https://msgspec.dev)** provides frozen records, validates scenario data and reads
+  and writes run journals. Tagged records distinguish results such as `Verdict`, `Failed` and
+  `NoVerdict` when decoding JSON.
+- **[yamlrocks](https://pypi.org/project/yamlrocks/)** reads scenario YAML. Under YAML 1.2 an
+  unquoted `no` stays a string. Only the scenario loader uses the parser. While it is in alpha,
+  the [dependency range](../../pyproject.toml) excludes untested minor releases.
+- **[pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)** reads
+  typed settings from environment variables, `.env` files and CLI arguments. Key fields use
+  `SecretStr` to mask their values in settings output.
 
 ## Alternatives
 
-- **httpx**: unmaintained. **aiohttp**, **niquests**: a different API and no transport for tests.
-- **dataclasses**, **attrs**: no built-in validation or JSON. **pydantic** everywhere: works, but
-  classes holding `Protocol`-typed fields need `arbitrary_types_allowed`, and msgspec is lighter.
-- **PyYAML**: YAML 1.1. **ruamel.yaml**: slow and awkward.
-- **msgspec-based settings libraries** (msgspec-ext, msgspec-config, msgspec-settings): alpha or beta,
-  one maintainer each. Settings are read once per run, so msgspec's speed does not matter there.
-- **python-dotenv** with `os.environ`: untyped, and a missing variable is a bare `KeyError`.
-
-## Consequences
-
-- Two libraries describe data, with a clear split: pydantic at the edges (environment, command line),
-  msgspec everywhere else.
-- If yamlrocks fails us, replacing it is a one-line change in `Scenarios`.
+- Keeping httpx raised maintenance concerns when we chose the client. aiohttp and niquests
+  would have required changes to both the client and its test setup.
+- Dataclasses and attrs would need separate validation and JSON handling. Using Pydantic for
+  domain records would require extra configuration for fields typed as protocols.
+- PyYAML uses YAML 1.1 rules. We preferred yamlrocks to ruamel.yaml for its simpler API.
+- Reading settings with python-dotenv and `os.environ` would leave type checks and missing-value
+  errors to convy. The msgspec-based settings libraries we considered were still in alpha or beta.

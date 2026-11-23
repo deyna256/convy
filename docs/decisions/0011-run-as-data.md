@@ -1,50 +1,36 @@
-# 11. A run is the result; tables are its flat form
+# 11. Export run data as tables
 
 **Status:** Accepted
 
 ## Context
 
-The result of a benchmark is a `Run`: its specification, its status, and every attempt with its
-dialogue, answers, tokens, steps and the judge's decisions. Only convy's report used it. pandas,
-polars and DuckDB need flat tables, tools without Python could not read a run at all, and the rules
-behind the report's numbers were not all written down, so a user's own number could differ from
-convy's.
-
-Others keep a run whole and give flat views of it. Inspect AI keeps an `EvalLog` and gives
-dataframes as projections of it, one row per unit
-([Inspect](https://inspect.aisi.org.uk/dataframe.html)). Kimball declares the grain of each table,
-starts at the atomic grain and leaves ratios to the query
-([Kimball](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/grain/)).
-In tidy data each kind of observational unit forms a table
-([Wickham](https://vita.had.co.nz/papers/tidy-data.pdf)). One domain can have several
-presentations that know about it
-([Fowler](https://martinfowler.com/bliki/PresentationDomainSeparation.html)). promptfoo, Braintrust
-and hyperfine export CSV and JSON.
+The report reads a `Run` with its specification, status, attempts, dialogues and decisions.
+Users also need those observations in pandas, polars, DuckDB and spreadsheets. Without a
+documented counting rule, two users can compute different pass rates from the same run.
 
 ## Decision
 
-- **The result of a benchmark is a `Run`**, and it stays as it is: it holds the data and computes
-  nothing new. The report, comparisons, the index, the tables and the user's code are consumers of
-  it.
-- **Tables are its flat, complete form:** one table for each kind of object, one row for each
-  object. They compute nothing and drop nothing. The rules of the report's numbers are written once,
-  in [The report](../report.md#tiles), so anyone can compute them from the tables.
-- **JSON Lines is the complete export; CSV is for spreadsheets.** CSV cannot keep `""` apart from a
-  missing value for every reader, nor the type of a value.
-- **Columns are kept.** A column may be added at any time. Renaming or removing one is a breaking
-  change, said in the changelog.
-- **No `--format` or `--to` yet.** Which format a tool needs cannot be guessed, and both are cheap.
-  Files always in `results/export/` are where the docs and scripts look, and an export never
-  replaces files elsewhere. Either flag can be added later without breaking anything.
+Keep the run folder as the source for reports and exports. Export seven tables, one each for
+runs, scenarios, claims, attempts, decisions, answers and steps. Each row represents one
+observation or definition. Users can calculate statistics from these rows using the
+[report's counting rules](../report.md#tiles).
 
-## Alternatives
+This follows [tidy data](https://vita.had.co.nz/papers/tidy-data.pdf) and
+[Kimball's guidance](https://www.kimballgroup.com/data-warehouse-business-intelligence-resources/kimball-techniques/dimensional-modeling-techniques/grain/)
+to define what one row represents. [Inspect](https://inspect.aisi.org.uk/dataframe.html) also
+provides table views of saved evaluations.
 
-- **Tables of the report's numbers.** A second place that computes them, and not complete.
-- **Making the pages' view records public.** They are page details and change with the pages.
-- **Dataframes in convy.** A dependency for what a list of dicts gives pandas and polars.
+Write both CSV and JSON Lines to `results/export/`. JSON Lines preserves field types and
+distinguishes empty strings from missing values. CSV is convenient for spreadsheets, where a
+reader may treat both values as blank.
 
-## Consequences
+## Alternatives and consequences
 
-- A run can be read from Python, pandas, polars, DuckDB or a spreadsheet, and its numbers computed
-  as the report does.
-- The tables' columns are a durable format, next to the run's folder ([0005](0005-runs.md)).
+- Exporting only report totals would discard the observations needed for other analyses.
+  Exporting the page's internal data would tie consumers to the current layout.
+- Returning native dataframes would add a runtime dependency. Python callers can pass the
+  table records directly to their chosen library.
+- A fixed output directory makes exports easy to locate. Both formats are inexpensive to
+  generate, so the command needs no format selector.
+- Consumers can rely on the documented columns. Adding a column is compatible; removing or
+  renaming one requires a breaking-change notice. See [Results](../results.md).
