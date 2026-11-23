@@ -16,7 +16,7 @@ as it ends. The report is built from the runs.
 convy run ──▶ RunJournal.play ──▶ Bench ──▶ Scenario.outcome ──▶ SimulatedUser ⇄ Conversation (agent)
                    │                                         └─▶ Judge
                    └──▶ results/<agent>/<run>/ ──▶ Runs ──▶ Report ──▶ results/<agent>/<run>/report.html
-                                                        ├─▶ Comparison ──▶ results/compare/*.html
+                                                        ├─▶ Comparison ──▶ CLI regression verdict
                                                         ├─▶ Index ──▶ results/index.html
                                                         └─▶ Tables ──▶ results/export/
 ```
@@ -35,10 +35,10 @@ All code is in `src/convy/`.
 | `dialog.py` | `Transcript`, `Turn`, `SimulatedUser`, `Finished`; the judge interface `Judge`, `ChatJudge`, `PatientJudge`, and `Checked`, which turns any error or wrong answer of a judge into `ModelFailure` and gives a judge only what was said; its yes/no decisions `Verdict`, `Claim` with `Confidence` or `NoConfidence`, and the attempts without them, `Failed` and `NoVerdict` |
 | `scenario.py` | `Scenario` (read from YAML), its `Requirement` definitions and computed `Score`, and the attempt it plays, `Outcome`; `Scenarios`, `Matching` |
 | `bench.py` | `Bench`, which runs scenarios against an agent, each participant within its `Limits` and with its `Patience`; `Journal`; a run's `RunSpec`, its status (`Running`, `Finished`, `Interrupted`) and `RunJournal`, which writes its folder and holds it while it plays, or raises `RunInUse` when another process does |
-| `report.py`, `pages/` | `Runs`, which reads runs back; `Summary`, a run summed up into view records, each time, token and tool-invocation metric a `Spread` of its values, and `Tally`, the result of held out of judged; the pages: `Report` (a run), `Comparison` (two runs), `Index` (every run), each rendered through a `Template`, which inlines the shared parts in `pages/` — `base.*`, `icon.svg` and the scenario window's `window.*` — into the page |
+| `report.py`, `pages/` | `Runs` reads saved runs. `Summary` builds run and scenario metrics, including each resource’s `Spread` and the pass counts in a `Tally`. `Report` renders a single run and `Index` renders the runs workspace. `Template` embeds the data and shared page assets. `Comparison` supplies the two-run CLI verdict. |
 | `tables.py` | a consumer of runs: `Tables`, a run's seven tables, and `Table`, one of them with its rows as records, CSV and JSON Lines; the row types |
 | `fakes.py` | `FakeAgent`, `Echo`, `FakeModel`, `FakeJudge`, `MemoryJournal` |
-| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index, comparisons and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
+| `project.py` | `Project`: a user's project — it loads `models.py` and `agents/*.py`, with the project folder on `sys.path` so they import each other, finds scenarios and results, fingerprints the files a run starts with, writes the reports, the index and exports, and copies the template; `ProjectAgent`; `Settings`, the limits in `[tool.convy]` of `pyproject.toml`, read as `Pyproject`, and `Variables`, the `CONVY_*` variables over it |
 | `cli.py` | the `convy` command: `InitCommand`, `RunCommand`, `ResumeCommand`, `ReportCommand`, `CompareCommand`, `ExportCommand`; `Printed`, a journal that prints progress; `Recorded`, a run played as the command shows it, Ctrl+C included; `Invalid`, settings errors shown without the values read; `Rebuilt`, the report written again and shown with the runs it skipped |
 | `template/` | the project that `convy init` copies |
 
@@ -137,15 +137,15 @@ in all of `src/convy/`.
 judge decisions remain unchanged in the journal and exports. Tool counts are derived from explicit
 call kinds and trace completeness ([decision 13](docs/decisions/0013-tool-invocations.md));
 [the report](docs/report.md#measured-population) defines their population and coverage.
-`report.py` builds the page values:
-the tiles, a scenario's result, a claim's count, the change between two runs and its colour,
-whether a change of pass rate is real, the
-groups and order of the rows. The scripts in `pages/` only draw them — how a value looks, the filter,
-the scenario window, the theme, the address — and add data as text, never as HTML; agent text goes
-through a small Markdown subset built as DOM nodes. A metric is therefore tested with pytest, and the
-scripts stay thin enough to need no tests of their own. Each page is assembled from shared parts in
-`pages/` — `base.css`, `base.js` and the tab's `icon.svg` for every page, `window.css` and
-`window.js` for the scenario window — and written as one standalone file.
+`report.py` builds the metric and scenario records for both pages. The index carries the run and
+scenario summaries and links to the detailed report, where claims and dialogues live. Filtering
+selects the same runs in the table, scatter plot and matrix. The optional reference and the CLI
+regression gate answer different questions. See [decision 14](docs/decisions/0014-runs-workspace.md).
+
+Each page embeds its own data, styles and scripts and works offline. Shared assets in `pages/`
+include `base.css`, `base.js` and `icon.svg`. The run report also uses `window.css` and
+`window.js` for the scenario window. Scripts add data as text. The run report renders agent
+Markdown with a small set of DOM nodes.
 
 The view records are internal and have no version: one convy version writes the template and the data
 into one file, and a page written earlier keeps working on its own. The durable formats are the

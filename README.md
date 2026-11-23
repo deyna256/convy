@@ -23,13 +23,13 @@ and convy shows what passed, what it cost and what changed.</p>
 </div>
 
 <p align="center">
-  <img alt="convy runs a support bot's new build: each attempt prints as it ends, then convy compare writes a page for the old and new build" src="https://raw.githubusercontent.com/deyna256/convy/main/docs/assets/demo.gif" width="800">
+  <img alt="Historical recording of a shop bot run and its two-build comparison" src="https://raw.githubusercontent.com/deyna256/convy/main/docs/assets/demo.gif" width="800">
 </p>
 
 <p align="center">
   <a href="https://deyna256.github.io/convy/report.html"><b>See a real report →</b></a>
   &nbsp;&nbsp;
-  <a href="https://deyna256.github.io/convy/compare.html"><b>See a comparison →</b></a>
+  <a href="https://deyna256.github.io/convy/compare.html"><b>See the historical comparison →</b></a>
 </p>
 
 ## Why convy
@@ -42,7 +42,7 @@ answers that, and nothing more.
 - **Real conversations.** The simulated user asks vague questions, changes its mind and gives
   details late. The judge checks plain-language claims about the dialogue.
 - **Numbers you can act on.** Pass rate over repeated attempts, the agent's tokens and its answer
-  time. And a page that shows what changed between two builds.
+  time. Compare runs in one table and open the dialogue behind a failed scenario.
 - **Small.** Four dependencies. No platform, no account, no containers.
 
 ## Quick start
@@ -55,7 +55,8 @@ cp .env.example .env                 # add the address and key of your model gat
 uv run convy run echo                # a real run with the simulated user and the judge
 ```
 
-convy prints where the report is: `results/<agent>/<run>/report.html`. Open it in a browser.
+Open `results/index.html` in a browser to see the runs. Each one links to its own
+`results/<agent>/<run>/report.html` with the judge’s decisions and the dialogues.
 
 A new project looks like this:
 
@@ -115,16 +116,19 @@ Keys, streaming, logins, blocking clients and certificates are in
 
 ## Compare two builds
 
-Run the old build and the new one, then name the two runs:
+Open `results/index.html` after running both builds. Compare their pass counts, answer times,
+token use and tool calls. Choose a reference to see pass-rate differences for comparable runs,
+or open a scenario from the matrix to read the dialogue that explains a failure.
+
+In CI, identify the baseline and candidate by run ID or unique suffix.
 
 ```sh
-uv run convy compare 7ad8 5e85       # before, then after
+uv run convy compare 7ad8 5e85 --fail-on-regression   # before, then after
 ```
 
-The page shows each number before and after. Green is better, red is worse, and grey with `~` means
-the change is within noise. Scenarios are grouped as Worse, Better and Same, and you can read both
-dialogues side by side. More in
-[The report](https://github.com/deyna256/convy/blob/main/docs/report.md).
+With both runs loaded, this exits with 3 for a supported regression or an unavailable verdict.
+See [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) and
+[CI exit codes](https://github.com/deyna256/convy/blob/main/docs/runs.md#fail-ci-when-the-pass-rate-regresses).
 
 ## convy and other tools
 
@@ -140,8 +144,7 @@ Checked against their docs on 8 October 2026.
   call from Python, and many ready metrics. Pick it if you want those metrics.
 
 convy does one job. It checks a running agent through its API, with scenarios in YAML, repeated
-attempts and a verdict per claim. Then it shows what changed between two builds, and whether the
-change is real or noise. The report is a file: no account, no server.
+attempts and a verdict per claim. The results workspace and each run’s report open offline.
 
 ## Status
 
@@ -159,7 +162,7 @@ trust. See the [security policy](https://github.com/deyna256/convy/blob/main/SEC
 | [Scenarios](https://github.com/deyna256/convy/blob/main/docs/scenarios.md) | how to write them, verdicts, `convy run` options |
 | [The judge](https://github.com/deyna256/convy/blob/main/docs/judge.md) | how sure it is, `--trust`, your own judge |
 | [Runs](https://github.com/deyna256/convy/blob/main/docs/runs.md) | the run folder, stop and resume, exit codes |
-| [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) | tiles, statuses, the scenario window, comparing runs |
+| [The report](https://github.com/deyna256/convy/blob/main/docs/report.md) | runs workspace, scenario details, two-run CLI comparison |
 | [Results as data](https://github.com/deyna256/convy/blob/main/docs/results.md) | a run as tables, convy export, pandas |
 | [Run from Python](https://github.com/deyna256/convy/blob/main/docs/python.md) | the library behind the command |
 | [The shop demo](https://github.com/deyna256/convy/tree/main/examples/shop) | the bot behind the live report |

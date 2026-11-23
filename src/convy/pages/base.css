@@ -128,8 +128,6 @@ tbody tr.row:hover td { background: var(--side); }
 .chart .ptrack { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 16px; }
 
 /* a change from before */
-.delta { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
-.delta.good { color: var(--pass); } .delta.bad { color: var(--fail); } .delta.same, .delta.noise, .delta.none { color: var(--muted); }
 
 /* a panel's message, the page's controls */
 .lede { margin: -4px 0 10px; font-size: 14px; font-weight: 550; color: var(--ink); }

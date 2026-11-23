@@ -7,135 +7,350 @@
 <link rel="icon" href="data:image/svg+xml,/*include icon.svg*/">
 <style>
 /*include base.css*/
-.group { margin-top: 14px; overflow: hidden; }
-.ghead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px 24px; padding: 14px 16px; border-bottom: 1px solid var(--rule); }
-.ghead > div:first-child { min-width: 0; }
-.ghead h2 { margin: 0; font: 650 15px/1.3 var(--mono); overflow-wrap: anywhere; }
-.sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
-.setup { font-family: var(--mono); overflow-wrap: anywhere; margin-top: 2px; }
-.strip { display: flex; align-items: flex-end; gap: 3px; height: 40px; max-width: 100%; overflow-x: auto; }
-.strip .bar { flex: none; width: 12px; height: 40px; display: flex; align-items: flex-end; border-radius: 2px; background: var(--side); }
-.strip .fill { width: 100%; border-radius: 2px; }
-.strip .fill.unfinished { background: transparent; border: 1.5px solid var(--muted); min-height: 6px; }
-.strip .brk { flex: none; width: 2px; height: 40px; margin: 0 3px; border-radius: 1px; background: var(--muted); }
-.group th, .group td { padding: 9px 12px; white-space: nowrap; }
-.group th:first-child, .group td:first-child { padding-left: 16px; padding-right: 4px; }
-.group .rest { width: 100%; }  /* the columns keep to the left */
-.group tbody tr:last-child td { border-bottom: 0; }
-.group tr.change td { padding-top: 0; color: var(--focus); font-size: 12.5px; font-family: var(--mono); white-space: normal; overflow-wrap: anywhere; }
-.group tr:has(+ tr.change) td { border-bottom: 0; }
-.rate strong { display: inline-block; min-width: 4.5ch; text-align: right; font-size: 15px; }
-.rate .muted { margin-left: 8px; font-size: 12.5px; }
-.errors { color: var(--fail); }
-.group .more { display: block; box-sizing: border-box; width: 100%; margin: 0; padding: 10px 16px; border-top: 1px solid var(--rule); }
-.cmp { position: sticky; bottom: 12px; margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: var(--side); border: 1px solid var(--focus); border-radius: 10px; }
-.cmp:empty { display: none; }
-.cmp code { font-family: var(--mono); background: var(--surface); padding: 3px 8px; border-radius: 6px; overflow-wrap: anywhere; }
+.toolbar, .panelhead { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
+.toolbar { padding: 12px 16px; }
+.toolbar label, .panelhead label { display: grid; gap: 3px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 600; }
+.toolbar select, .panelhead select, .toolbar input[type=search], .choose summary {
+  max-width: 100%; height: 34px; padding: 5px 9px; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--rule); border-radius: 7px; font: 14px var(--sans);
+}
+#reference { max-width: min(280px, 100%); }
+summary, select { cursor: pointer; }
+a { color: var(--focus); text-underline-offset: 3px; }
+.choose { position: relative; }
+.choose summary { align-content: center; }
+.choices { position: absolute; z-index: 4; top: calc(100% + 4px); left: 0; width: max-content; max-width: min(420px, 76vw);
+  max-height: 320px; overflow: auto; padding: 8px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+.choices label { display: flex; align-items: baseline; padding: 4px; font: 13px var(--mono); overflow-wrap: anywhere; cursor: pointer; color: var(--ink); }
+input[type=checkbox] { accent-color: var(--focus); }
+#scope { margin: 14px 0 7px; font-size: 13px; color: var(--muted); }
+.runlist { overflow: hidden; }
+.runlist td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.runlist small, .matrix small { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
+thead { background: var(--side); }
+tbody tr:last-child > * { border-bottom: 0; }
+th button { padding: 3px 0; background: transparent; border: 0; cursor: pointer; font: inherit; color: inherit; }
+th button:hover { text-decoration: underline; }
+th[aria-sort] button { color: var(--ink); }
+.runlist .identity { white-space: normal; min-width: 135px; overflow-wrap: anywhere; }
+.identity a { font: 650 14px var(--mono); }
+.identity small { font-family: var(--mono); }
+.runlist .refrow { box-shadow: inset 3px 0 var(--focus); }
+.setup dl { margin: 6px 0 0; font-size: 12px; display: grid; grid-template-columns: max-content minmax(90px,1fr); gap: 2px 8px; }
+.setup dt { color: var(--muted); }
+.setup dd { margin: 0; white-space: normal; overflow-wrap: anywhere; }
+.runlist .reason { white-space: normal; min-width: 14ch; max-width: 24ch; }
+.panels { display: grid; grid-template-columns: minmax(300px, .85fr) minmax(0, 1.15fr); gap: 14px; align-items: start; margin-top: 18px; }
+.panels section { min-width: 0; overflow: hidden; }
+.panelhead { align-items: center; justify-content: space-between; padding: 14px 16px 6px; }
+.panelhead h2 { font-size: 16px; margin: 0; }
+.panelhead label { display: flex; align-items: center; gap: 6px; }
+.panels .hint { margin: 0; padding: 0 16px 10px; }
+#plot svg { display: block; width: 100%; height: 218px; }
+#plot line { stroke: var(--rule); }
+#plot text { fill: var(--muted); font: 12px var(--sans); }
+#plot .point { fill: var(--focus); stroke: var(--surface); stroke-width: 1.5; }
+#plot .refpoint { fill: var(--surface); stroke: var(--focus); stroke-width: 2.5; }
+#plot a:focus .point, #plot a:hover .point { stroke: var(--ink); stroke-width: 3; }
+#plot .idlabel { font: 11px var(--mono); fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 3; }
+.matrix tbody th, .matrix thead th:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); border-right: 1px solid var(--rule); }
+.matrix tbody th { font-family: var(--mono); color: var(--ink); white-space: normal; overflow-wrap: anywhere; min-width: 120px; max-width: 240px; }
+.matrix td { padding: 5px; text-align: center; font-variant-numeric: tabular-nums; }
+.matrix thead th:not(:first-child) { text-align: center; }
+.cell { display: block; min-width: 82px; padding: 4px 6px; border-radius: 5px; font-weight: 600; text-decoration: none; }
+.cell:hover { text-decoration: underline; }
+.cell.passing { background: var(--pass-bg); color: var(--pass); }
+.cell.failing { background: var(--fail-bg); color: var(--fail); }
+.cell.flaky { background: var(--flaky-bg); color: var(--flaky); }
+.cell.none { background: var(--none-bg); color: var(--none); }
+.metricpanel { margin-top: 14px; overflow: hidden; }
+.metricpanel .panelhead { justify-content: flex-start; }
+.metricpanel .panelhead h2 { margin-right: auto; }
+.metricpanel .panelhead [hidden] { display: none; }
+.metricpanel .hint { margin: 0; padding: 0 16px 10px; }
+.metricpanel .matrix tbody th { font-family: var(--sans); max-width: min(32vw, 260px); }
+.metricpanel .matrix td, .metricpanel .matrix thead th:not(:first-child) { text-align: right; padding: 5px 12px; }
+.metricpanel .matrix td { min-width: 105px; white-space: nowrap; }
+.metricpanel .matrix thead th:not(:first-child) { white-space: normal; overflow-wrap: anywhere; }
+.metricpanel meter { display: block; margin-left: auto; width: 68px; height: 9px; }
+#callname { max-width: min(36ch, 60vw); }
+.empty { margin: 0; }
+@media (max-width: 960px) { .panels { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .toolbar { gap: 8px; }
+  .toolbar > label { flex: 1 1 135px; }
+  .toolbar input[type=search] { width: 100%; }
+  .choices { position: static; }
+}
 </style>
 <script>
 /*include base.js*/
 </script>
 </head>
 <body>
-<div class="page">
-  <header id="head"></header>
-  <div id="groups"></div>
-  <div class="cmp" id="compare" aria-live="polite"></div>
-  <p class="hint" id="hint"></p>
-</div>
+<main class="page">
+  <header class="top">
+    <div><div class="eyebrow">CONVY</div><h1>Runs</h1><p id="summary" class="meta"></p></div>
+    <div id="theme"></div>
+  </header>
+  <div id="workspace">
+    <div class="toolbar panel" aria-label="Workspace settings" role="group">
+      <label>Find runs<input id="search" type="search" placeholder="Agent, version or run ID"></label>
+      <details class="choose" id="choose"><summary>Choose runs</summary><div class="choices" id="choices"></div></details>
+      <label>Reference run<select id="reference"><option value="">No reference</option></select></label>
+      <label>Statistic<select id="stat"><option value="p50">Median</option><option value="mean">Mean</option></select></label>
+      <label>Time and tokens per<select id="unit"><option value="task">Task</option><option value="answer">Answer</option></select></label>
+    </div>
+    <p id="scope" role="status"></p>
+    <div class="runlist panel"><div class="scroll" tabindex="0" role="region" aria-label="Run measurements"><table aria-label="Run measurements"><thead id="columns"></thead><tbody id="rows"></tbody></table></div></div>
+    <p class="hint">Each task is one scenario attempt. Time sums the agent’s answer times. Sample counts show how many recorded tasks or answers contributed.</p>
+    <div class="panels">
+      <section class="panel" aria-labelledby="plothead">
+        <div class="panelhead"><h2 id="plothead">Quality and resource use</h2>
+          <label>Resource<select id="resource"><option value="seconds">Time</option><option value="tokens">Tokens</option></select></label></div>
+        <p class="hint" id="plotnote"></p>
+        <div id="plot"></div>
+      </section>
+      <section class="panel" aria-labelledby="matrixhead">
+        <div class="panelhead"><h2 id="matrixhead">Scenarios by run</h2></div>
+        <p class="hint">Passed / counted attempts. Open a result for its claims and dialogue.</p>
+        <div class="scroll" tabindex="0" role="region" aria-label="Scenario results"><table class="matrix" id="matrix" aria-label="Scenario results by run"></table></div>
+      </section>
+    </div>
+    <section class="panel metricpanel" aria-labelledby="metrichead">
+      <div class="panelhead"><h2 id="metrichead">Run metrics</h2>
+        <label>Metric group<select id="metricgroup">
+          <option value="outcomes">Outcomes</option><option value="rates">Scenario pass rates</option>
+          <option value="resources">Resource distributions</option><option value="parts">Token composition</option>
+          <option value="calls">Named calls</option>
+        </select></label>
+        <label hidden>Measure<select id="resourcefield">
+          <option value="attempt_seconds">Time / task (s)</option><option value="seconds">Time / answer (s)</option>
+          <option value="attempt_tokens">Tokens / task</option><option value="tokens">Tokens / answer</option>
+          <option value="tool_calls">Tool calls / task</option>
+        </select></label>
+        <label hidden>Call name<select id="callname"></select></label>
+      </div>
+      <p class="hint" id="metricnote"></p>
+      <div class="scroll" tabindex="0" role="region" aria-label="Run metrics">
+        <table class="matrix" id="metrics" aria-labelledby="metrichead" aria-describedby="metricnote"></table>
+      </div>
+    </section>
+  </div>
+</main>
 <script>
-// The index: runs grouped by agent, newest first, with a strip of each agent's pass rates.
 const DATA = __DATA__;
-const RUNS = 5, BARS = 40;
-const opened = new Set();  // agents whose older runs show
-let picked = [];  // the runs ticked to compare, in the order ticked
-
-function header() {
-  return el("div", {className: "top"},
-    el("div", {}, el("div", {className: "eyebrow"}, "CONVY"), el("h1", {}, "Runs"),
-      el("p", {className: "meta"}, DATA.runs ? `${plural(DATA.runs, "run")} · ${plural(DATA.agents.length, "agent")}` : "No runs yet. Run convy run <agent> and they appear here.")),
-    el("div", {className: "controls"}, themeButton()));
+const $ = id => document.getElementById(id);
+const rows = DATA.rows;
+const excluded = new Set();
+const suffixCounts = new Map();
+for (const {run} of rows) suffixCounts.set(run.short, (suffixCounts.get(run.short) ?? 0) + 1);
+const runLabel = row => suffixCounts.get(row.run.short) === 1 ? row.run.short : row.run.id;
+const identity = row => [row.run.agent, row.run.version, runLabel(row)].filter(Boolean).join(" · ");
+const number = new Intl.NumberFormat("en", {maximumSignificantDigits: 8});
+const planned = row => row.run.scenarios * row.run.k;
+const unit = () => $("unit").value;
+const statistic = () => $("stat").selectedOptions[0].text;
+function spread(row, metric) {
+  if (metric === "tools") return row.numbers.tool_calls;
+  return row.numbers[(unit() === "task" ? "attempt_" : "") + metric];
+}
+const value = (row, metric) => spread(row, metric)?.[$("stat").value] ?? null;
+function measurement(row, metric) {
+  const data = spread(row, metric), n = value(row, metric);
+  const population = metric === "tools" ? "task" : unit();
+  const total = population === "task" ? row.numbers.attempts : row.numbers.seconds?.n ?? 0;
+  return el("td", {className: "n"}, el("strong", {title: n == null ? "No measurements" : String(n)},
+    n == null ? "—" : number.format(n) + (metric === "seconds" ? " s" : "")),
+    el("small", {}, `${data?.n ?? 0}/${plural(total, population)}`));
+}
+function setupCell(row) {
+  return el("td", {className: "setup"}, el("details", {},
+    el("summary", {}, `Setup ${row.setup + 1}`),
+    el("dl", {}, Object.entries(DATA.setups[row.setup]).map(([name, n]) => [el("dt", {}, name), el("dd", {}, n === "" ? "Not recorded" : String(n))]))),
+    el("small", {}, `${plural(row.run.scenarios, "scenario")} × ${row.run.k}`));
 }
 
-// What the agent's newest run is measured with.
-const setup = run => [`user ${run.user}`, `judge ${run.judge}`, `${plural(run.scenarios, "scenario")} × ${run.k}`, `trust ${run.trust}`, `claim threshold ${run.claim_threshold}`].filter(Boolean).join(" · ");
-
-// The agent's runs, newest left: a bar per run as high as its pass rate, coloured by its result,
-// and a line where the setup changed.
-function strip(group) {
-  const rows = group.rows.slice(0, BARS);
-  return el("div", {className: "strip", "aria-hidden": "true"}, rows.flatMap((row, i) => {
-    const bar = el("span", {className: "bar", title: `${row.run.short} · ${when(row.run.started)} · ${row.judged ? `${pct(row.rate)}, ${row.passed} of ${row.judged}` : "no verdict"}${STATUS[row.run.status] ? ` · ${STATUS[row.run.status]}` : ""}`},
-      el("span", {className: `fill ${row.result}${row.run.status === "finished" ? "" : " unfinished"}`, style: `height: ${row.rate == null ? 3 : Math.max(3, row.rate * 40)}px`}));
-    return i && rows[i - 1].changes.length ? [el("span", {className: "brk"}), bar] : [bar];
-  }));
+function difference(row, reference) {
+  if (row === reference) return "Reference";
+  const setup = DATA.setups[row.setup], base = DATA.setups[reference.setup];
+  const changed = Object.keys(setup).filter(key => setup[key] !== base[key]);
+  if (changed.length) return "Different " + changed.map(key => key.toLowerCase()).join(", ");
+  if (row.quality_note || reference.quality_note) return row.quality_note || reference.quality_note;
+  const points = (row.rate - reference.rate) * 100;
+  const magnitude = Math.abs(points);
+  const label = magnitude > 0 && magnitude < 0.01 ? "<0.01" : magnitude.toLocaleString("en", {maximumFractionDigits: 2});
+  return el("span", {title: points + " percentage points"}, (points > 0 ? "+" : points < 0 ? "−" : "") + label + " pp");
 }
 
-// A run's line, and under it what of the setup changed since the agent's run before.
-function line(row) {
-  const run = row.run, state = STATUS[run.status];
-  const box = el("input", {type: "checkbox", checked: picked.includes(row), "aria-label": `Compare run ${run.short}`, "data-id": run.id});
-  box.addEventListener("change", () => pick(row, box.checked, run.id));
-  const tr = el("tr", {},
-    el("td", {}, box),
-    el("td", {}, el("a", {className: "mono", href: row.report}, el("strong", {}, run.short))),
-    el("td", {className: "rate"}, el("strong", {}, pct(row.rate)), el("span", {className: "muted"}, `${row.passed} of ${row.judged}`), row.errors > 0 && el("span", {className: "errors"}, ` · ${plural(row.errors, "error")}`)),
-    el("td", {className: "mono"}, run.version || "—"),
-    el("td", {className: "muted"}, when(run.started), state && ` · ${state}`),
-    el("td", {className: "rest"}));
-  return row.changes.length ? [tr, el("tr", {className: "change"}, el("td", {}), el("td", {colSpan: 5}, `Changed: ${row.changes.join(" · ")}`))] : [tr];
+const order = {key: "started", direction: -1};
+const sortValues = {
+  run: row => identity(row),
+  started: row => Date.parse(row.run.started),
+  progress: row => row.numbers.attempts / (planned(row) || 1),
+  rate: row => row.rate,
+  seconds: row => value(row, "seconds"),
+  tokens: row => value(row, "tokens"),
+  tools: row => value(row, "tools"),
+  setup: row => row.setup + 1,
+};
+function sortRows(a, b) {
+  const get = sortValues[order.key], x = get(a), y = get(b);
+  if (x == null || y == null) return Number(x == null) - Number(y == null);
+  return order.direction * (typeof x === "string" ? x.localeCompare(y) : x - y);
+}
+function sortHead(key, name) {
+  const active = key === order.key;
+  const button = el("button", {type: "button", "data-sort": key}, name,
+    active && el("span", {"aria-hidden": "true"}, order.direction > 0 ? " ↑" : " ↓"));
+  button.onclick = () => {
+    order.direction = active ? -order.direction : key === "started" || key === "rate" ? -1 : 1;
+    order.key = key;
+    draw();
+    $("columns").querySelector(`[data-sort="${key}"]`).focus();
+  };
+  return el("th", {scope: "col", className: ["rate","progress","seconds","tokens","tools"].includes(key) ? "n" : "",
+    "aria-sort": active ? (order.direction > 0 ? "ascending" : "descending") : null}, button);
+}
+function table(list, reference) {
+  const columns = [sortHead("run","Run"), sortHead("started","Started"), sortHead("progress","Progress"),
+    sortHead("rate","Passed"), reference && el("th", {scope: "col"}, "Observed difference"),
+    sortHead("seconds", `Time / ${unit()}`), sortHead("tokens", `Tokens / ${unit()}`), sortHead("tools","Tools / task"), sortHead("setup","Evaluation")];
+  $("columns").replaceChildren(el("tr", {}, columns));
+  $("rows").replaceChildren(...list.map(row => el("tr", {className: row === reference ? "refrow" : ""},
+    el("td", {className: "identity"}, el("a", {href: row.report, title: row.run.id, "aria-label": `Open report for ${identity(row)}`}, row.run.agent),
+      el("small", {}, [row.run.version, runLabel(row)].filter(Boolean).join(" · "))),
+    el("td", {}, el("time", {dateTime: row.run.started, title: row.run.started}, when(row.run.started)),
+      el("small", {}, row.run.status)),
+    el("td", {className: "n"}, `${row.numbers.attempts}/${planned(row)}`, el("small", {}, "recorded"),
+      row.errors > 0 && el("small", {}, plural(row.errors, "error")),
+      row.run.unreadable > 0 && el("small", {}, `${row.run.unreadable} unreadable`)),
+    el("td", {className: "n"}, el("strong", {}, pct(row.rate)), el("small", {}, `${row.passed}/${row.judged} counted`)),
+    reference && el("td", {className: "reason"}, difference(row, reference)),
+    ...["seconds","tokens","tools"].map(metric => measurement(row, metric)), setupCell(row))));
+  if (!list.length) $("rows").append(el("tr", {}, el("td", {colSpan: columns.filter(Boolean).length, className: "empty"}, "No runs in scope. Clear the search or include a run.")));
 }
 
-function section(group) {
-  const all = opened.has(group.agent), older = group.rows.length - RUNS;
-  const rows = all ? group.rows : group.rows.slice(0, RUNS);
-  const more = older > 0 && el("button", {className: "more", type: "button"}, all ? "Show fewer runs" : `Show ${plural(older, "older run")}`);
-  if (more) more.addEventListener("click", () => { all ? opened.delete(group.agent) : opened.add(group.agent); draw(() => document.querySelector(`section[aria-label="${CSS.escape(group.agent)}"] .more`)); });
-  const newest = group.rows[0].run;
-  return el("section", {className: "panel group", "aria-label": group.agent},
-    el("div", {className: "ghead"},
-      el("div", {}, el("h2", {}, group.agent), el("span", {className: "sub"}, `${plural(group.rows.length, "run")} · last ${when(newest.started)}`), el("span", {className: "sub setup"}, setup(newest))),
-      strip(group)),
-    el("div", {className: "scroll"}, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {"aria-label": "Compare"}), el("th", {}, "Run"), el("th", {}, "Pass rate"), el("th", {}, "Version"), el("th", {}, "Started"), el("th", {className: "rest"}))),
-      el("tbody", {}, rows.flatMap(line)))),
-    more);
+function svg(tag, attrs, text) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, val] of Object.entries(attrs)) node.setAttribute(key, val);
+  if (text != null) node.textContent = text;
+  return node;
+}
+function scatter(list, reference) {
+  const key = $("resource").value, time = key === "seconds";
+  const points = list.filter(row => row.rate != null && value(row, key) != null);
+  const label = `${statistic()} ${time ? "time (s)" : "tokens"} / ${unit()}`;
+  const caption = [`${points.length} of ${plural(list.length, "run")} measured`];
+  if (points.includes(reference)) caption.push("Outlined point = reference");
+  $("plotnote").textContent = caption.join(" · ");
+  if (!points.length) {
+    $("plot").replaceChildren(el("p", {className: "empty"}, "No run in scope has both a verdict and this measurement."));
+    return;
+  }
+  const width = $("plot").clientWidth, left = 51, right = width - 30;
+  const scale = axis(points.reduce((top, row) => Math.max(top, value(row, key)), 0));
+  const x = n => left + (right - left) * n / (scale.top || 1), y = rate => 163 - 130 * rate;
+  const graph = svg("svg", {viewBox: `0 0 ${width} 218`, role: "group", "aria-label": `Passing attempts versus ${label}`});
+  graph.append(svg("text", {x: left, y: 17}, "Passing attempts"));
+  for (const p of [0, .25, .5, .75, 1]) {
+    graph.append(svg("line", {x1: left, x2: right, y1: y(p), y2: y(p)}),
+      svg("text", {x: left - 8, y: y(p) + 4, "text-anchor": "end"}, pct(p)));
+  }
+  for (const tick of scale.ticks) {
+    graph.append(svg("line", {x1: x(tick), x2: x(tick), y1: y(0), y2: y(0) + 4}),
+      svg("text", {x: x(tick), y: 184, "text-anchor": "middle"}, number.format(tick)));
+  }
+  graph.append(svg("text", {x: (left + right) / 2, y: 205, "text-anchor": "middle"}, label));
+  const labels = [];
+  for (const row of points) {
+    const n = value(row, key), cx = x(n), cy = y(row.rate);
+    const description = `${identity(row)} · ${row.passed}/${row.judged} passed · ${label} ${number.format(n)}`;
+    const link = svg("a", {href: row.report, "aria-label": description});
+    link.append(svg("title", {}, description), svg("circle", {cx, cy, r: row === reference ? 8 : 5,
+      class: row === reference ? "point refpoint" : "point"}));
+    // Keep overlapping points at their measured coordinates. Every value also has a table row.
+    const span = runLabel(row).length * 7 + 8;
+    const lx = cx + span > right ? cx - span : cx + 8;
+    if (labels.every(([a, b, h]) => Math.abs(h - cy) > 14 || a > lx + span || b < lx)) {
+      link.append(svg("text", {x: lx, y: cy - 6, class: "idlabel"}, runLabel(row)));
+      labels.push([lx, lx + span, cy]);
+    }
+    graph.append(link);
+  }
+  $("plot").replaceChildren(graph);
+}
+function comparisonHead(list, label) {
+  return el("thead", {}, el("tr", {}, el("th", {scope: "col"}, label),
+    list.map(row => el("th", {scope: "col"}, el("a", {href: row.report, title: identity(row)}, runLabel(row)),
+      el("small", {}, [row.run.agent, row.run.version].filter(Boolean).join(" · "))))));
+}
+function matrix(list) {
+  const scenarios = new Map();
+  for (const row of list) {
+    for (const cell of row.scenarios) {
+      if (!scenarios.has(cell.id)) scenarios.set(cell.id, new Map());
+      scenarios.get(cell.id).set(row, cell);
+    }
+  }
+  const body = el("tbody");
+  for (const id of [...scenarios.keys()].sort()) {
+    const cells = scenarios.get(id);
+    const edited = new Set([...cells.values()].map(cell => cell.revision)).size > 1;
+    body.append(el("tr", {}, el("th", {scope: "row"}, id),
+      list.map(row => {
+        const c = cells.get(row);
+        if (!c) return el("td", {className: "muted"}, "Absent");
+        const result = !c.judged ? "none" : !c.passed ? "failing" : c.passed === c.judged ? "passing" : "flaky";
+        const outcome = c.judged ? `${c.passed}/${c.judged}` : "No verdict";
+        return el("td", {}, el("a", {className: "cell " + result, href: row.report + "#" + new URLSearchParams({id}),
+          "aria-label": `${id}, ${identity(row)}, ${outcome}, ${c.recorded} recorded${edited ? ", revision " + c.revision : ""}`},
+          outcome, edited && el("small", {}, `Revision ${c.revision}`),
+          c.recorded < row.run.k && el("small", {}, `${c.recorded}/${row.run.k} recorded`)));
+      })));
+  }
+  if (!scenarios.size) body.append(el("tr", {}, el("td", {className: "empty", colSpan: list.length + 1}, "No scenarios in scope.")));
+  $("matrix").replaceChildren(comparisonHead(list, "Scenario"), body);
 }
 
-// Two ticked runs give the command that compares them, the older first; a third replaces the first.
-function pick(row, on, id) {
-  picked = picked.filter(r => r !== row);
-  if (on) picked.push(row);
-  if (picked.length > 2) picked.shift();
-  draw(() => document.querySelector(`input[data-id="${CSS.escape(id)}"]`));
+/*include metrics.js*/
+
+let shown = [], reference = null;
+function draw() {
+  const query = $("search").value.trim().toLowerCase();
+  shown = rows.filter(row => !excluded.has(row) && [identity(row), row.run.id].join(" ").toLowerCase().includes(query)).sort(sortRows);
+  reference = shown.find(row => row.report === $("reference").value);
+  const setupCount = new Set(shown.map(row => row.setup)).size;
+  $("scope").textContent = `${shown.length} of ${plural(rows.length, "run")} in scope · ${plural(setupCount, "recorded setup")}`
+    + ($("reference").value && !reference ? " · Reference is outside this scope" : "");
+  table(shown, reference);
+  scatter(shown, reference);
+  matrix(shown);
+  runMetrics(shown);
 }
-function compareBar() {
-  const bar = document.getElementById("compare");
-  if (picked.length < 2) return bar.replaceChildren();
-  const [older, newer] = [...picked].sort((a, b) => b.order - a.order);
-  const command = `convy compare ${older.run.id} ${newer.run.id}`;
-  const code = el("code", {}, command);
-  const copy = el("button", {className: "theme", type: "button"}, "Copy");
-  copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(command); copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 2000); }
-    catch { getSelection().selectAllChildren(code); copy.textContent = "Select and copy"; setTimeout(() => { copy.textContent = "Copy"; }, 2000); }  // no clipboard here: the command is selected to copy by hand
+$("theme").append(themeButton());
+$("summary").textContent = rows.length
+  ? `${plural(rows.length, "run")} · ${plural(new Set(rows.map(row => row.run.agent)).size, "agent")}`
+  : "No runs yet. Run convy run <agent> to record the first one.";
+$("workspace").hidden = !rows.length;
+if (rows.length) {
+  for (const row of rows) {
+    const use = el("input", {type: "checkbox", checked: true});
+    use.onchange = () => { if (use.checked) excluded.delete(row); else excluded.add(row); draw(); };
+    $("choices").append(el("label", {}, use, identity(row)));
+    $("reference").append(el("option", {value: row.report}, identity(row)));
+  }
+  $("choose").addEventListener("keydown", e => {
+    if (e.key === "Escape") { $("choose").open = false; $("choose").querySelector("summary").focus(); }
   });
-  bar.replaceChildren(el("span", {}, "Compare them:"), code, copy);
+  document.addEventListener("click", e => { if (!$("choose").contains(e.target)) $("choose").open = false; });
+  $("search").oninput = draw;
+  for (const id of ["reference","stat","unit"]) $(id).onchange = draw;
+  $("resource").onchange = () => scatter(shown, reference);
+  for (const id of ["metricgroup","resourcefield","callname"]) $(id).onchange = () => runMetrics(shown);
+  draw();
+  new ResizeObserver(() => scatter(shown, reference)).observe($("plot"));
 }
-
-// Redraws everything, then puts back the sideways scroll and the focus (find() gives the element to focus).
-function draw(find) {
-  const groups = document.getElementById("groups");
-  const left = [...groups.querySelectorAll(".scroll")].map(div => div.scrollLeft);
-  groups.replaceChildren(...(DATA.agents.length ? DATA.agents.map(section) : [el("p", {className: "empty"}, "Nothing to list.")]));
-  groups.querySelectorAll(".scroll").forEach((div, i) => { div.scrollLeft = left[i] || 0; });
-  compareBar();
-  if (find) find()?.focus();
-}
-
-document.getElementById("head").replaceChildren(header());
-document.getElementById("hint").textContent = "Tick two runs to compare them, or run: convy compare <before> <after>";
-draw();
 </script>
 </body>
 </html>

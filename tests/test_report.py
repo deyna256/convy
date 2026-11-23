@@ -6,14 +6,14 @@ import subprocess
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Literal, get_args
+from typing import Literal
 
 import msgspec
 import pytest
 
 from convy import Requirement
 from convy.agent import Answer, Call, Message, NoUsage, Reported, Thought, Usage
-from convy.bench import CONVY, Finished, Interrupted, Limits, RunJournal, RunSpec
+from convy.bench import CONVY, Files, Finished, Interrupted, Limits, RunJournal, RunSpec
 from convy.busy import Patience, Places
 from convy.dialog import (
     Claim,
@@ -28,29 +28,24 @@ from convy.dialog import (
 from convy.fakes import FakeAgent, FakeJudge, FakeModel
 from convy.model import Models
 from convy.report import (
-    NO_CHANGE,
-    STATS,
     CallPlace,
     CallView,
     Category,
     Comparison,
-    Delta,
     Evidence,
     Index,
     Parts,
-    PerStat,
     Report,
+    ResultBucket,
     Run,
     Runs,
     ScenarioNumbers,
     Share,
     Shares,
     Spread,
-    Stat,
     Summary,
     Tally,
     ThoughtView,
-    TurnStats,
     TurnView,
 )
 from convy.scenario import Outcome, Scenario
@@ -563,94 +558,7 @@ def test_a_claim_is_summed_up_over_the_attempts_the_judge_decided(tmp_path):
     )
 
 
-def test_a_comparison_groups_scenarios_by_what_changed(tmp_path):
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        5,
-        outcome("a", PASSED),
-        outcome("b", FAILED),
-        outcome("c", PASSED),
-        outcome("d", NoVerdict("down")),
-        outcome("e", PASSED),
-        started=at(5),
-    )
-    journal(
-        tmp_path,
-        "bot",
-        "2",
-        4,
-        outcome("a", FAILED),
-        outcome("b", PASSED),
-        outcome("c", PASSED),
-        outcome("d", PASSED),
-        started=at(6),
-    )
-    page = Comparison(*both(tmp_path)).page()
-    assert [(r.id, r.group, r.why) for r in page.rows] == [
-        ("a", "worse", ""),
-        ("b", "better", ""),
-        ("c", "same", ""),
-        ("d", "apart", "no verdict in one of the runs"),
-        ("e", "apart", "only in the before run"),
-    ]
-    worse = page.rows[0]
-    assert worse.before is not None and worse.after is not None
-    assert (worse.before.result, worse.after.result) == ("passing", "failing")
-    assert [(c.before, c.after, c.change) for c in worse.claims] == [
-        ("passing", "failing", "worse")
-    ]
-
-
-def test_an_edited_scenario_is_not_compared(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), asks="Say hi.")
-    journal(tmp_path, "bot", "1", 1, outcome("a", FAILED), started=at(6), asks="Say hello.")
-    (row,) = Comparison(*both(tmp_path)).page().rows
-    assert (row.group, row.why, row.claims) == ("apart", "edited between the runs", ())
-
-
-def test_a_scenario_only_in_the_after_run_is_not_compared(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED), outcome("b", PASSED), started=at(6))
-    rows = Comparison(*both(tmp_path)).page().rows
-    assert [(r.id, r.group, r.why) for r in rows] == [
-        ("a", "same", ""),
-        ("b", "apart", "only in the after run"),
-    ]
-
-
-def test_runs_without_a_scenario_in_common_compare_none_and_see_only_noise(tmp_path):
-    journal(tmp_path, "bot", "1", 4, *[outcome(s, FAILED) for s in "abcd"], started=at(5))
-    journal(tmp_path, "bot", "1", 4, *[outcome(s, PASSED) for s in "abcd"], started=at(6),
-            asks="Say hello.")  # fmt: skip
-    page = Comparison(*both(tmp_path)).page()
-    assert {row.group for row in page.rows} == {"apart"}
-    assert (page.deltas.rate.value, page.deltas.rate.tone) == (100, "noise")
-
-
-def test_a_pass_rate_missing_on_one_side_has_no_change(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", NoVerdict("down")), started=at(5))
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    rate = Comparison(*both(tmp_path)).page().deltas.rate
-    assert (rate.value, rate.tone) == (None, "none")
-
-
-def test_a_change_of_pass_rate_is_noise_unless_the_evidence_shows_it(tmp_path):
-    journal(tmp_path, "bot", "1", 3, *[outcome(s, FAILED) for s in "abc"], started=at(4))
-    journal(tmp_path, "bot", "1", 3, outcome("a", PASSED), outcome("b", FAILED),
-            outcome("c", FAILED), started=at(5))  # fmt: skip
-    journal(tmp_path, "other", "1", 6, *[outcome(s, FAILED) for s in "abcdef"], started=at(4))
-    journal(tmp_path, "other", "1", 6, *[outcome(s, PASSED) for s in "abcdef"], started=at(5))
-    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
-    noise = Comparison(runs[0], runs[1]).page().deltas.rate
-    assert noise.tone == "noise"
-    assert noise.value == pytest.approx(100 / 3)
-    real = Comparison(runs[2], runs[3]).page().deltas.rate
-    assert (real.value, real.tone) == (100, "good")  # six scenarios, all from 0 to 1: 1 in 32
-
-
-def test_a_real_change_colours_the_pass_rate_unless_they_disagree(tmp_path):
+def test_a_run_rate_and_its_evidence_must_agree_to_fail_ci(tmp_path):
     def attempts(scenario: str, verdict: Verdict | NoVerdict, count: int) -> list[Outcome]:
         return [outcome(scenario, verdict, attempt=n) for n in range(1, count + 1)]
 
@@ -666,31 +574,18 @@ def test_a_real_change_colours_the_pass_rate_unless_they_disagree(tmp_path):
             k=k, started=at(4))  # fmt: skip
     journal(tmp_path, "mixed", "1", 2, *attempts("a", PASSED, 12), *attempts("a", FAILED, k)[12:],
             *attempts("b", NoVerdict("down"), k), k=k, started=at(5))  # fmt: skip
-    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
-    down = Comparison(runs[0], runs[1]).page().deltas.rate
-    assert (down.value, down.tone) == (-20, "noise")  # a to e got better, f worse: mixed
-    mixed = Comparison(runs[2], runs[3]).page().deltas.rate
-    assert (mixed.value, mixed.tone) == (10, "noise")  # the rate rises, the evidence says worse
-
-
-def test_a_real_fall_turns_the_pass_rate_red_and_unjudged_attempts_stay_out(tmp_path):
-    def attempts(scenario: str, verdict: Verdict | NoVerdict, count: int, start: int = 1):
-        return [outcome(scenario, verdict, attempt=n) for n in range(start, start + count)]
-
-    # three of six scenarios fall from 3/3 to 0/3: chance gives it about once in a thousand
-    journal(tmp_path, "bot", "1", 6, *[o for s in "abcdef" for o in attempts(s, PASSED, 3)],
-            k=3, started=at(4))  # fmt: skip
-    journal(tmp_path, "bot", "1", 6, *[o for s in "abc" for o in attempts(s, FAILED, 3)],
-            *[o for s in "def" for o in attempts(s, PASSED, 3)], k=3, started=at(5))  # fmt: skip
-    # a falls from 40/40 to 18 of 20 judged: the 20 attempts with no verdict are not failures
-    journal(tmp_path, "other", "1", 1, *attempts("a", PASSED, 40), k=40, started=at(4))
-    journal(tmp_path, "other", "1", 1, *attempts("a", PASSED, 18), *attempts("a", FAILED, 2, 19),
-            *attempts("a", NoVerdict("down"), 20, 21), k=40, started=at(5))  # fmt: skip
-    runs = sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
-    real = Comparison(runs[0], runs[1]).page().deltas.rate
-    assert (real.value, real.tone) == (-50, "bad")
-    unjudged = Comparison(runs[2], runs[3]).page().deltas.rate
-    assert (unjudged.value, unjudged.tone) == (-10, "noise")
+    runs = [
+        msgspec.structs.replace(run, status=Finished(at(6)))
+        for run in sorted(Runs(tmp_path), key=lambda run: (run.spec.agent, run.spec.started))
+    ]
+    assert Comparison(runs[0], runs[1]).check() == (
+        "pass rate 80% → 60%: may be chance\nlower pass rate: f",
+        False,
+    )
+    assert Comparison(runs[2], runs[3]).check() == (
+        "pass rate 50% → 60%: may be chance\nlower pass rate: a",
+        False,
+    )
 
 
 def evidence(*scenarios: tuple[tuple[int, int], tuple[int, int]]) -> Evidence:
@@ -727,276 +622,196 @@ def test_evidence_shows_a_change_only_when_the_attempts_support_it(scenarios: li
     assert evidence(*scenarios).shows() == shows
 
 
-def test_other_tiles_are_coloured_by_direction(tmp_path):
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED, tokens=10), outcome("b", PASSED),
-            k=1, started=at(5))  # fmt: skip
-    journal(tmp_path, "bot", "1", 2, outcome("a", PASSED, tokens=40), outcome("b", Failed("x")),
-            k=1, started=at(6))  # fmt: skip
-    deltas = Comparison(*both(tmp_path)).page().deltas
-    assert (deltas.stable.value, deltas.stable.tone) == (-1, "bad")
-    # tokens per attempt 20 and 20, then 80 and 20: p50 20 to 50, p90 20 to 74 (0.9 of the way
-    # from 20 to 80), max 20 to 80, mean 20 to 50; Max moves with one attempt
-    assert deltas.tokens == PerStat(
-        Delta(30, "bad"), Delta(54, "bad"), Delta(60, "noise"), Delta(30, "bad")
-    )
-    assert deltas.seconds == alike(Delta(0, "same"))  # an unchanged Max is the same
-    assert (deltas.errors.value, deltas.errors.tone) == (1, "bad")
-
-
-def test_a_scenario_changes_by_a_percent_of_each_old_statistic(tmp_path):
-    before = (answers(s, 2.0, tokens=50) for s in "abc")
-    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
-    after = (
-        answers("a", 3.0, tokens=52),
-        answers("b", 1.0, tokens=60),
-        answers("c", 2.0, tokens=50),
-    )
-    journal(tmp_path, "bot", "1", 3, *after, started=at(6))
-    rows = Comparison(*both(tmp_path)).page().rows  # one answer each: every statistic alike
-    assert [(r.id, r.seconds) for r in rows] == [
-        ("a", alike(Delta(50, "bad"))),
-        ("b", alike(Delta(-50, "good"))),
-        ("c", alike(Delta(0, "same"))),
-    ]
-    assert [r.tokens for r in rows] == [
-        alike(Delta(4, "same")),
-        alike(Delta(20, "bad")),
-        alike(Delta(0, "same")),
-    ]
-
-
-@pytest.mark.parametrize(
-    ("tokens", "tone"),
-    [(522, "same"), (523, "bad"), (525, "bad"), (478, "same"), (477, "good")],
-    ids=["4.4%", "4.6% shows as 5%", "5%", "-4.4%", "-4.6% shows as -5%"],
-)
-def test_a_change_under_5_percent_as_the_page_rounds_it_is_the_same(tmp_path, tokens, tone):
-    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=500), started=at(5))
-    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
-    page = Comparison(*both(tmp_path)).page()
-    (row,) = page.rows
-    assert (row.tokens.p50.tone, page.deltas.tokens.p50.tone) == (tone, tone)
-    assert page.deltas.tokens.p50.value == 2 * tokens - 1000  # the tile keeps its unit
-
-
-@pytest.mark.parametrize(("tokens", "row", "tile"), [(0, (0, "same"), (0, "same")),
-                                                     (5, (None, "none"), (10, "bad"))])  # fmt: skip
-def test_a_change_from_0_tokens_has_no_percent(tmp_path, tokens, row, tile):
-    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=0), started=at(5))
-    journal(tmp_path, "bot", "1", 1, answers("a", 2.0, tokens=tokens), started=at(6))
-    page = Comparison(*both(tmp_path)).page()
-    assert (page.rows[0].tokens.p50.value, page.rows[0].tokens.p50.tone) == row
-    assert (page.deltas.tokens.p50.value, page.deltas.tokens.p50.tone) == tile
-
-
-def test_the_change_panels_hold_compared_scenarios_by_their_rise_then_id(tmp_path):
-    before = (answers("a", 2.0, tokens=0), answers("b", 2.0), answers("c", 2.0))
-    journal(tmp_path, "bot", "1", 3, *before, started=at(5))
-    after = (answers("a", 3.0, tokens=5), answers("b", 3.0), answers("c", 1.0), answers("d", 9.0))
-    journal(tmp_path, "bot", "1", 4, *after, started=at(6))
-    page = Comparison(*both(tmp_path)).page()
-    assert (page.by_seconds, page.by_tokens) == (alike(("a", "b", "c")), alike(("b", "c")))
-
-
-def test_each_statistic_changes_and_orders_the_scenarios_its_own_way(tmp_path):
-    journal(tmp_path, "bot", "1", 2, answers("a", 2, 2, 2), answers("b", 2, 2, 2), started=at(5))
-    journal(tmp_path, "bot", "1", 2, answers("a", 3, 3, 3), answers("b", 2, 2, 4), started=at(6))
-    page = Comparison(*both(tmp_path)).page()
-    a, b = page.rows
-    assert a.seconds == alike(Delta(50, "bad"))
-    # b: 2, 2, 4 has p50 2, p90 at 1.8, 0.8 of the way from 2 to 4, 3.6, max 4, mean 8 / 3
-    assert b.seconds == PerStat(
-        Delta(0, "same"), Delta(80, "bad"), Delta(100, "bad"), Delta(33.333333, "bad")
-    )
-    assert page.by_seconds == PerStat(("a", "b"), ("b", "a"), ("b", "a"), ("a", "b"))
-    # the after run's answers 2, 2, 3, 3, 3, 4 against six of 2: p50 at 2.5, between two 3s; max 4
-    assert (page.deltas.seconds.p50, page.deltas.seconds.max) == (
-        Delta(1, "bad"),
-        Delta(2, "noise"),
-    )
-
-
-def test_a_statistic_that_was_0_has_no_percent_while_the_others_do(tmp_path):
-    before = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 0), (3, 50)))
-    journal(tmp_path, "bot", "1", 1, *before, k=3, started=at(5))
-    after = (answers("a", 2.0, attempt=n, tokens=t) for n, t in ((1, 0), (2, 5), (3, 60)))
-    journal(tmp_path, "bot", "1", 1, *after, k=3, started=at(6))
-    page = Comparison(*both(tmp_path)).page()
-    # tokens 0, 0, 100: p50 0, p90 at 1.8, 0.8 of the way from 0 to 100, 80, max 100, mean
-    # 100 / 3; then 0, 10, 120: p50 10, p90 10 + 0.8 * 110 = 98, max 120, mean 130 / 3
-    assert page.rows[0].tokens == PerStat(
-        NO_CHANGE, Delta(22.5, "bad"), Delta(20, "bad"), Delta(30, "bad")
-    )
-    assert page.deltas.tokens == PerStat(
-        Delta(10, "bad"), Delta(18, "bad"), Delta(20, "noise"), Delta(10, "bad")
-    )
-    assert page.by_tokens == PerStat((), ("a",), ("a",), ("a",))
-
-
-def test_a_row_counts_the_change_of_passed_attempts_in_its_groups_tone(tmp_path):
-    before = [outcome("a", v, attempt=n) for n, v in enumerate((PASSED, PASSED, FAILED, FAILED), 1)]
-    before += [outcome("b", PASSED, attempt=n) for n in (1, 2, 3)] + [outcome("c", PASSED)]
-    journal(tmp_path, "bot", "1", 3, *before, k=4, started=at(5))
-    after = [outcome("a", PASSED, attempt=n) for n in (1, 2)]
-    after += [outcome("b", v, attempt=n) for n, v in enumerate((PASSED, FAILED, FAILED), 1)]
-    journal(tmp_path, "bot", "1", 2, *after, k=3, started=at(6))
-    rows = Comparison(*both(tmp_path)).page().rows
-    assert [(r.id, r.group, r.held.value, r.held.tone) for r in rows] == [
-        ("b", "worse", -2, "bad"),
-        ("a", "better", 0, "good"),  # 2 of 4 to 2 of 2: as many passed, a higher rate
-        ("c", "apart", None, "none"),
-    ]
-    assert (rows[2].seconds, rows[2].tokens) == (alike(NO_CHANGE), alike(NO_CHANGE))
-
-
-def cached(directory: Path, read: int | None, day: int) -> RunJournal:
-    """A run on `day` whose one answer read `read` of its 100 input tokens from the cache."""
-    usage = Usage(100, 10) if read is None else Usage(100, 10, cache_read=read)
-    turn = Turn(Message("hi"), Answer("hello", usage), 1.0)
-    outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
-    return journal(directory, "bot", "1", 1, outcome, started=at(day))
-
-
-@pytest.mark.parametrize(
-    ("before", "after", "change"),
-    [
-        (80, 20, (-60, "bad")),
-        (20, 80, (60, "good")),
-        (None, 80, (None, "none")),
-        (80, None, (None, "none")),
-    ],
-    ids=["fell", "rose", "not reported before", "not reported after"],
-)
-def test_a_comparison_shows_how_the_share_of_cached_input_changed(
-    tmp_path, before: int | None, after: int | None, change: tuple
-):
-    cached(tmp_path, before, 5)
-    cached(tmp_path, after, 6)
-    delta = Comparison(*both(tmp_path)).page().deltas.cached
-    assert (delta.value, delta.tone) == change
-
-
-@pytest.mark.parametrize(
-    ("before", "after", "tone"),
-    [(834, 831, "same"), (800, 200, "bad"), (800, 805, "good")],
-    ids=["same whole percent", "fell", "rose a little"],
-)
-def test_the_colour_of_a_cache_change_agrees_with_the_percents_shown(
-    tmp_path, before: int, after: int, tone: str
-):
-    for day, read in ((5, before), (6, after)):
-        turn = Turn(Message("hi"), Answer("a", Usage(1000, 10, cache_read=read)), 1.0)
-        outcome = Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns")
-        journal(tmp_path, "bot", "1", 1, outcome, started=at(day))
-    assert Comparison(*both(tmp_path)).page().deltas.cached.tone == tone
-
-
-def test_a_comparison_names_the_models_that_differ(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), models=("u", "j"))
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6), models=("u", "j2"))
-    assert Comparison(*both(tmp_path)).page().differences == ("judge: j → j2",)
-
-
-def test_a_comparison_names_another_agent_limit_but_not_other_limits(tmp_path):
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        1,
-        outcome("a", PASSED),
-        started=at(5),
-        limits=Limits(agent=4, user=1, judge=1, judge_per_minute=60),
-    )
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        1,
-        outcome("a", PASSED),
-        started=at(6),
-        limits=Limits(agent=20, user=8, judge=2, agent_per_minute=600, user_per_minute=60),
-    )
-    assert Comparison(*both(tmp_path)).page().differences == (
-        "agent limit: 4 → 20",
-        "agent limit per minute: 0 → 600",
-    )
-
-
-@pytest.mark.parametrize(("then", "shown"), [("0.1.0", "0.1.0"), ("", "unknown")])
-def test_a_comparison_names_another_convy(tmp_path, then: str, shown: str):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5), convy=then)
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    assert Comparison(*both(tmp_path)).page().differences == (f"convy: {shown} → {CONVY}",)
-
-
-def test_the_index_groups_runs_by_agent_newest_first_and_ranks_them_all(tmp_path):
-    first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "ann", "1", 1, outcome("a", FAILED), started=at(6))
-    played = (outcome("a", FAILED), outcome("a", PASSED, attempt=2))
-    journal(tmp_path, "bot", "2", 1, *played, k=2, started=at(7))
-    page = Index(Runs(tmp_path)).page()
-    assert [
-        (g.agent, [(r.run.version, r.order, r.result) for r in g.rows]) for g in page.agents
-    ] == [
-        ("ann", [("1", 1, "failing")]),
-        ("bot", [("2", 0, "flaky"), ("1", 2, "passing")]),
-    ]
-    older = page.agents[1].rows[1]
-    assert older.report == f"bot/{first.spec.id}/report.html"
-    assert (older.rate, older.passed, older.judged, older.errors) == (1, 1, 1, 0)
-
-
-def test_the_index_orders_runs_by_the_instant_they_started(tmp_path):
+def test_index_puts_every_run_on_one_time_axis_with_full_run_results(tmp_path):
     east = timezone(timedelta(hours=3))
+    first = journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
+    first.write(Finished(at(6)))
+    journal(
+        tmp_path,
+        "other",
+        "1",
+        1,
+        outcome("a", FAILED),
+        started=datetime(2026, 10, 7, 12, tzinfo=east),
+    )
+    journal(
+        tmp_path,
+        "bot",
+        "2",
+        1,
+        outcome("a", PASSED),
+        outcome("a", FAILED, attempt=2),
+        k=2,
+        started=datetime(2026, 10, 7, 10, tzinfo=UTC),
+    )
+    newest, other, oldest = Index(Runs(tmp_path)).page().rows
+    assert [(r.run.agent, r.rate) for r in (newest, other, oldest)] == [
+        ("bot", 0.5),
+        ("other", 0),
+        ("bot", 1),
+    ]
+    assert (newest.passed, newest.judged, newest.numbers.attempts) == (1, 2, 2)
+    assert newest.scenarios[0].passed == 1
+    assert oldest.report == f"./bot/{first.spec.id}/report.html"
+    assert oldest.quality_note == "Model fingerprint not recorded"
+    assert newest.quality_note == "Incomplete evaluation"
+
+
+def test_no_runs_make_an_empty_workspace(tmp_path):
+    assert Index(Runs(tmp_path)).page().rows == ()
+
+
+def test_workspace_uses_each_runs_uncut_resource_samples(tmp_path):
+    known = Turn(Message("hi"), Answer("ok", Usage(4, 6), steps_complete=True), 1)
+    missing = Turn(Message("again"), Answer("ok"), 8)
+    played = (
+        Outcome("a", 1, Transcript((known, missing)), PASSED, "max_turns"),
+        Outcome("a", 2, Transcript((known,)), FAILED, "max_turns"),
+        Outcome("a", 3, Transcript(()), Failed("unavailable"), "agent_failure"),
+    )
+    journal(tmp_path, "bot", "1", 1, *played, k=3)
+    (row,) = Index(Runs(tmp_path)).page().rows
+    n = row.numbers
+    assert n.attempts == 3
+    assert n.seconds and (n.seconds.n, n.seconds.p50) == (3, 1)
+    assert n.attempt_seconds and (n.attempt_seconds.n, n.attempt_seconds.p50) == (2, 5)
+    assert n.tokens and (n.tokens.n, n.tokens.mean) == (2, 10)
+    assert n.attempt_tokens and (n.attempt_tokens.n, n.attempt_tokens.mean) == (1, 10)
+    assert n.tool_calls and (n.tool_calls.n, n.tool_calls.mean) == (1, 0)
+    assert (row.passed, row.judged, row.errors) == (1, 3, 1)
+    assert row.traced_answers == 2
+
+
+def test_workspace_keeps_the_run_reports_quality_counts_and_exact_rate_buckets(tmp_path):
+    busy = msgspec.structs.replace(outcome("c", NoVerdict("busy")), stop="agent_busy")
     journal(
         tmp_path,
         "bot",
         "1",
-        1,
+        5,
         outcome("a", PASSED),
-        started=datetime(2026, 10, 6, 12, tzinfo=east),
+        outcome("a", PASSED, attempt=2),
+        outcome("b", Failed("down")),
+        outcome("b", PASSED, attempt=2),
+        busy,
+        outcome("d", NoVerdict("judge down")),
+        outcome("e", FAILED),
+        k=2,
     )
-    journal(
-        tmp_path, "bot", "2", 1, outcome("a", PASSED), started=datetime(2026, 10, 6, 10, tzinfo=UTC)
+    run = only(tmp_path)
+    (row,) = Index([run]).page().rows
+    page = Report(run).page()
+    assert (row.stable, row.flaky, row.open) == (1, 1, 2)
+    assert (row.agent_errors, row.busy, row.model_errors, row.errors) == (1, 1, 1, 3)
+    assert row.results == tuple(
+        ResultBucket(s.rate, len(s.scenarios), s.part) for s in page.results
     )
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [(r.run.version, r.order) for r in group.rows] == [("2", 0), ("1", 1)]
+    assert row.results[-1] == ResultBucket(None, 2, 2 / 5)
 
 
-def test_no_runs_make_an_empty_index(tmp_path):
-    assert '"agents":[]' in Index(Runs(tmp_path / "results")).html()
+def test_workspace_preserves_partial_token_reporting_and_the_cache_denominators(tmp_path):
+    journal(tmp_path, "bot", "1", 1, talk("a", Usage(100, 20, 10, cache_read=60), Usage(50, 10, 0)))
+    run = only(tmp_path)
+    (row,) = Index([run]).page().rows
+    view = Report(run).page().views.all
+    assert row.parts == view.parts == Parts(30, 45, 10, 5)
+    assert row.shares == view.shares == Shares(30 / 90, 45 / 90, 10 / 90, 5 / 90, 0.4)
+    assert row.cached == 0.6
+    assert (row.cache_answers, row.thinking_answers) == (1, 2)
+
+
+def test_workspace_has_no_measurements_before_the_first_answer(tmp_path):
+    journal(tmp_path, "bot", "1", 2)
+    (row,) = Index(Runs(tmp_path)).page().rows
+    assert row.results == (ResultBucket(None, 2, 1),)
+    assert (row.parts, row.shares, row.cached, row.time) == (None, None, None, ())
+    assert (row.stable, row.flaky, row.open, row.errors) == (0, 0, 0, 0)
+    assert (row.cache_answers, row.thinking_answers, row.traced_answers) == (0, 0, 0)
 
 
 @pytest.mark.parametrize(
-    ("setup", "changes"),
+    ("options", "field"),
     [
-        ({"models": ("other", "fake")}, ("user: fake → other",)),
-        ({"models": ("fake", "other")}, ("judge: fake → other",)),
-        ({"convy": "0.1.0"}, (f"convy: {CONVY} → 0.1.0",)),
-        ({"convy": ""}, (f"convy: {CONVY} → unknown",)),
-        ({"trust": 0.5}, ("trust: 0.0 → 0.5",)),
-        ({"k": 3}, ()),  # more attempts measure the same thing
-        ({"asks": "Say hello."}, ()),  # an edit under the same id is the comparison's business
+        ({"models": ("other", "fake")}, "User"),
+        ({"models": ("fake", "other")}, "Judge"),
+        ({"asks": "Ask a different question."}, "Scenario suite"),
+        ({"claims": (Requirement("greets", True),)}, "Scenario suite"),
+        ({"trust": 0.6666667}, "Trust"),
+        ({"claim_threshold": 0.6666667}, "Claim threshold"),
+        ({"limits": Limits(user_per_minute=10)}, "User requests/min"),
+        ({"convy": "another"}, "Convy"),
+        ({"k": 2}, "Repetitions"),
     ],
-    ids=["user", "judge", "convy", "no convy", "trust", "attempts", "edited scenario"],
 )
-def test_a_run_names_the_setup_that_differs_from_the_agents_previous_run(
-    tmp_path, setup: dict[str, Any], changes
-):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "2", 1, outcome("a", PASSED), started=at(6), **setup)
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [r.changes for r in group.rows] == [changes, ()]
+def test_workspace_identifies_the_setting_that_prevents_a_quality_delta(tmp_path, options, field):
+    journal(tmp_path, "a", "v1", 1, started=at(5))
+    journal(tmp_path, "b", "v2", 1, started=at(6), **options)
+    page = Index(Runs(tmp_path)).page()
+    new, old = page.rows
+    before, after = page.setups[old.setup], page.setups[new.setup]
+    assert [key for key in before if before[key] != after[key]] == [field]
+    assert (old.scenarios[0].revision != new.scenarios[0].revision) == (field == "Scenario suite")
 
 
 @pytest.mark.parametrize(
-    ("then", "now", "moved"), [(2, 3, "scenarios: +1"), (3, 2, "scenarios: \N{MINUS SIGN}1")]
+    ("missing", "note"),
+    [
+        ("convy", "Convy not recorded"),
+        ("user", "User not recorded"),
+        ("judge", "Judge not recorded"),
+        ("", ""),
+    ],
 )
-def test_a_run_counts_the_scenarios_it_added_and_dropped(tmp_path, then, now, moved):
-    journal(tmp_path, "bot", "1", then, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "2", now, outcome("a", PASSED), started=at(6))
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [r.changes for r in group.rows] == [(moved,), ()]
+def test_reference_requires_a_recorded_evaluator_even_for_matching_setups(tmp_path, missing, note):
+    journal(tmp_path, "bot", "v1", 1, outcome("a", PASSED))
+    run = only(tmp_path)
+    spec = msgspec.structs.replace(run.spec, files=Files(models="known"))
+    if missing:
+        spec = msgspec.structs.replace(spec, **{missing: ""})
+    run = msgspec.structs.replace(run, spec=spec, status=Finished(at(6)))
+    other = msgspec.structs.replace(run, outcomes=(outcome("a", FAILED),))
+    first, second = Index((run, other)).page().rows
+    assert (first.rate, second.rate) == (1, 0)
+    assert first.setup == second.setup
+    assert first.quality_note == second.quality_note == note
+
+
+def test_workspace_matches_suites_across_order_and_distinguishes_added_scenarios(tmp_path):
+    original = journal(tmp_path, "a", "v1", 2)
+    run = Runs(tmp_path).read(original.folder())
+    reordered = msgspec.structs.replace(run.spec, scenarios=run.spec.scenarios[::-1])
+    reduced = msgspec.structs.replace(run.spec, scenarios=run.spec.scenarios[:1])
+    first, second, third = (
+        Index(
+            (
+                run,
+                msgspec.structs.replace(run, spec=reordered),
+                msgspec.structs.replace(run, spec=reduced),
+            )
+        )
+        .page()
+        .rows
+    )
+    assert first.setup == second.setup
+    assert first.scenarios == second.scenarios[::-1]
+    assert third.setup != first.setup
+    assert third.scenarios == first.scenarios[:1]
+
+
+@pytest.mark.parametrize("partial", ["unplayed", "unjudged", "unreadable", "interrupted"])
+def test_workspace_keeps_partial_results_visible_without_a_quality_delta(tmp_path, partial):
+    played = [outcome("a", PASSED)]
+    if partial != "unplayed":
+        played.append(outcome("b", NoVerdict("unavailable") if partial == "unjudged" else FAILED))
+    written = journal(tmp_path, "bot", "1", 2, *played)
+    written.write(Interrupted(at(6)) if partial == "interrupted" else Finished(at(6)))
+    if partial == "unreadable":
+        with (written.folder() / "attempts.jsonl").open("ab") as attempts:
+            attempts.write(b"broken\n")
+    (row,) = Index(Runs(tmp_path)).page().rows
+    assert row.rate == (1 if partial in ("unplayed", "unjudged") else 0.5)
+    assert row.quality_note == "Incomplete evaluation"
+    assert len(row.scenarios) == 2
 
 
 def data(html: str) -> object:
@@ -1006,53 +821,42 @@ def data(html: str) -> object:
 
 def test_pages_show_dialogues_as_data_only(tmp_path):
     hostile = "</script><img src=x onerror=alert(1)>"
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, text=hostile), started=at(6))
-    before, after = both(tmp_path)
-    pages = (Report(after).html(), Comparison(before, after).html(), Index(Runs(tmp_path)).html())
+    run = only(tmp_path)
+    pages = (Report(run).html(), Index(Runs(tmp_path)).html())
     for html in pages:
         assert "</script><img" not in html
         assert "innerHTML" not in html
-    run = data(pages[0])
-    assert isinstance(run, dict)
-    assert run["scenarios"][0]["attempts"][0]["turns"][0]["agent"] == hostile
+    page = data(pages[0])
+    assert isinstance(page, dict)
+    assert page["scenarios"][0]["attempts"][0]["turns"][0]["agent"] == hostile
 
 
 def test_every_use_of_storage_is_guarded(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    before, after = both(tmp_path)
-    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+    run = only(tmp_path)
+    for html in (Report(run).html(), Index([run]).html()):
         lines = [line for line in html.splitlines() if "localStorage" in line]
         assert lines
         assert all("try {" in line for line in lines)
 
 
 def test_a_written_page_stands_alone(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    before, after = both(tmp_path)
-    pages = (Report(after).html(), Comparison(before, after).html(), Index([before]).html())
+    run = only(tmp_path)
+    pages = (Report(run).html(), Index([run]).html())
     for html in pages:
         assert "/*include" not in html
         assert "function el(" in html
-    assert "function dialogue(" in pages[0] and "function dialogue(" in pages[1]
-    assert "function dialogue(" not in pages[2]  # the index has no scenario window
+    assert "function dialogue(" in pages[0]
+    assert "function dialogue(" not in pages[1]  # the index has no scenario window
 
 
 def test_every_page_has_the_icon(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    before, after = both(tmp_path)
-    for html in (Report(after).html(), Comparison(before, after).html(), Index([before]).html()):
+    run = only(tmp_path)
+    for html in (Report(run).html(), Index([run]).html()):
         assert '<link rel="icon" href="data:image/svg+xml,' in html
-
-
-def test_the_comparison_offers_the_statistics_of_a_spread_in_their_order(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    html = Comparison(*both(tmp_path)).html()
-    assert f"const STATS = {json.dumps(list(STATS))};" in html
 
 
 def test_attempts_below_trust_fail_and_are_counted(tmp_path):
@@ -1095,19 +899,6 @@ def test_a_decision_without_confidence_is_trusted_and_shown_as_such(tmp_path):
     assert scenario.result == "passing"
 
 
-def test_the_index_and_the_comparison_show_each_run_with_its_trust(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.5)), started=at(5))
-    journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.5)), started=at(6), trust=0.8)
-    page = Comparison(*both(tmp_path)).page()
-    assert (page.before.trust, page.after.trust) == (0, 0.8)
-    assert (page.was.judged, page.now.judged, page.now.passed) == (1, 1, 0)
-    assert page.quality_reason
-    assert page.deltas.rate == NO_CHANGE
-    assert page.deltas.stable == NO_CHANGE
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [(row.run.trust, row.judged) for row in group.rows] == [(0.8, 1), (0, 1)]
-
-
 def test_a_run_says_whether_its_judge_said_how_sure_it_was(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", unsure(True, 0.9)), started=at(6))
@@ -1137,11 +928,6 @@ def answers(scenario: str, *seconds: float, attempt: int = 1, tokens: int = 10) 
 def single(value: float) -> Spread:
     """The spread of one value: every statistic is the value."""
     return Spread(1, value, value, value, value, value)
-
-
-def alike[T](value: T) -> PerStat[T]:
-    """The same value for every statistic."""
-    return PerStat(value, value, value, value)
 
 
 @pytest.mark.parametrize(
@@ -1176,15 +962,6 @@ def test_a_spread_of_ints_is_of_floats(tmp_path):
     )
 
 
-def test_every_statistic_the_switch_offers_is_a_field_of_a_spread_and_of_a_per_stat():
-    assert get_args(Stat.__value__) == STATS
-    assert set(STATS) <= set(Spread.__struct_fields__)
-    assert PerStat.__struct_fields__ == STATS
-    spread = Spread(4, 2, 2, 6.2, 8, 3.5)
-    assert [spread.of(stat) for stat in STATS] == [2, 6.2, 8, 3.5]
-    assert [PerStat("a", "b", "c", "d").of(stat) for stat in STATS] == ["a", "b", "c", "d"]
-
-
 def test_a_scenario_spreads_its_answers_time_and_its_attempts_tokens(tmp_path):
     played = (answers("a", 3.0, 1.0, tokens=5), answers("a", 2.0, attempt=2, tokens=50))
     journal(tmp_path, "bot", "1", 1, *played, k=2)
@@ -1215,59 +992,10 @@ def test_counts_not_reported_stay_none_at_every_level(tmp_path):
     assert (attempt.cache_read, attempt.cache_write, attempt.thinking_tokens) == (None, None, None)
 
 
-def turns(tmp_path: Path) -> tuple[TurnStats, ...]:
-    summary = Summary(only(tmp_path))
-    return summary.turns(summary.scenarios().values())
-
-
 def talk(scenario: str, *usages: Usage | NoUsage, attempt: int = 1) -> Outcome:
     """A passed attempt of `scenario` with an answer of 1 s per usage."""
     turns = tuple(Turn(Message("hi"), Answer("hello", usage), 1.0) for usage in usages)
     return Outcome(scenario, attempt, Transcript(turns), PASSED, "max_turns")
-
-
-def test_each_turn_counts_its_answers_and_scenarios_and_spreads_their_tokens(tmp_path):
-    played = (
-        talk("a", Usage(100, 10, cache_read=80), Usage(200, 20, cache_read=150)),
-        talk("a", Usage(120, 12, cache_read=60), attempt=2),
-        talk("b", Usage(100, 10), NoUsage(), NoUsage()),
-    )
-    journal(tmp_path, "bot", "1", 2, *played, k=2)
-    first, second = turns(tmp_path)  # turn 3: no answer reports tokens
-    # input 100, 100, 120: p50 the second, 100; p90 at
-    # 1.8, 0.8 of the way from 100 to 120, 116; mean 320 / 3; output a tenth of each
-    assert first == TurnStats(
-        1,
-        3,
-        2,
-        Spread(3, 100, 100, 116, 120, 320 / 3),
-        Spread(3, 10, 10, 11.6, 12, 32 / 3),
-        None,  # b does not report its cache reads
-        None,
-        None,
-    )
-    assert second == TurnStats(2, 2, 2, single(200), single(20), single(150), single(50), 150 / 200)
-
-
-@pytest.mark.parametrize(
-    ("reads", "cached", "fresh", "share"),
-    [
-        ((80, 60), Spread(2, 60, 70, 78, 80, 70), Spread(2, 20, 30, 38, 40, 30), 140 / 200),
-        ((80, None), None, None, None),
-        ((None, None), None, None, None),
-    ],
-    ids=["every answer", "some", "none"],
-)
-def test_a_turns_cache_reads_spread_only_when_every_answer_reports_them(
-    tmp_path, reads, cached, fresh, share
-):
-    usages = (Usage(100, 10) if r is None else Usage(100, 10, cache_read=r) for r in reads)
-    played = (talk("a", usage, attempt=n) for n, usage in enumerate(usages, 1))
-    journal(tmp_path, "bot", "1", 1, *played, k=2)
-    (turn,) = turns(tmp_path)
-    assert turn.cached == cached  # 60 and 80: p90 at 0.9, 78
-    assert turn.fresh == fresh  # 100 - 80 and 100 - 60: the new input's own spread
-    assert turn.share == share  # of the input summed, not a ratio of two statistics
 
 
 @pytest.mark.parametrize(
@@ -1304,10 +1032,14 @@ def test_a_scenario_without_input_has_no_cache_share_of_it(tmp_path):
 
 
 def test_calls_of_no_time_have_no_share_of_it(tmp_path):
-    turn = Turn(Message("hi"), Answer("hello", steps=(call("ping", 0, 0),)), 1.0)
+    steps = (call("ping", 0, 0), call("ping", 0, 0, Usage(0, 0)))
+    turn = Turn(Message("hi"), Answer("hello", steps=steps), 1.0)
     journal(tmp_path, "bot", "1", 1, Outcome("a", 1, Transcript((turn,)), PASSED, "max_turns"))
     (ping,) = Report(only(tmp_path)).page().views.all.time
     assert (ping.total, ping.share) == (0, 0)
+    (row,) = Index(Runs(tmp_path)).page().rows
+    (observed,) = row.time
+    assert (observed.calls, observed.token_calls, observed.tokens) == (2, 1, 0)
 
 
 def test_a_scenario_gives_each_parts_share_and_the_caches_share_of_its_input(tmp_path):
@@ -1359,6 +1091,13 @@ def test_the_agents_calls_are_summed_up_by_name(tmp_path):
         4 / 13,  # of 5 + 4 + 4 s
     )
     assert view.parts is None
+    (row,) = Index(Runs(tmp_path)).page().rows
+    assert [c.token_calls for c in row.time] == [0, 0, 2]
+    for compact, category in zip(row.time, view.time, strict=True):
+        expected = msgspec.to_builtins(category)
+        del expected["places"]
+        expected["token_calls"] = compact.token_calls
+        assert msgspec.to_builtins(compact) == expected
 
 
 def test_calls_that_ran_together_each_count_their_own_time_and_nothing_else_is_timed(tmp_path):
@@ -1456,60 +1195,24 @@ def test_the_scenarios_are_grouped_by_pass_rate_without_a_verdict_last(tmp_path)
     )
 
 
-def test_a_comparison_pairs_each_turn_either_run_has(tmp_path):
-    usage = Usage(10, 10)
-    journal(
-        tmp_path, "bot", "1", 2, talk("a", usage, usage, usage), talk("b", usage), started=at(5)
-    )
-    journal(tmp_path, "bot", "1", 2, talk("a", usage), talk("b", usage, usage), started=at(6))
-    turns = Comparison(*both(tmp_path)).page().turns
-    answered = [
-        (
-            t.turn,
-            None if t.before is None else t.before.answers,
-            None if t.after is None else t.after.answers,
-        )
-        for t in turns
-    ]
-    assert answered == [(1, 2, 2), (2, 1, 1), (3, 1, None)]
-
-
-def test_a_comparison_orders_the_parts_by_the_after_runs_tokens(tmp_path):
-    before = (answers(s, 1.0) for s in "abce")
-    journal(tmp_path, "bot", "1", 5, *before, started=at(5))
-    after = (
-        answers("a", 1.0),
-        answers("b", 1.0, tokens=30),
-        answers("c", 1.0, tokens=30),
-        answers("d", 1.0),  # not played before: not compared
-        talk("e", NO_USAGE),  # no tokens after
-    )
-    journal(tmp_path, "bot", "1", 5, *after, started=at(6))
-    assert Comparison(*both(tmp_path)).page().by_parts == alike(("b", "c", "a"))
-
-
 def test_the_views_and_parts_reach_the_pages(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    before, after = both(tmp_path)
-    run, compared = data(Report(after).html()), data(Comparison(before, after).html())
-    assert isinstance(run, dict) and isinstance(compared, dict)
-    assert set(run["views"]) == {"all", "cut"}
-    assert run["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"], "part": 1.0}]
+    run = only(tmp_path)
+    page = data(Report(run).html())
+    assert isinstance(page, dict)
+    assert set(page["views"]) == {"all", "cut"}
+    assert page["results"] == [{"rate": 1.0, "result": "passing", "scenarios": ["a"], "part": 1.0}]
     parts = {"cached": None, "input": 10.0, "output": 10.0, "thinking": None}
-    assert run["views"]["all"]["parts"] == parts
-    assert [turn["turn"] for turn in compared["turns"]] == [1]
-    assert compared["by_parts"]["p90"] == ["a"]
+    assert page["views"]["all"]["parts"] == parts
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_the_scripts_of_every_page_parse(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(6))
-    before, after = both(tmp_path)
-    pages = (Report(after).html(), Comparison(before, after).html(), Index([before]).html())
+    run = only(tmp_path)
+    pages = (Report(run).html(), Index([run]).html())
     scripts = [body for html in pages for body in re.findall(r"<script>(.*?)</script>", html, re.S)]
-    assert len(scripts) == 6
+    assert len(scripts) == 4
     for number, body in enumerate(scripts):
         file = tmp_path / f"script{number}.js"
         file.write_text(body, encoding="utf-8")
@@ -1579,32 +1282,6 @@ def test_threshold_zero_accepts_valid_verdicts_but_not_errors(tmp_path):
     assert (page.metrics.passed, page.metrics.judged, page.metrics.open) == (1, 2, 1)
 
 
-def test_different_thresholds_disable_quality_comparison_but_keep_resource_differences(tmp_path):
-    journal(tmp_path, "bot", "1", 1, outcome("a", PASSED, tokens=10), started=at(5))
-    journal(
-        tmp_path,
-        "bot",
-        "1",
-        1,
-        outcome("a", PASSED, tokens=20),
-        started=at(6),
-        claim_threshold=0.5,
-    )
-    page = Comparison(*both(tmp_path)).page()
-    assert (page.before.claim_threshold, page.after.claim_threshold) == (1, 0.5)
-    assert page.quality_reason
-    assert (page.deltas.rate, page.deltas.stable) == (NO_CHANGE, NO_CHANGE)
-    (row,) = page.rows
-    assert row.group == "apart"
-    assert row.held == NO_CHANGE
-    assert row.claims == ()
-    assert row.tokens.mean.value == 100  # token use doubled
-    assert page.by_tokens.mean == ("a",)
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [r.run.claim_threshold for r in group.rows] == [0.5, 1]
-    assert "claim threshold: 1.0 → 0.5" in group.rows[0].changes
-
-
 def test_changing_only_a_required_flag_changes_the_scenario_for_comparison(tmp_path):
     journal(tmp_path, "bot", "1", 1, outcome("a", PASSED), started=at(5))
     journal(
@@ -1616,9 +1293,8 @@ def test_changing_only_a_required_flag_changes_the_scenario_for_comparison(tmp_p
         started=at(6),
         claims=(Requirement("greets", True),),
     )
-    (row,) = Comparison(*both(tmp_path)).page().rows
-    assert row.group == "apart"
-    assert row.held == NO_CHANGE
+    before, after = (msgspec.structs.replace(r, status=Finished(at(7))) for r in both(tmp_path))
+    assert Comparison(before, after).check() == ("no scenario can be compared", True)
 
 
 @pytest.mark.parametrize("setting", ["trust", "claim_threshold"])
@@ -1638,13 +1314,13 @@ def test_setup_changes_preserve_precision_that_can_change_acceptance(tmp_path, s
             trust=value if setting == "trust" else 0.0,
             claim_threshold=value if setting == "claim_threshold" else 1.0,
         )
-    (group,) = Index(Runs(tmp_path)).page().agents
-    assert [row.rate for row in group.rows] == [0, 1]
-    expected = f"{setting.replace('_', ' ')}: 0.6666666 → 0.6666667"
-    assert group.rows[0].changes == (expected,)
-    page = Comparison(*both(tmp_path)).page()
-    assert expected in page.differences
-    assert page.quality_reason
+    rows = Index(Runs(tmp_path)).page().rows
+    assert [row.rate for row in rows] == [0, 1]
+    assert [getattr(row.run, setting) for row in rows] == [0.6666667, 0.6666666]
+    assert Comparison(*both(tmp_path)).check() == (
+        "Quality not compared: different trust or claim threshold.",
+        True,
+    )
 
 
 def test_run_and_scenario_medians_use_answers_and_task_totals_as_distinct_samples(tmp_path):
@@ -1710,19 +1386,6 @@ def test_partial_token_tasks_are_unknown_but_known_answers_and_zero_tasks_still_
     assert page.scenarios[0].tokens == page.metrics.tokens == single(0)
     assert page.scenarios[0].parts == Parts(None, 0, 0, None)
     assert view.scenarios[0].attempt_tokens == single(0)
-    journal(
-        tmp_path,
-        "bot",
-        "2",
-        1,
-        talk("a", Usage(999, 0), NoUsage()),
-        talk("a", Usage(10, 0), attempt=2),
-        started=at(6),
-        k=2,
-    )
-    compared = Comparison(*both(tmp_path)).page()
-    assert (compared.was.tokens, compared.now.tokens) == (single(0), single(10))
-    assert compared.deltas.tokens.mean.value == 10
 
 
 def test_resource_samples_include_recorded_errors_without_inventing_empty_task_measurements(

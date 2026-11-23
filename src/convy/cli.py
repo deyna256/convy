@@ -343,38 +343,16 @@ class CompareCommand(BaseModel):
     )
 
     def cli_cmd(self) -> None:
-        project = Project(Path())
-        runs = Runs(project.results())
+        runs = Runs(Project(Path()).results())
         try:
             before, after = runs.run(self.before), runs.run(self.after)
         except ValueError as error:  # no such run, or several
             print(f"error: {error}", file=sys.stderr)
             raise SystemExit(2) from None
-        page = Comparison(before, after).page()
-        print(f"comparison: {project.compare(before, after, page)}")
+        summary, failed = Comparison(before, after).check()
+        print(summary)
         if self.fail_on_regression:
-            if page.quality_reason:
-                print(page.quality_reason)
-                raise SystemExit(3)
-            if page.before.status != "finished" or page.after.status != "finished":
-                print("both runs must be finished to check for regression")
-                raise SystemExit(3)
-            compared = [row for row in page.rows if row.group != "apart"]
-            if not compared:
-                print("no scenario can be compared")
-                raise SystemExit(3)
-            verdict = {
-                "bad": "worse",
-                "good": "better",
-                "noise": "may be chance",
-                "same": "same",
-                "none": "not available",
-            }[page.deltas.rate.tone]
-            print(f"pass rate {page.was.rate:.0%} → {page.now.rate:.0%}: {verdict}")
-            worse = [row.id for row in compared if row.group == "worse"]
-            if worse:
-                print(f"lower pass rate: {', '.join(worse)}")
-            raise SystemExit(3 if page.deltas.rate.tone == "bad" else 0)
+            raise SystemExit(3 if failed else 0)
 
 
 class ExportCommand(BaseModel):
@@ -451,7 +429,7 @@ class Convy(BaseSettings):
     )
     report: CliSubCommand[ReportCommand] = Field(description="rebuild the pages in results/")
     compare: CliSubCommand[CompareCommand] = Field(
-        description="write a page that compares two runs: before, then after"
+        description="compare the pass rates of two runs: before, then after"
     )
     export: CliSubCommand[ExportCommand] = Field(
         description="write runs as tables to results/export/: CSV and JSON Lines"

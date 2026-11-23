@@ -11,6 +11,7 @@ from pathlib import Path
 from convy import (
     Bench,
     Claim,
+    Index,
     Limits,
     Models,
     Reason,
@@ -53,11 +54,17 @@ results = Path("results")
 journal = RunJournal(results, spec)
 journal.create()
 outcomes = asyncio.run(journal.play(bench, Echo(), journal))
-(run,) = Runs(results)
-Path("results/echo/first/report.html").write_text(Report(run).html(), encoding="utf-8")
+runs = tuple(Runs(results))
+for run in runs:
+    (results / run.path / "report.html").write_text(Report(run).html(), encoding="utf-8")
+(results / "index.html").write_text(Index(runs).html(), encoding="utf-8")
 ```
 
-To read runs as tables for pandas or polars, see [Results as data](results.md).
+Open `results/index.html` for the [runs workspace](report.md#runs-workspace). Code that used
+`Comparison(before, after).html()` to write a two-run page can render `Index((before, after)).html()`
+there and link to the same individual reports. For the CLI’s verdict in Python,
+`Comparison(before, after).check()` returns the text and a boolean indicating whether the CI gate
+fails. For flat tables to use with pandas or polars, see [Results as data](results.md).
 
 `Bench` also takes `patience=Patience(seconds=300)`: how long each participant waits for a busy
 service, 120 seconds by default. The run records the installed convy version, as `convy run` does.
