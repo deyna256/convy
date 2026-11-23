@@ -116,8 +116,10 @@ new ones: close it and export again. An agent named `export` shares the folder w
 
 ## How convy makes its numbers
 
-The report's rules — what counts in the pass rate, which scenario is stable, what each mean is over
-— are in [The report](report.md#tiles). Follow them and your numbers are convy's.
+The report's rules — what counts in the pass rate and which scenario is stable — are in
+[The report](report.md#tiles). Its [measured population](report.md#measured-population) defines
+means and medians per answer and per task, including missing token measurements. Follow these
+rules and your numbers are convy's.
 
 ## A full example
 

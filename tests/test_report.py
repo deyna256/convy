@@ -360,7 +360,7 @@ def test_a_turn_shows_its_thinking_tokens_when_reported(tmp_path):
     page = Report(only(tmp_path)).page()
     (attempt,) = page.scenarios[0].attempts
     assert [t.thinking_tokens for t in attempt.turns] == [20, 0, None, None]
-    assert (attempt.output, attempt.thinking_tokens) == (50, 20)  # thinking is part of output
+    assert (attempt.output, attempt.thinking_tokens) == (None, 20)  # output is incomplete
 
 
 def test_cache_tokens_add_up_and_their_share_skips_turns_without_them(tmp_path):
@@ -1365,7 +1365,10 @@ def test_a_cut_takes_out_the_scenario_of_an_answer_past_the_far_out_fence(tmp_pa
     assert views.cut.out == ("c",)
     assert views.cut.seconds.answers == 20
     assert views.cut.seconds.spread is not None and views.cut.seconds.spread.max == 2
-    assert views.cut.scenarios[2] == ScenarioNumbers(None, None)
+    assert views.cut.scenarios[2] == ScenarioNumbers(None, None, None, None, 0)
+    assert (views.all.attempts, views.cut.attempts) == (3, 2)
+    assert views.cut.attempt_seconds == Spread(2, 10, 15, 19, 20, 15)
+    assert views.cut.attempt_tokens == Spread(2, 200, 200, 200, 200, 200)
     # c leaves every other number too: its call and its larger answers
     assert [c.name for c in views.all.time] == ["slow"]
     assert views.cut.time == ()
@@ -1614,3 +1617,113 @@ def test_setup_changes_preserve_precision_that_can_change_acceptance(tmp_path, s
     page = Comparison(*both(tmp_path)).page()
     assert expected in page.differences
     assert page.quality_reason
+
+
+def test_run_and_scenario_medians_use_answers_and_task_totals_as_distinct_samples(tmp_path):
+    played = (
+        answers("a", 1, 1, tokens=1),
+        answers("a", 1, attempt=2, tokens=1),
+        answers("a", 10, attempt=3, tokens=50),
+        answers("b", 2, 2, tokens=5),
+    )
+    journal(tmp_path, "bot", "1", 2, *played, k=3)
+    view = Report(only(tmp_path)).page().views.all
+    first, second = view.scenarios
+    assert view.attempts == 4  # the two unrecorded attempts do not enter the sample
+    assert view.seconds.spread is not None and view.tokens.spread is not None
+    assert (view.seconds.spread.n, view.seconds.spread.mean, view.seconds.spread.p50) == (
+        6,
+        17 / 6,
+        1.5,
+    )
+    assert (view.tokens.spread.n, view.tokens.spread.mean, view.tokens.spread.p50) == (6, 21, 6)
+    assert view.attempt_seconds is not None and view.attempt_tokens is not None
+    assert (view.attempt_seconds.n, view.attempt_seconds.mean, view.attempt_seconds.p50) == (
+        4,
+        17 / 4,
+        3,
+    )
+    assert (view.attempt_tokens.n, view.attempt_tokens.mean, view.attempt_tokens.p50) == (
+        4,
+        31.5,
+        12,
+    )
+    assert first.attempts == 3
+    assert first.seconds is not None and first.tokens is not None
+    assert (first.seconds.mean, first.seconds.p50) == (13 / 4, 1)
+    assert (first.tokens.mean, first.tokens.p50) == (26.5, 2)
+    assert first.attempt_seconds is not None and first.attempt_tokens is not None
+    assert (first.attempt_seconds.mean, first.attempt_seconds.p50) == (13 / 3, 2)
+    assert (first.attempt_tokens.mean, first.attempt_tokens.p50) == (106 / 3, 4)
+    assert second.attempts == 1
+    assert (second.attempt_seconds, second.attempt_tokens) == (single(4), single(20))
+
+
+def test_partial_token_tasks_are_unknown_but_known_answers_and_zero_tasks_still_count(tmp_path):
+    journal(
+        tmp_path,
+        "bot",
+        "1",
+        1,
+        talk("a", Usage(20, 10), NoUsage()),
+        talk("a", Usage(0, 0), attempt=2),
+        started=at(5),
+        k=2,
+    )
+    before = only(tmp_path)
+    page = Report(before).page()
+    partial, zero = page.scenarios[0].attempts
+    assert (partial.input, partial.output, partial.tokens) == (None, None, None)
+    assert (zero.input, zero.output, zero.tokens) == (0, 0, 0)
+    view = page.views.all
+    assert (view.attempts, view.seconds.answers, view.tokens.answers) == (2, 3, 2)
+    assert view.tokens.spread == Spread(2, 0, 15, 27, 30, 15)
+    assert view.attempt_tokens == single(0)
+    assert page.scenarios[0].tokens == page.metrics.tokens == single(0)
+    assert page.scenarios[0].parts == Parts(None, 0, 0, None)
+    assert view.scenarios[0].attempt_tokens == single(0)
+    journal(
+        tmp_path,
+        "bot",
+        "2",
+        1,
+        talk("a", Usage(999, 0), NoUsage()),
+        talk("a", Usage(10, 0), attempt=2),
+        started=at(6),
+        k=2,
+    )
+    compared = Comparison(*both(tmp_path)).page()
+    assert (compared.was.tokens, compared.now.tokens) == (single(0), single(10))
+    assert compared.deltas.tokens.mean.value == 10
+
+
+def test_resource_samples_include_recorded_errors_without_inventing_empty_task_measurements(
+    tmp_path,
+):
+    failure = Outcome(
+        "a",
+        1,
+        Transcript((Turn(Message("hi"), Answer("error"), 4),)),
+        Failed("agent failed"),
+        "agent_failure",
+    )
+    unjudged = Outcome(
+        "b",
+        1,
+        Transcript((Turn(Message("hi"), Answer("hello", Usage(10, 5)), 2),)),
+        NoVerdict("judge failed"),
+        "model_failure",
+    )
+    empty = Outcome("b", 2, Transcript(), NoVerdict("busy"), "agent_busy")
+    written = journal(tmp_path, "bot", "1", 2, failure, unjudged, empty, k=3)
+    written.write(Interrupted(at(5)))
+    page = Report(only(tmp_path)).page()
+    view = page.views.all
+    assert (view.attempts, view.seconds.answers, view.tokens.answers) == (3, 2, 1)
+    assert view.attempt_seconds == Spread(2, 2, 3, 3.8, 4, 3)
+    assert view.attempt_tokens == single(15)
+    by_id = dict(zip((s.id for s in page.scenarios), view.scenarios, strict=True))
+    assert by_id["a"].attempts == 1
+    assert (by_id["a"].attempt_seconds, by_id["a"].attempt_tokens) == (single(4), None)
+    assert by_id["b"].attempts == 2
+    assert (by_id["b"].attempt_seconds, by_id["b"].attempt_tokens) == (single(2), single(15))

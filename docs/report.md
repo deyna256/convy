@@ -24,10 +24,40 @@ at the foot of the page.
 - **Flaky scenarios**: how many have passed and failed counted attempts.
 - **Errors**: of the agent, of an agent's service that stayed busy, and of convy's models, with
   their kinds (`1 agent failure · 2 model failures`), or `none failed`.
-- **Time per answer**: the mean over the answers kept, how many, and how many scenarios were cut.
-  Only the agent's own time counts, not the simulated user's or the judge's.
-- **Tokens per answer**: the same for an answer's input and output together, over the answers
-  that report them (`mean of the 40 of 44 answers that report tokens`).
+- **Time**: mean and median, both per answer and per task attempt, with the number measured out of
+  the number kept. Only recorded answer time counts, not the simulated user's or the judge's.
+- **Tokens**: the same for input and output tokens together. Each unit has its own coverage:
+  an answer can report tokens even when another answer of its task does not.
+
+## Measured population
+
+A task attempt is one recorded play of a scenario, which can contain several answers. For task
+metrics, convy first adds the answers within each attempt, then calculates the mean and median
+of those totals. It does not add answer medians or average scenario medians. At run level every
+measured answer or attempt counts once, so longer dialogues contribute more answers but still
+one task each.
+
+The mean is the sum divided by the number measured. The median describes the middle of the sample:
+for answer times of 1, 1 and 10 seconds, the mean is 4 seconds and the median is 1 second. With an
+even number of measurements, the median is the mean of the two middle values; with one, both
+statistics equal that value.
+
+Resource statistics include recorded attempts regardless of whether they passed, failed or have
+no judge verdict. Attempts still running or never recorded contribute nothing. A failed attempt's
+time describes only the answer durations recorded before it ended. Task time is their sum, not
+elapsed wall time: it excludes the simulated user, judge, waits between answers, and opening or
+closing the conversation.
+
+An attempt's token total is measured only when it has at least one answer and every recorded
+answer reports its input and output tokens. A partial total is unavailable, rather than a smaller
+complete total. Reported zero tokens count as a measurement. An attempt with no recorded answers
+has no measured task time or token use. Coverage counts include such attempts in the denominator,
+and unavailable statistics display as a dash. The same token rule applies to the attempt detail
+and comparison pages; the individual answers keep their available measurements.
+
+Both units use the same [outlier selection](#cutting-outliers). The run tiles and scenario rows
+show measured counts against the answers or attempts kept; excluded scenarios are identified
+separately. The population for resource metrics is independent of the pass-rate population.
 
 ## Cutting outliers
 
@@ -78,7 +108,7 @@ each count their own time, so their shares are of more than the answers' time.
 
 Both charts give a mean per answer, not the run's total: a total grows with the scenarios, the
 attempts and the turns, so two runs of different size could not be set side by side; a mean per
-answer can, and it matches the tiles. The shares are the same either way.
+answer can, and it matches the tiles' per-answer means. The shares are the same either way.
 
 Open a call name to see its slowest calls, five at first, each with its scenario, attempt and turn;
 click one to open that answer with the call unfolded.
@@ -90,7 +120,8 @@ percentiles, the most and the mean. **P50**, the median, is the value half the v
 under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** the sum over the
 count. Percentiles are linear between the sorted values, as numpy's default.
 
-The run's page shows means. The comparison has a switch in its header, **Show P50 · P90 · Max ·
+The run's tiles and scenario rows show mean and median together for answers and task attempts.
+The comparison has a switch in its header, **Show P50 · P90 · Max ·
 Mean**, P50 by default, that sets the one number per scenario or turn its charts and tables show;
 the address keeps it (`#stat=p90`).
 
@@ -103,8 +134,8 @@ Each scenario gets a row and a status:
 - **Passing**: every counted attempt passed.
 - **No verdict**: no attempt was counted: none was played yet, or each had no verdict.
 
-The row also shows the mean of its time and of its tokens per answer, over the answers the cut
-keeps, each with its Max under it.
+The row's Time and Tokens columns each show mean and median per answer and per task attempt,
+with coverage counts, over the [measured population](#measured-population) the cut keeps.
 **Attempts** has a square per attempt: ✓ passed, ✕ failed, – no verdict. Click one
 to open that attempt. A filter such as `refund-*` narrows the list.
 
@@ -154,7 +185,8 @@ Name two runs, by id or by their random part:
 uv run convy compare e46f 4693       # before, then after
 ```
 
-The page `results/compare/e46f-vs-4693.html` shows the same tiles with the old value and the change.
+The page `results/compare/e46f-vs-4693.html` shows quality and resource tiles with the old value and
+the change. Its resource units are time per answer and tokens per attempt.
 Pass-rate changes are in **percentage points**, not relative percent.
 [See a real one.](https://deyna256.github.io/convy/compare.html)
 

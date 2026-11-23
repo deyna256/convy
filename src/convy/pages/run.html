@@ -20,6 +20,14 @@
 .meter { display: flex; gap: 2px; }
 .meter > span { min-width: 3px; border-radius: 2px; }
 .tiles.five .tile .v .frac { font-size: .6em; font-weight: 650; color: var(--muted); margin-left: 14px; letter-spacing: -.01em; }
+.measurement + .measurement { border-top: 1px solid var(--rule); padding-top: 8px; margin-top: 8px; }
+.measurement .unit { display: block; color: var(--muted); font-size: 12px; font-weight: 500; }
+.statistics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; margin: 3px 0; font-variant-numeric: tabular-nums; }
+.statistics dt { font-size: 11.5px; font-weight: 400; color: var(--muted); }
+.statistics dd { margin: 0; font-weight: 650; white-space: nowrap; }
+.tile .statistics dd { font-size: clamp(20px, 2vw, 28px); line-height: 1.2; }
+.measurement .coverage { display: block; font-size: 11.5px; font-weight: 400; color: var(--muted); }
+@media (max-width: 640px) { .tiles.five > .resource { grid-column: 1 / -1; } }
 
 /* the scenarios by pass rate on one line, and where the tokens and time go */
 .rates .meter { height: 24px; margin: 4px 0 6px; }
@@ -65,6 +73,7 @@ const claimMarks = (attempts, i) => attempts.map(a => {
 <div class="page">
   <header id="head"></header>
   <section id="tiles" aria-label="The run in numbers"></section>
+  <p class="hint">Resources include recorded attempts with failed or missing verdicts; attempts still running are not recorded. Task time sums recorded answer durations, not end-to-end time. Task tokens require every answer's usage. Attempts without answers are unmeasured.</p>
   <section id="charts" class="charts" aria-label="Tokens by part and time by call"></section>
   <div class="tools" id="scenarios-head"><h2>Scenarios</h2><input type="search" id="filter" placeholder="Filter, e.g. refund-*" aria-label="Filter scenarios by id; * matches any text"></div>
   <div class="panel scroll" id="table"></div>
@@ -78,9 +87,8 @@ const claimMarks = (attempts, i) => attempts.map(a => {
 const DATA = __DATA__;
 const RUN = DATA.run, M = DATA.metrics;
 
-// The numbers are means of the answers kept: every answer, or those of the scenarios with no answer
-// far out in time or tokens. The address keeps the cut as cut=on; keeping every answer is not
-// written.
+// Resource numbers keep every recorded answer and attempt, or only scenarios without an answer
+// far out in time or tokens. The address keeps the cut as cut=on; keeping every answer is not written.
 const CUTS = {all: "Keep", cut: "Cut"};
 const MEANS = {all: "Every scenario counts.", cut: "A scenario with an answer far slower or larger than the rest is left out."};
 let trim = readAddress().get("cut") ? "cut" : "all";
@@ -114,24 +122,35 @@ function header() {
     el("div", {className: "controls"}, cutSwitch(), themeButton()));
 }
 
-// The tiles: the pass rate, the flaky scenarios, the errors, and the mean time and tokens per
-// answer.
+function measurement(label, spread, total, noun, unit) {
+  return el("div", {className: "measurement"}, el("span", {className: "unit"}, label),
+    el("dl", {className: "statistics"},
+      el("div", {}, el("dt", {}, "Mean"), el("dd", {}, unit(spread?.mean))),
+      el("div", {}, el("dt", {}, "Median"), el("dd", {}, unit(spread?.p50)))),
+    el("span", {className: "coverage"}, `${spread?.n ?? 0} of ${plural(total, noun)} measured`));
+}
+
+// Resource tiles distinguish answer-level statistics from statistics of whole attempt totals.
 function tiles() {
   // Every tile alike: its label, its number, then what it counts; the numbers line up.
   const top = (label, value) => [el("span", {className: "l"}, label), el("span", {className: "v"}, value)];
   const tile = (label, value, ...rest) => el("div", {className: "tile"}, top(label, value), el("div", {className: "foot"}, rest));
   const errors = [[M.agent_errors, "agent failure"], [M.busy, "busy agent"], [M.model_errors, "model failure"]].filter(([n]) => n).map(([n, w]) => plural(n, w)).join(" · ");
   const V = view(), answers = V.seconds.answers;
-  const cut = V.out.length ? ` · ${plural(V.out.length, "scenario")} cut` : "";
-  const measured = (label, m, unit, note) => tile(label, unit(m.spread?.mean), el("span", {className: "s"}, `mean of ${note}${cut}`));
+  const cut = V.out.length ? `${plural(V.out.length, "scenario")} cut` : "";
+  const measured = (label, answer, attempt, unit) => el("div", {className: "tile resource"},
+    el("span", {className: "l"}, label),
+    measurement("Per answer", answer.spread, answers, "answer", unit),
+    measurement("Per task attempt", attempt, V.attempts, "attempt", unit),
+    cut && el("span", {className: "s"}, cut));
   return el("div", {className: "tiles five"},
     el("div", {className: "tile rates"}, top("Pass rate", [pct(M.rate), el("span", {className: "frac"}, `${M.passed} / ${M.judged}`)]),
       el("span", {className: "s"}, `attempts passed${M.open ? ` · ${M.open} without a verdict` : ""}`), el("div", {className: "foot"}, rates())),
     tile("Flaky scenarios", String(M.flaky),
       el("span", {className: "s"}, RUN.k > 1 ? "with passed and failed attempts" : "one attempt each: none can be flaky")),
     tile("Errors", String(M.errors), el("span", {className: "s"}, errors || "none failed")),
-    measured("Time per answer", V.seconds, secs, plural(answers, "answer")),
-    measured("Tokens per answer", V.tokens, count, V.tokens.answers === answers ? plural(answers, "answer") : `the ${V.tokens.answers} of ${answers} answers that report tokens`));
+    measured("Time", V.seconds, V.attempt_seconds, secs),
+    measured("Tokens", V.tokens, V.attempt_tokens, count));
 }
 
 // The scenarios by pass rate on one line, from 0: a part per rate as long as how many scenarios
@@ -202,17 +221,19 @@ function table() {
   const V = view();
   const rows = DATA.scenarios.map((s, i) => [s, V.scenarios[i]]).filter(([s]) => keep(s.id) && !V.out.includes(s.id)).map(([s, n]) => {
     const open = el("button", {className: "open", type: "button", "aria-label": `Open ${s.id}`}, s.id);
-    const under = (d, unit) => d == null ? "" : `max ${unit(d.max)}`;
+    const resource = (answer, attempt, unit) => el("td", {className: "n metric"},
+      measurement("Per answer", answer, n.seconds?.n ?? 0, "answer", unit),
+      measurement("Per task attempt", attempt, n.attempts, "attempt", unit));
     const row = el("tr", {className: "row"},
       el("td", {}, open), el("td", {}, badge(s.result)),
       el("td", {}, squares(attemptMarks(s.attempts), "Attempts", null, k => show(s.id, k))),
-      el("td", {className: "n metric"}, secs(n.seconds?.mean), el("small", {}, under(n.seconds, secs))),
-      el("td", {className: "n metric"}, count(n.tokens?.mean), el("small", {}, n.tokens == null ? "not reported" : under(n.tokens, count))));
+      resource(n.seconds, n.attempt_seconds, secs),
+      resource(n.tokens, n.attempt_tokens, count));
     row.addEventListener("click", () => show(s.id, 1));
     return row;
   });
   return el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, "Time per answer · mean"), el("th", {className: "n"}, "Tokens per answer · mean"))),
+    el("thead", {}, el("tr", {}, el("th", {}, "Scenario"), el("th", {}, "Result"), el("th", {}, "Attempts"), el("th", {className: "n"}, "Time"), el("th", {className: "n"}, "Tokens"))),
     el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", {className: "empty", colSpan: 5}, `No scenario matches ${mask}`))));
 }
 
