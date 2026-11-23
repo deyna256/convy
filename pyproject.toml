@@ -31,7 +31,7 @@ dependencies = [
     "msgspec>=0.22.0",
     "pydantic-settings>=2.15.0",
     # Alpha: pinned below the next minor version, see docs/decisions/0004-dependencies.md.
-    "yamlrocks>=0.6.1,<0.7",
+    "yamlrocks>=0.6.1,<0.8",
 ]
 
 [project.scripts]
@@ -64,6 +64,7 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 timeout = 30
 

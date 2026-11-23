@@ -1,7 +1,7 @@
 """Simple working stand-ins for convy's interfaces, for tests: yours and convy's own."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncGenerator, Sequence
 from contextlib import asynccontextmanager
 
 from msgspec import Struct
@@ -33,7 +33,7 @@ class FakeAgent:
         self.open = 0
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         self.opened += 1
         self.open += 1
         self.peak = max(self.peak, self.open)
@@ -68,7 +68,7 @@ class Echo(Struct, frozen=True):
     """An agent that answers with the user's message; its tokens are the message's length."""
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         yield EchoConversation()
 
 

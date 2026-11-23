@@ -3,7 +3,7 @@
 import json
 import re
 import ssl
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
@@ -66,7 +66,7 @@ class JsonEndpoint(Struct, frozen=True):
     transport: httpx2.AsyncBaseTransport | None = None
 
     @asynccontextmanager
-    async def connection(self) -> AsyncIterator["JsonConnection"]:
+    async def connection(self) -> AsyncGenerator["JsonConnection", None]:
         """One connection to the address, kept open for several requests."""
         try:
             verify = self.tls.context()
@@ -233,7 +233,7 @@ class JsonAgent(Struct, frozen=True):
                 )
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         async with self.endpoint.connection() as connection:
             yield JsonConversation(self, str(uuid4()), connection)
 

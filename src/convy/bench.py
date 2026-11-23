@@ -3,7 +3,7 @@
 import asyncio
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
 from importlib import metadata
@@ -234,7 +234,7 @@ class RunJournal(Struct, frozen=True):
         self.write(Running())
 
     @contextmanager
-    def held(self) -> Iterator[None]:
+    def held(self) -> Generator[None, None, None]:
         """Hold the run's folder for this process through `run.lock`, or raise `RunInUse`; a
         file system without locks holds nothing. The system lets the lock go when the process
         ends, however it ends, so the folder of a run whose process died can be held again."""

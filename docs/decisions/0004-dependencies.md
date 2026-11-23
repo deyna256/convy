@@ -16,8 +16,9 @@ settings from the environment and the command line. Each dependency is a long-te
   `msgspec.convert`, and runs with `msgspec.json`. Tagged unions let `Usage | NoUsage` and
   `Verdict | Failed | NoVerdict` be written and read back without type checks in convy's code.
 - **[yamlrocks](https://pypi.org/project/yamlrocks/)** for YAML. It implements YAML 1.2 (no `no` →
-  `False` surprise), is safe by default and passes the official YAML test suite. It is alpha, so it is
-  pinned to `>=0.6,<0.7` and called in one place.
+  `False` surprise), is safe by default and passes the official YAML test suite. Only the scenario
+  loader calls it. While it is alpha, [the dependency range](../../pyproject.toml) excludes untested
+  minor releases.
 - **[pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/)** for the
   environment, `.env` and the command line. `SecretStr` keeps keys out of output.
 

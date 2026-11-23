@@ -3,7 +3,7 @@ conversation, to answer each turn and to close it, and the conversations it hold
 
 import asyncio
 import math
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from typing import Literal, Protocol
@@ -150,7 +150,7 @@ class TimeLimited(Struct, frozen=True):
     seconds: float
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         limit = asyncio.timeout(self.seconds)
         try:
             async with limit, self.agent.conversation() as conversation:
@@ -176,7 +176,7 @@ class QueuedAgent(Struct, frozen=True):
     places: Places
 
     @asynccontextmanager
-    async def conversation(self) -> AsyncIterator[Conversation]:
+    async def conversation(self) -> AsyncGenerator[Conversation, None]:
         async with self.places, AsyncExitStack() as opened:
             try:
                 conversation = await opened.enter_async_context(self.agent.conversation())
