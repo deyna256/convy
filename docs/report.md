@@ -9,9 +9,8 @@ offline, with system, light and dark themes.
 The page reads from the top down: quality and resource tiles, the tokens by part and the time
 by call, then the **Scenarios**, the failing first.
 
-Each tile has its label, its number and what the number counts. The run's page shows the run
-alone; how it changed since another run is on a [comparison](#compare-two-runs), whose command is
-at the foot of the page.
+Each tile gives a value and what it counts. Open the [runs workspace](#runs-workspace) to see
+those measurements across runs.
 
 - **Pass rate**: the share of counted attempts that passed, and beside it how many of how many
   (`67% 8 / 12`). An attempt counts when the agent failed (it did not pass), or when it has a
@@ -54,10 +53,10 @@ An attempt's token total is measured only when it has at least one answer and ev
 answer reports its input and output tokens. A partial total is unavailable, rather than a smaller
 complete total. Reported zero tokens count as a measurement. An attempt with no recorded answers
 has no measured task time or token use. Coverage counts include such attempts in the denominator,
-and unavailable statistics display as a dash. The same token rule applies to the attempt detail
-and comparison pages; the individual answers keep their available measurements.
+and unavailable statistics display as a dash. The attempt detail and the runs workspace use the same
+token rule. Individual answers keep their available measurements.
 
-All resource metrics use the same [outlier selection](#cutting-outliers). The run tiles and
+Within a run's report all resource metrics use the same [outlier selection](#cutting-outliers). The run tiles and
 scenario rows show measured counts against the answers or attempts kept; excluded scenarios are
 identified separately. The population for resource metrics is independent of the pass-rate population.
 
@@ -135,7 +134,7 @@ answer can, and it matches the tiles' per-answer means. The shares are the same 
 Open a call name to see its slowest calls, five at first, each with its scenario, attempt and turn;
 click one to open that answer with the call unfolded.
 
-## Percentiles and the switch
+## Percentiles
 
 Every time and token number is a spread: how many values, the least, the 50th and 90th
 percentiles, the most and the mean. **P50**, the median, is the value half the values are at or
@@ -143,9 +142,6 @@ under; **P90** the value 9 in 10 are at or under; **Max** the largest; **Mean** 
 count. Percentiles are linear between the sorted values, as numpy's default.
 
 The run's tiles and scenario rows show mean and median together for answers and task attempts.
-The comparison has a switch in its header, **Show P50 · P90 · Max ·
-Mean**, P50 by default, that sets the one number per scenario or turn its charts and tables show;
-the address keeps it (`#stat=p90`).
 
 ## Scenarios
 
@@ -187,74 +183,58 @@ when the [tool count](#tool-invocations) is unknown.
 If the judge says how sure it is, each decision shows that too, or "sure: not given" where it
 did not say. The address keeps the open scenario, so you can send a link to it.
 
-## The index
+## Runs workspace
 
-`results/index.html` lists the runs by agent, newest first, the newest five (**Show N older runs**
-shows the rest). The **setup** is what a run is measured with: the user's model, the judge,
-convy's version, the trust, the claim threshold and the set of scenarios; not the agent's version
-or the number of attempts. Each agent's header names its newest run's user and judge, its scenarios × attempts, and
-its trust when there is one. Beside it a strip shows the agent's newest 40 runs, newest left: a bar
-per run as high as its pass rate and coloured by its result, and a line where the setup changed.
+Open `results/index.html` to compare all readable runs in one offline page. Run `convy report`
+to rebuild it and the individual reports from the saved results.
 
-A run's row gives its pass rate with how many attempts passed, its version and when it started,
-and how many errors it had if any. Under the run where the setup changed, a line says what changed
-(`Changed: judge: a → b`, `scenarios: +1 −2`). Tick two runs to get the `convy compare` command for
-them. Time and tokens are on each run's page.
+- **Runs table.** Each row identifies the agent, version and run, shows its status, and links to
+  its report. Recorded attempts out of planned attempts show progress. Passing attempts out of
+  counted attempts give the run's original pass rate. For example, a run with 8 passes, 2 agent
+  failures and 2 attempts without a verdict has 12 recorded attempts and a pass rate of 8/10.
+- **Resources.** Compare mean and median time or tokens per task or per answer, and tool calls per
+  task. Coverage gives the number measured out of the recorded answers or tasks. A reported zero
+  contributes to the statistic. Missing measurements leave a gap. The workspace includes outliers
+  and uses the same [measurement rules](#measured-population) as the run report.
+- **Quality versus resources.** The scatter plot puts pass rate and a resource measurement on
+  common axes. Choose time or tokens for the resource axis. A point needs both coordinates.
+  The table also shows runs with only one measurement.
+- **Scenario matrix.** Read across a scenario to see how often it passed in each run. Follow a
+  cell to its scenario in the run report for the attempts, claim decisions and dialogues.
+  Revision numbers identify different snapshots under the same scenario ID. An absent scenario
+  and one with no counted attempts have separate labels.
+
+Search by agent, version or run ID, or use **Choose runs** to include individual runs. The
+table, plot and matrix use that selection, even when you change the table's sort order.
+**Statistic** switches between median and mean. **Time and tokens per** switches between task
+and answer. Tool calls always use the task as their unit.
+
+Choose an optional reference to see how many percentage points a run's pass rate differs from the
+reference. A change from 60% to 75% is +15 points. Filtering out the reference hides differences
+until it is in scope again.
+
+A whole-run difference needs matching scenario snapshots and recorded evaluation settings. These
+include the simulated user and judge, the fingerprint of `models.py`, convy version, trust, claim
+threshold, attempts per scenario, turn timeout and initial participant limits. Both runs must be
+finished and readable with every planned attempt recorded and counted. Where those conditions
+differ, use each run's original rate, counts and linked report to inspect the results. Different
+agent builds can be compared with the same evaluation setup.
 
 ## Compare two runs
 
-Name two runs, by id or by their random part:
+To check two runs from the terminal, name the baseline first, then the candidate. A full run ID or
+its unique random suffix identifies each run.
 
 ```sh
-uv run convy compare e46f 4693       # before, then after
+uv run convy compare e46f 4693
+uv run convy compare e46f 4693 --fail-on-regression
 ```
 
-The page `results/compare/e46f-vs-4693.html` shows quality and resource tiles with the old value and
-the change. Its resource units are time per answer and tokens per attempt.
-Pass-rate changes are in **percentage points**, not relative percent.
-[See a real one.](https://deyna256.github.io/convy/compare.html)
+Both forms print the pass-rate verdict and any scenarios with lower observed rates, or the reason
+a verdict is unavailable. `--fail-on-regression` also signals the outcome through the exit code.
 
-Under Tokens per attempt, the share of input read from the cache shows how it changed, such as
-`from cache 83% → 20%`: red when it fell, green when it rose, the change in percentage points when
-you point at it. It says `not reported` when only one of the runs reports it, and is not there
-when neither does.
-
-The Time per answer and Tokens per attempt tiles show the after run's P50, P90, Max and Mean, each
-with its change in seconds or tokens, and the before run's four on one line. A change under 5% of
-the old value, as the page rounds it, is grey. A change of Max is grey with `~`: one answer
-moves it. An unchanged Max shows `=`.
-
-Under the tiles, two panels show how each compared scenario changed: a bar from 0, its length the
-change of the chosen statistic of the scenario's time per answer or tokens per attempt as a
-percent of the old one, on a scale from −100% to +100% (a larger change is cut at the edge, its
-text keeps the number, such as `+59% · 1.9 s → 3.0 s`). Right and red is worse, left and green is
-better; grey under 5%, as on the tiles. A scenario whose statistic was 0 before has no percent for
-it. Each panel shows ten rows, then **Show all N**.
-
-**Tokens by turn** shows both runs side by side on one scale, the turns lined up, and **Tokens by
-part** two thin bars per compared scenario, before and after, as long as the chosen statistic of
-its tokens per attempt (`1,018 → 1,522`), the parts keeping their shares of the mean; under it,
-the share of the input read from the cache (`78% → 21%`).
-
-- Green means better, red means worse.
-- Grey with `~` means the pass rate's change may be chance. convy looks at the scenarios both
-  runs played unchanged and asks how often the same agent would give a result this unlikely by
-  chance alone. At 5% or more, the change is grey. Each scenario counts by its attempts: a fall
-  from 20 of 20 to 10 of 20 weighs more than a fall from 1 of 1 to 0 of 1. With few scenarios
-  or attempts, even a large change can be grey. Scenarios that got better and scenarios that got
-  worse weigh against each other. The tile is also grey when these scenarios and the whole pass
-  rate point different ways.
-
-Scenarios are grouped as **Worse**, **Better**, **Same** and **Not compared**; each row shows the
-squares of its attempts before and after and how many more or fewer passed. A scenario is not
-compared if only one run played it, it was edited between the runs, or one run has no verdict for
-it. A scenario's window shows both dialogues side by side.
-
-Each run is read with its own `trust` and `claim_threshold`, shown in its setup. Changing a claim's
-required flag changes the scenario, so that scenario is not compared. If either scoring setting
-differs, the page cannot establish a quality improvement or regression, and
-[`--fail-on-regression`](runs.md#fail-ci-when-the-pass-rate-regresses) exits with 3. Time and token
-measurements remain available.
-
-The runs may be of different agents. The page warns when the user's or the judge's model, or the
-convy version, differs.
+The CLI uses an exact two-sided test on the scenarios that both runs played unchanged and
+counted. A scenario with more attempts carries more evidence. A regression requires a lower
+overall pass rate and evidence of a decline at the 5% significance level. With few attempts,
+even a large difference can be inconclusive. See
+[exit codes and CI usage](runs.md#fail-ci-when-the-pass-rate-regresses).

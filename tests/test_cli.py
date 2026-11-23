@@ -409,15 +409,14 @@ def test_an_unknown_run_is_not_resumed(project: Path, capsys):
     assert capsys.readouterr().err.startswith("error: no run 'nope' in ")
 
 
-def test_compare_writes_a_page_for_two_runs(project: Path, capsys):
+def test_compare_prints_the_two_runs_pass_rates(project: Path, capsys):
     (project / "models.py").write_text(FAKE_MODELS)
     assert convy("run", "echo", "echo", "--scenarios", "clarify-*") == 0
     before, after = (folder.name.rpartition("_")[2] for folder in runs(project, "echo"))
     capsys.readouterr()
     main(["compare", before, after])
-    page = project / "results" / "compare" / f"{before}-vs-{after}.html"
-    assert capsys.readouterr().out == f"comparison: {page.relative_to(project)}\n"
-    assert '"rows":[' in page.read_text(encoding="utf-8")
+    assert capsys.readouterr().out == "pass rate 100% → 100%: same\n"
+    assert not (project / "results" / "compare").exists()
 
 
 def test_compare_names_a_run_it_cannot_find(project: Path, capsys):
@@ -667,9 +666,8 @@ def test_compare_can_fail_ci_on_a_regression(
     capsys.readouterr()
     assert convy("compare", before, after, "--fail-on-regression") == code
     out = capsys.readouterr().out
-    assert "comparison:" in out
     assert expected in out
-    assert (project / "results" / "compare" / f"{before}-vs-{after}.html").is_file()
+    assert not (project / "results" / "compare").exists()
 
 
 def test_compare_still_succeeds_on_regression_without_the_flag(project: Path):

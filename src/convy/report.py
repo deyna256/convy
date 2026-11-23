@@ -8,6 +8,7 @@ from math import comb
 from pathlib import Path
 from statistics import mean, quantiles
 from typing import Literal
+from urllib.parse import quote
 
 import msgspec
 from msgspec import Struct
@@ -135,16 +136,7 @@ class Runs(Struct, frozen=True):
 # The pages' data. It is JSON for the browser, so a number nobody reported is None (null).
 
 type Result = Literal["failing", "flaky", "passing", "none"]
-type Tone = Literal["good", "bad", "same", "noise", "none"]
-type Group = Literal["worse", "better", "same", "apart"]
-type Change = Literal["unchanged", "worse", "better"]
-type Stat = Literal["p50", "p90", "max", "mean"]  # what a chart shows of a spread
-
 ORDER: dict[Result, int] = {"failing": 0, "flaky": 1, "none": 2, "passing": 3}
-GROUPS: dict[Group, int] = {"worse": 0, "better": 1, "same": 2, "apart": 3}
-SLIGHT = 5  # percent: a smaller change of a time or token statistic is drawn as the same
-TONES: dict[Group, Tone] = {"worse": "bad", "better": "good", "same": "same", "apart": "none"}
-STATS: tuple[Stat, ...] = ("p50", "p90", "max", "mean")  # the switch's order
 FAR = 3  # interquartile ranges past the upper quartile, on a log scale: Tukey's far-out fence
 
 
@@ -165,16 +157,6 @@ class Tally(Struct, frozen=True):
         return "failing" if self.held == 0 else "flaky"
 
 
-class Ranking(Struct, frozen=True):
-    """Ids by a number, the largest first and ties by id; ids without the number last, by id."""
-
-    numbers: tuple[tuple[str, float | None], ...]
-
-    def ids(self) -> tuple[str, ...]:
-        ranked = sorted(self.numbers, key=lambda pair: (pair[1] is None, -(pair[1] or 0), pair[0]))
-        return tuple(id for id, _ in ranked)
-
-
 class Spread(Struct, frozen=True):
     """How numbers spread: how many, the least, the 50th and 90th percentiles, the most and the
     mean."""
@@ -185,21 +167,6 @@ class Spread(Struct, frozen=True):
     p90: float
     max: float
     mean: float
-
-    def of(self, stat: Stat) -> float:
-        return getattr(self, stat)  # a Stat is a field's name
-
-
-class PerStat[T](Struct, frozen=True):
-    """One value per statistic the switch offers: an order, a change. Its fields are `STATS`."""
-
-    p50: T
-    p90: T
-    max: T
-    mean: T
-
-    def of(self, stat: Stat) -> T:
-        return getattr(self, stat)  # a Stat is a field's name
 
 
 class ClaimView(Struct, frozen=True):
@@ -321,11 +288,6 @@ class ScenarioView(Struct, frozen=True):
     shares: Shares | None
     attempts: tuple[AttemptView, ...]
 
-    def parted(self, stat: Stat) -> float | None:
-        """A statistic of the tokens per attempt when the parts are known, which orders
-        `by_parts`."""
-        return None if self.parts is None or self.tokens is None else self.tokens.of(stat)
-
 
 class Metrics(Struct, frozen=True):
     """The tiles of a run: the numbers behind them."""
@@ -345,25 +307,6 @@ class Metrics(Struct, frozen=True):
     errors: int
 
 
-class TurnStats(Struct, frozen=True):
-    """The answers at one turn number of a run's dialogues, from 1, and their tokens."""
-
-    turn: int
-    answers: int  # every answer at this turn
-    scenarios: int  # how many scenarios they come from
-    input: Spread | None  # over the answers that report tokens
-    output: Spread | None
-    cached: Spread | None  # their cache reads, when every one of them reports its own
-    fresh: Spread | None  # and then their input not read from the cache
-    share: float | None  # the share of their input read from the cache, when every one reports it
-
-
-class TurnPair(Struct, frozen=True):
-    turn: int
-    before: TurnStats | None  # None: no answer of the run at this turn reports tokens
-    after: TurnStats | None
-
-
 class CallPlace(Struct, frozen=True):
     """Where one call was made: its scenario, attempt, turn and step, the last two from 0."""
 
@@ -373,18 +316,6 @@ class CallPlace(Struct, frozen=True):
     step: int
     seconds: float
     tokens: int | None
-
-
-class Delta(Struct, frozen=True):
-    """A change from before to after and how to read it: in the metric's own unit, or, for a
-    scenario's time and tokens on the comparison, a percent of the old value."""
-
-    value: float | None
-    tone: Tone
-
-
-NO_CHANGE = Delta(None, "none")
-NO_CHANGES = PerStat(NO_CHANGE, NO_CHANGE, NO_CHANGE, NO_CHANGE)
 
 
 class Answered(Struct, frozen=True):
@@ -477,15 +408,6 @@ class RunHead(Struct, frozen=True):
     confident: bool  # some decision of the run says how sure the judge was
 
 
-class Deltas(Struct, frozen=True):
-    rate: Delta  # percentage points
-    stable: Delta
-    seconds: PerStat[Delta]  # each statistic's change in seconds; Max's is noise
-    tokens: PerStat[Delta]  # and in tokens
-    cached: Delta  # percentage points
-    errors: Delta
-
-
 class RunPage(Struct, frozen=True):
     run: RunHead
     metrics: Metrics
@@ -494,63 +416,32 @@ class RunPage(Struct, frozen=True):
     views: Views
 
 
-class ClaimChange(Struct, frozen=True):
-    text: str
-    required: bool
-    before: Result
-    after: Result
-    change: Change
+class ScenarioCell(Struct, frozen=True):
+    """One run's recorded results for a numbered revision of a scenario."""
 
-
-class CompareRow(Struct, frozen=True):
     id: str
-    group: Group
-    why: str  # why a scenario is not compared, or ""
-    before: ScenarioView | None
-    after: ScenarioView | None
-    claims: tuple[ClaimChange, ...]
-    held: Delta  # the change in passed attempts, in the tone of the row's group
-    seconds: PerStat[Delta]  # the change of each statistic of the time per answer, a percent
-    tokens: PerStat[Delta]  # and of the tokens per attempt
-
-
-class ComparePage(Struct, frozen=True):
-    before: RunHead
-    after: RunHead
-    was: Metrics
-    now: Metrics
-    deltas: Deltas
-    quality_reason: str  # why quality cannot be compared, or ""
-    differences: tuple[str, ...]  # the models and the convy that differ, as "judge: a → b"
-    rows: tuple[CompareRow, ...]  # worse, better, same, not compared; each by id
-    by_seconds: PerStat[tuple[str, ...]]  # compared ids with a change, the largest rise first
-    by_tokens: PerStat[tuple[str, ...]]
-    turns: tuple[TurnPair, ...]  # every turn number either run has tokens at
-    by_parts: PerStat[
-        tuple[str, ...]
-    ]  # compared ids with parts in both runs, the after's most first
+    revision: int
+    recorded: int
+    passed: int
+    judged: int
 
 
 class IndexRow(Struct, frozen=True):
     run: RunHead
-    rate: float | None
+    report: str
     passed: int
     judged: int
+    rate: float | None
     errors: int
-    result: Result
-    changes: tuple[str, ...]  # the setup changed since the agent's run before: `judge: a → b`
-    order: int  # the run's place among every run of the index, 0 the newest
-    report: str  # the run's report, relative to the index
-
-
-class AgentRuns(Struct, frozen=True):
-    agent: str
-    rows: tuple[IndexRow, ...]  # newest first
+    numbers: ScenarioNumbers
+    scenarios: tuple[ScenarioCell, ...]
+    setup: int  # position in the page's distinct evaluation setups
+    quality_ready: bool
 
 
 class IndexPage(Struct, frozen=True):
-    runs: int
-    agents: tuple[AgentRuns, ...]  # by name
+    rows: tuple[IndexRow, ...]  # newest first
+    setups: tuple[dict[str, str | float | int], ...]
 
 
 class Evidence(Struct, frozen=True):
@@ -744,35 +635,6 @@ class Summary(Struct, frozen=True):
             output=(produced - (thinking or 0)) / n,
             thinking=None if thinking is None else thinking / n,
         )
-
-    def turns(self, scenarios: Iterable[ScenarioView]) -> tuple[TurnStats, ...]:
-        """Each turn number of the dialogues, from 1, with the tokens of its answers; a turn none
-        of whose answers reports tokens is left out."""
-        at: dict[int, list[tuple[str, TurnView]]] = {}
-        for view in scenarios:
-            for attempt in view.attempts:
-                for number, turn in enumerate(attempt.turns, 1):
-                    at.setdefault(number, []).append((view.id, turn))
-        stats = []
-        for number, answers in sorted(at.items()):
-            spent = [turn for _, turn in answers if turn.tokens is not None]
-            reads = [turn.cache_read for turn in spent]
-            if spent:
-                stats.append(
-                    TurnStats(
-                        turn=number,
-                        answers=len(answers),
-                        scenarios=len({id for id, _ in answers}),
-                        input=self.spread(turn.input for turn in spent),
-                        output=self.spread(turn.output for turn in spent),
-                        cached=None if None in reads else self.spread(reads),
-                        fresh=None
-                        if None in reads
-                        else self.spread((t.input or 0) - (t.cache_read or 0) for t in spent),
-                        share=None if None in reads else self.share(spent),
-                    )
-                )
-        return tuple(stats)
 
     def results(self, scenarios: Iterable[ScenarioView]) -> tuple[Share, ...]:
         """The scenarios by pass rate, from 0; those without a verdict last."""
@@ -1174,328 +1036,130 @@ class Report(Struct, frozen=True):
         return Template("run.html").html(self.page())
 
 
-class Setups(Struct, frozen=True):
-    """Two runs' setups, before and after."""
-
-    was: RunSpec
-    now: RunSpec
-
-    def differences(self, *more: tuple[str, str, str]) -> tuple[str, ...]:
-        """What differs, as `judge: a → b`: the models and the convy that played them, a run that
-        does not say which convy shown as `unknown`; then whatever else of `more` differs."""
-        pairs = (
-            ("user", self.was.user, self.now.user),
-            ("judge", self.was.judge, self.now.judge),
-            ("convy", self.was.convy or "unknown", self.now.convy or "unknown"),
-            ("trust", self.was.trust, self.now.trust),
-            ("claim threshold", self.was.claim_threshold, self.now.claim_threshold),
-            *more,
-        )
-        return tuple(f"{name}: {a} → {b}" for name, a, b in pairs if a != b)
-
-
 class Comparison(Struct, frozen=True):
-    """Two runs side by side, `compare/<before>-vs-<after>.html`: what changed from `before` to
-    `after`, scenario by scenario."""
+    """The pass-rate regression check on two runs."""
 
     before: Run
     after: Run
 
-    def page(self) -> ComparePage:
-        was, now = Summary(self.before), Summary(self.after)
-        before, after = was.scenarios(), now.scenarios()
-        unchanged = self.unchanged()
-        rows = [self.row(id, before.get(id), after.get(id), unchanged) for id in {*before, *after}]
-        rows.sort(key=lambda row: (GROUPS[row.group], row.id))
-        compared = [
-            row
-            for row in rows
-            if row.group != "apart" or (self.quality_reason() and row.id in unchanged)
-        ]
-        old, new = was.metrics(before.values()), now.metrics(after.values())
-        return ComparePage(
-            before=was.head(),
-            after=now.head(),
-            was=old,
-            now=new,
-            deltas=self.deltas(old, new, self.evidence(before, after, unchanged).shows()),
-            quality_reason=self.quality_reason(),
-            differences=self.differences(),
-            rows=tuple(rows),
-            by_seconds=self.ranked((r.id, r.seconds) for r in compared),
-            by_tokens=self.ranked((r.id, r.tokens) for r in compared),
-            turns=self.pairs(was.turns(before.values()), now.turns(after.values())),
-            by_parts=self.parted(compared),
-        )
-
-    def pairs(
-        self, before: tuple[TurnStats, ...], after: tuple[TurnStats, ...]
-    ) -> tuple[TurnPair, ...]:
-        """Each turn number either run has tokens at, with both runs' answers at it."""
-        was, now = {t.turn: t for t in before}, {t.turn: t for t in after}
-        return tuple(TurnPair(turn, was.get(turn), now.get(turn)) for turn in sorted({*was, *now}))
-
-    def parted(self, rows: list[CompareRow]) -> PerStat[tuple[str, ...]]:
-        """The compared ids with parts in both runs, by each statistic of the after run's tokens,
-        the most first, then by id."""
-        return PerStat(
-            *(
-                Ranking(
-                    tuple(
-                        (r.id, tokens)
-                        for r in rows
-                        if r.before is not None
-                        and r.before.parted(stat) is not None
-                        and r.after is not None
-                        and (tokens := r.after.parted(stat)) is not None
-                    )
-                ).ids()
-                for stat in STATS
-            )
-        )
-
-    def ranked(self, changes: Iterable[tuple[str, PerStat[Delta]]]) -> PerStat[tuple[str, ...]]:
-        """The ids with a change of each statistic, the largest rise first, then by id."""
-        pairs = tuple(changes)
-        return PerStat(
-            *(
-                Ranking(
-                    tuple(
-                        (id, change.of(stat).value)
-                        for id, change in pairs
-                        if change.of(stat).value is not None
-                    )
-                ).ids()
-                for stat in STATS
-            )
-        )
-
-    def html(self) -> str:
-        return Template("compare.html").html(self.page())
-
-    def differences(self) -> tuple[str, ...]:
-        """What differs between the runs besides the agent, as `judge: a → b`: the models, the
-        convy that made them, and the agent's limits, since its load can change its answer time; a
-        run that does not say which convy made it shows `unknown`."""
-        was, now = self.before.spec.limits, self.after.spec.limits
-        return Setups(self.before.spec, self.after.spec).differences(
-            ("agent limit", f"{was.agent}", f"{now.agent}"),
-            ("agent limit per minute", f"{was.agent_per_minute:g}", f"{now.agent_per_minute:g}"),
-        )
-
-    def quality_reason(self) -> str:
-        """Different acceptance rules cannot support a quality comparison."""
+    def check(self) -> tuple[str, bool]:
+        """The terminal summary and whether the CI check fails."""
         was, now = self.before.spec, self.after.spec
         if was.trust != now.trust or was.claim_threshold != now.claim_threshold:
-            return "Quality not compared: different trust or claim threshold."
-        return ""
+            return "Quality not compared: different trust or claim threshold.", True
+        if not isinstance(self.before.status, Finished) or not isinstance(
+            self.after.status, Finished
+        ):
+            return "both runs must be finished to check for regression", True
 
-    def unchanged(self) -> set[str]:
-        """The scenarios both runs have, not edited between them."""
-        before = {scenario.id: scenario for scenario in self.before.spec.scenarios}
-        return {s.id for s in self.after.spec.scenarios if before.get(s.id) == s}
+        before, after = self.tallies(self.before), self.tallies(self.after)
+        common = sorted(before.keys() & after.keys(), key=lambda scenario: scenario.id)
+        pairs = {
+            s.id: (before[s], after[s]) for s in common if before[s].judged and after[s].judged
+        }
+        if not pairs:
+            return "no scenario can be compared", True
 
-    def row(
-        self, id: str, was: ScenarioView | None, now: ScenarioView | None, unchanged: set[str]
-    ) -> CompareRow:
-        if was is None or now is None:
-            why = "only in the after run" if was is None else "only in the before run"
-            return self.apart(id, why, was, now)
-        if id not in unchanged:
-            return self.apart(id, "edited between the runs", was, now)
-        if reason := self.quality_reason():
-            return CompareRow(
-                id,
-                "apart",
-                reason,
-                was,
-                now,
-                (),
-                NO_CHANGE,
-                self.changes(was.seconds, now.seconds),
-                self.changes(was.tokens, now.tokens),
+        # The displayed rates use all judged attempts. Only unchanged scenarios supply evidence.
+        old = sum(t.held for t in before.values()) / sum(t.judged for t in before.values())
+        new = sum(t.held for t in after.values()) / sum(t.judged for t in after.values())
+        points = round((new - old) * 100, 6)
+        verdict = "same"
+        if points:
+            direction = "better" if points > 0 else "worse"
+            verdict = (
+                direction
+                if Evidence(tuple(pairs.values())).shows() == direction
+                else "may be chance"
             )
-        if was.rate is None or now.rate is None:
-            return self.apart(id, "no verdict in one of the runs", was, now)
-        group: Group = (
-            "worse" if now.rate < was.rate else "better" if now.rate > was.rate else "same"
-        )
-        return CompareRow(
-            id,
-            group,
-            "",
-            was,
-            now,
-            self.claims(was, now),
-            Delta(now.held - was.held, TONES[group]),
-            self.changes(was.seconds, now.seconds),
-            self.changes(was.tokens, now.tokens),
-        )
+        text = f"pass rate {old:.0%} → {new:.0%}: {verdict}"
+        lower = [id for id, (a, b) in pairs.items() if b.held / b.judged < a.held / a.judged]
+        if lower:
+            text += f"\nlower pass rate: {', '.join(lower)}"
+        return text, verdict == "worse"
 
-    def apart(
-        self, id: str, why: str, was: ScenarioView | None, now: ScenarioView | None
-    ) -> CompareRow:
-        """A scenario not compared: why, and no change of any number."""
-        return CompareRow(id, "apart", why, was, now, (), NO_CHANGE, NO_CHANGES, NO_CHANGES)
-
-    def claims(self, was: ScenarioView, now: ScenarioView) -> tuple[ClaimChange, ...]:
-        changes = []
-        for old, new in zip(was.claims, now.claims, strict=True):
-            before = Tally(old.held, old.judged).rate()
-            after = Tally(new.held, new.judged).rate()
-            change: Change = "unchanged"
-            if before is not None and after is not None and before != after:
-                change = "better" if after > before else "worse"
-            changes.append(ClaimChange(new.text, new.required, old.result, new.result, change))
-        return tuple(changes)
-
-    def deltas(
-        self, was: Metrics, now: Metrics, shown: Literal["better", "worse"] | None
-    ) -> Deltas:
-        if self.quality_reason() or was.rate is None or now.rate is None:
-            rate = NO_CHANGE
-        else:
-            points = round((now.rate - was.rate) * 100, 6)
-            agrees = shown == ("better" if points > 0 else "worse")
-            rate = Delta(points, self.tone(points, more_is_better=True, noisy=not agrees))
-        return Deltas(
-            rate=rate,
-            stable=NO_CHANGE
-            if self.quality_reason()
-            else self.delta(was.stable, now.stable, more_is_better=True),
-            seconds=self.units(was.seconds, now.seconds),
-            tokens=self.units(was.tokens, now.tokens),
-            cached=self.points(was.cached, now.cached),
-            errors=self.delta(was.errors, now.errors, more_is_better=False),
-        )
-
-    def at(self, spread: Spread | None, stat: Stat) -> float | None:
-        """A statistic of a spread; None without one."""
-        return None if spread is None else spread.of(stat)
-
-    def delta(self, was: float | None, now: float | None, more_is_better: bool) -> Delta:
-        if was is None or now is None:
-            return NO_CHANGE
-        return Delta(now - was, self.tone(now - was, more_is_better=more_is_better, noisy=False))
-
-    def points(self, was: float | None, now: float | None) -> Delta:
-        """The change of a share in percentage points; a rise is better."""
-        if was is None or now is None:
-            return NO_CHANGE
-        change = round((now - was) * 100, 6)
-        shown = math.floor(now * 100 + 0.5) - math.floor(was * 100 + 0.5)  # as pct() in base.js
-        return Delta(change, self.tone(shown, more_is_better=True, noisy=False))
-
-    def units(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
-        """A tile's change of each statistic in its own unit. Max's is noise, as one answer moves
-        it, unless it did not change."""
-        p50, p90, top, average = (self.unit(self.at(was, s), self.at(now, s)) for s in STATS)
-        return PerStat(p50, p90, Delta(top.value, "noise") if top.value else top, average)
-
-    def unit(self, was: float | None, now: float | None) -> Delta:
-        """A tile's change of a statistic in its own unit, toned as the scenarios' rows are; a
-        rise from 0 is worse."""
-        if was is None or now is None:
-            return NO_CHANGE
-        relative = self.relative(was, now)
-        return Delta(now - was, "bad" if relative.value is None else relative.tone)
-
-    def changes(self, was: Spread | None, now: Spread | None) -> PerStat[Delta]:
-        """A row's change of each statistic, a percent of the old one."""
-        return PerStat(*(self.relative(self.at(was, s), self.at(now, s)) for s in STATS))
-
-    def relative(self, was: float | None, now: float | None) -> Delta:
-        """The change of a statistic as a percent of the old one; none when either is missing, or
-        the old one is 0 and the new one is not."""
-        if was is None or now is None or (was == 0 and now != 0):
-            return NO_CHANGE
-        if was == now == 0:
-            return Delta(0.0, "same")
-        change = round((now - was) / was * 100, 6)
-        return Delta(change, self.slight(change))
-
-    def slight(self, percent: float) -> Tone:
-        """A rise of time or tokens is worse; under 5% as the page rounds it, the same, so a
-        change shown as 5% is never grey."""
-        if math.floor(abs(percent) + 0.5) < SLIGHT:
-            return "same"
-        return "bad" if percent > 0 else "good"
-
-    def tone(self, change: float, more_is_better: bool, noisy: bool) -> Tone:
-        if change == 0:
-            return "same"
-        if noisy:
-            return "noise"
-        return "good" if (change > 0) == more_is_better else "bad"
-
-    def evidence(
-        self, before: dict[str, ScenarioView], after: dict[str, ScenarioView], unchanged: set[str]
-    ) -> Evidence:
-        """The tallies of unchanged, judged scenarios under the same acceptance rules."""
-        if self.quality_reason():
-            return Evidence(())
-        return Evidence(
-            tuple(
-                (Tally(before[id].held, before[id].judged), Tally(after[id].held, after[id].judged))
-                for id in sorted(unchanged)  # in one order, so the float sums never differ
-                if before[id].judged and after[id].judged
-            )
-        )
+    def tallies(self, run: Run) -> dict[Scenario, Tally]:
+        """Judged attempts by the full scenario definition, so edits cannot supply evidence."""
+        spec = run.spec
+        scenarios = {s.id: s for s in spec.scenarios}
+        judged: dict[Scenario, list[bool]] = {s: [] for s in spec.scenarios}
+        for outcome in run.outcomes:
+            scenario = scenarios[outcome.scenario]
+            match outcome.verdict:
+                case Verdict() as verdict:
+                    judged[scenario].append(
+                        scenario.score(verdict, spec.trust, spec.claim_threshold).passed
+                    )
+                case Failed():
+                    judged[scenario].append(False)
+        return {s: Tally(sum(passed), len(passed)) for s, passed in judged.items()}
 
 
 class Index(Struct, frozen=True):
-    """`index.html`: every run by agent, newest first, with what it was measured with and a link
-    to its report."""
+    """Every run on its original population. Revision and suite numbers belong to this page."""
 
     runs: Iterable[Run]
 
     def page(self) -> IndexPage:
-        played = sorted(self.runs, key=lambda run: run.spec.started, reverse=True)  # instants
-        groups: dict[str, list[tuple[int, Run]]] = {}
-        for order, run in enumerate(played):
-            groups.setdefault(run.spec.agent, []).append((order, run))
-        agents = []
-        for agent in sorted(groups):
-            runs = groups[agent]
-            older: list[Run | None] = [run for _, run in runs[1:]]
-            older.append(None)
-            rows = tuple(
-                self.row(order, run, previous)
-                for (order, run), previous in zip(runs, older, strict=True)
-            )
-            agents.append(AgentRuns(agent, rows))
-        return IndexPage(len(played), tuple(agents))
+        revisions: dict[Scenario, int] = {}
+        suites: dict[frozenset[int], int] = {}
+        setups: dict[tuple[tuple[str, str | float | int], ...], int] = {}
+        rows = []
+        for run in sorted(self.runs, key=lambda r: r.spec.started, reverse=True):
+            spec = run.spec
+            cells = {s.id: revisions.setdefault(s, len(revisions) + 1) for s in spec.scenarios}
+            suite = suites.setdefault(frozenset(cells.values()), len(suites) + 1)
+            settings = tuple(self.settings(spec, suite).items())
+            rows.append(self.row(run, cells, setups.setdefault(settings, len(setups))))
+        return IndexPage(tuple(rows), tuple(dict(items) for items in setups))
 
-    def row(self, order: int, run: Run, previous: Run | None) -> IndexRow:
+    def settings(self, spec: RunSpec, suite: int) -> dict[str, str | float | int]:
+        return {
+            "Scenario suite": suite,
+            "User": spec.user,
+            "Judge": spec.judge,
+            "Models file": spec.files.models,
+            "Convy": spec.convy,
+            "Trust": spec.trust,
+            "Claim threshold": spec.claim_threshold,
+            "Repetitions": spec.k,
+            "Turn timeout (s)": spec.turn_timeout,
+            "Agent concurrency": spec.limits.agent,
+            "User concurrency": spec.limits.user,
+            "Judge concurrency": spec.limits.judge,
+            "Agent requests/min": spec.limits.agent_per_minute,
+            "User requests/min": spec.limits.user_per_minute,
+            "Judge requests/min": spec.limits.judge_per_minute,
+        }
+
+    def row(self, run: Run, revisions: dict[str, int], setup: int) -> IndexRow:
         summary = Summary(run)
-        metrics = summary.metrics(summary.scenarios().values())
+        scenarios = summary.scenarios()
+        metrics = summary.metrics(scenarios.values())
+        spec = run.spec
+        head = summary.head()
         return IndexRow(
-            run=summary.head(),
-            rate=metrics.rate,
+            run=head,
+            report=f"./{quote(run.path.as_posix())}/report.html",
             passed=metrics.passed,
             judged=metrics.judged,
+            rate=metrics.rate,
             errors=metrics.errors,
-            result=Tally(metrics.passed, metrics.judged).result(),
-            changes=() if previous is None else self.changes(previous.spec, run.spec),
-            order=order,
-            report=f"{run.path.as_posix()}/report.html",
+            numbers=summary.numbers([a for s in scenarios.values() for a in s.attempts]),
+            scenarios=tuple(
+                ScenarioCell(s.id, revisions[s.id], len(s.attempts), s.held, s.judged)
+                for s in scenarios.values()
+            ),
+            setup=setup,
+            quality_ready=head.status == "finished"
+            and not run.unreadable
+            and metrics.judged > 0
+            and all(
+                s.judged == len(s.attempts) == spec.k
+                and all(a.attempt == i for i, a in enumerate(s.attempts, 1))
+                for s in scenarios.values()
+            ),
         )
-
-    def changes(self, was: RunSpec, now: RunSpec) -> tuple[str, ...]:
-        """What a run is measured with that differs from the agent's previous run, as
-        `judge: a → b`, and the scenarios as `scenarios: +1 -2`, with a minus sign. Neither the
-        agent's version (comparing versions is the point) nor the number of attempts counts; nor
-        a scenario edited under the same id, which the comparison tells apart."""
-        changes = list(Setups(was, now).differences())
-        before, ids = {s.id for s in was.scenarios}, {s.id for s in now.scenarios}
-        moved = " ".join(
-            f"{sign}{len(found)}"
-            for sign, found in (("+", ids - before), ("\N{MINUS SIGN}", before - ids))
-            if found
-        )
-        if moved:
-            changes.append(f"scenarios: {moved}")
-        return tuple(changes)
 
     def html(self) -> str:
         return Template("index.html").html(self.page())

@@ -113,7 +113,7 @@ function header() {
   const status = STATUS[RUN.status];
   return el("div", {className: "top"},
     el("div", {},
-      el("div", {className: "eyebrow"}, el("a", {href: "../../index.html"}, "CONVY"), ` / ${RUN.agent} / ${RUN.short}`),
+      el("div", {className: "eyebrow"}, el("a", {href: "../../index.html"}, "All runs"), ` / ${RUN.agent} / ${RUN.short}`),
       el("h1", {}, `Run ${when(RUN.started)}`),
       el("p", {className: "meta"}, [RUN.version && `version ${RUN.version}`, `${plural(RUN.scenarios, "scenario")} × ${plural(RUN.k, "attempt")}`, status, `trust ${RUN.trust}`, `claim threshold ${RUN.claim_threshold}`,
         RUN.unreadable && plural(RUN.unreadable, "unreadable line")].filter(Boolean).join(" · ")),
@@ -276,7 +276,7 @@ function show(id, number) {
 function draw() {
   const V = view(), out = V.out.length;
   // A scenario the cut takes leaves the table too; the line under it says which.
-  document.getElementById("hint").textContent = (out ? `Cut as outliers: ${V.out.join(", ")}. ` : "") + compare;
+  document.getElementById("hint").textContent = out ? `Cut as outliers: ${V.out.join(", ")}.` : "";
   document.getElementById("tiles").replaceChildren(tiles());
   document.getElementById("charts").replaceChildren(
     byPart(V.parts, V.shares, V.tokens.spread?.mean),
@@ -287,7 +287,6 @@ function draw() {
 document.title = `${RUN.agent} · run ${RUN.short} · convy`;
 document.getElementById("head").replaceChildren(header());
 document.getElementById("filter").addEventListener("input", draw);
-const compare = `Compare with another run: convy compare <run> ${RUN.short}`;
 draw();
 const opened = fromAddress();
 if (opened) show(opened.id, opened.attempt);
